@@ -1,20 +1,33 @@
-// AUTH TYPES
+// --- AUTH & COMPANY ---
+export interface Company {
+  id: string;
+  name: string;
+  plan: 'starter' | 'pro' | 'scale';
+  status: 'active' | 'inactive' | 'trialing';
+  created_at: string;
+  stripe_customer_id?: string;
+  trial_ends_at?: string;
+}
+
 export interface User {
   id: string;
   email: string;
   name: string;
+  role: 'owner' | 'admin' | 'agent';
   company_id: string;
-  role: 'admin' | 'user';
   avatar_url?: string;
-  created_at?: string;
 }
 
-export interface AuthSession {
-  user: User | null;
-  accessToken: string | null;
+export interface Profile {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  company_id: string;
+  profile_pic_url?: string;
 }
 
-// CRM & PIPELINE TYPES
+// --- CRM (KANBAN & LEADS) ---
 export interface Lead {
   id: string;
   company_id: string;
@@ -22,81 +35,109 @@ export interface Lead {
   name: string;
   phone: string;
   email?: string;
-  value_potential?: number;
-  temperature?: 'cold' | 'warm' | 'hot';
-  priority?: 'low' | 'medium' | 'high';
-  tags?: string[];
-  notes?: string;
-  created_at?: string;
-  owner_id?: string;
+  profile_pic_url?: string;
+  
+  // Dados de Negócio
+  value_potential?: number; // Valor monetário (R$)
   lead_score?: number;
+  temperature: 'cold' | 'warm' | 'hot';
+  tags: string[];
+  notes?: string;
+  
+  // Metadados
+  created_at: string;
+  updated_at?: string;
+  next_appointment_at?: string;
+  owner_id?: string;
+  type?: 'b2b' | 'b2c';
+}
+
+export interface PipelineStage {
+  id: string;
+  pipeline_id: string;
+  name: string;
+  position: number;
+  color: string;
+  items?: Lead[]; // Populado no frontend
+}
+
+export interface Pipeline {
+  id: string;
+  company_id: string;
+  name: string;
+  is_default: boolean;
+  stages?: PipelineStage[];
 }
 
 export interface KanbanColumn {
   id: string;
   title: string;
+  color: string;
   order: number;
-  company_id: string;
-  color?: string;
   items?: Lead[];
 }
 
-export interface PipelineStage {
+export interface ChecklistItem {
   id: string;
-  pipeline_id?: string;
-  name: string;
-  position: number;
-  color: string;
-  company_id?: string;
+  lead_id: string;
+  text: string;
+  is_completed: boolean;
+  created_at: string;
 }
 
-// WHATSAPP & CHAT TYPES
+// --- WHATSAPP & CHAT ---
 export interface WhatsAppInstance {
   id: string;
+  company_id: string;
+  session_id: string;
   name: string;
   status: 'connected' | 'disconnected' | 'qr_ready' | 'connecting';
-  company_id: string;
-  phone_number?: string;
-  qrcode?: string;
-  session_id: string;
-  updated_at: string;
-  qrcode_url?: string;
+  qrcode_url?: string; // Base64 ou URL
   battery_level?: number;
-}
-
-export type Instance = WhatsAppInstance;
-
-export interface ChatContact {
-  id: string;
-  name: string;
   profile_pic_url?: string;
-  phone_number: string;
-  remote_jid: string;
-  last_message?: string;
-  last_message_time?: string;
-  unread_count: number;
-  tags?: string[];
+  updated_at: string;
 }
+
+// Alias para compatibilidade
+export type Instance = WhatsAppInstance;
 
 export interface Message {
   id: string;
-  body: string;
-  from_me: boolean;
+  session_id: string;
+  company_id: string;
   remote_jid: string;
+  from_me: boolean;
+  content: string;
+  body?: string; // Fallback para content
+  message_type: 'text' | 'image' | 'video' | 'audio' | 'document' | 'sticker' | 'location';
+  status: 'sent' | 'delivered' | 'read' | 'failed' | 'sending';
   created_at: string;
-  type: 'text' | 'image' | 'video' | 'audio';
-  status: 'sent' | 'delivered' | 'read' | 'failed';
-  content?: string;
-  message_type?: string;
+  has_media?: boolean;
+  media_url?: string;
 }
 
-// MARKETING TYPES
-export interface Campaign {
+export interface ChatContact {
   id?: string;
+  company_id: string;
+  jid: string; // ID bruto do WP
+  remote_jid: string; // Alias
   name: string;
-  message: string;
-  target_tags: string[];
-  scheduled_at?: string;
-  status: 'draft' | 'scheduled' | 'sent';
-  company_id?: string;
+  push_name?: string;
+  profile_pic_url?: string;
+  unread_count: number;
+  last_message?: string;
+  last_message_time?: string;
+  phone_number?: string;
+  updated_at?: string;
+}
+
+// --- AI AGENTS ---
+export interface Agent {
+  id: string;
+  company_id: string;
+  name: string;
+  prompt_instruction: string;
+  knowledge_base?: string;
+  is_active: boolean;
+  model: string;
 }

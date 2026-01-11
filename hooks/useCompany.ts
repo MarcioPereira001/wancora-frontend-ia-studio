@@ -6,8 +6,8 @@ export function useCompany() {
   const { user } = useAuthStore();
   const supabase = createClient();
 
-  const { data: company, isLoading } = useQuery({
-    queryKey: ['company', user?.company_id],
+  const { data: company, isLoading, error } = useQuery({
+    queryKey: ['company_details', user?.company_id],
     queryFn: async () => {
       if (!user?.company_id) return null;
       
@@ -18,19 +18,20 @@ export function useCompany() {
         .single();
 
       if (error) {
-          console.error("Erro ao buscar empresa:", error);
-          return null;
+          console.error("Erro ao buscar dados da empresa:", error);
+          throw error;
       }
 
-      return {
-          id: data.id,
-          name: data.name,
-          plan: data.plan || 'free',
-          // Mapear outros campos conforme seu schema real
-      };
+      return data;
     },
-    enabled: !!user?.company_id
+    enabled: !!user?.company_id, // Só roda se tiver usuário logado com empresa
+    staleTime: 1000 * 60 * 10, // Cache de 10 minutos
   });
 
-  return { company, isLoading };
+  return { 
+    company, 
+    companyId: user?.company_id, // Atalho útil
+    isLoading,
+    isError: !!error 
+  };
 }

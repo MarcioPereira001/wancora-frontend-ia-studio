@@ -7,6 +7,7 @@ import { Modal } from '@/components/ui/Modal';
 import { optimizePromptAction, simulateChatAction } from '@/app/actions/gemini';
 import { createClient } from '@/utils/supabase/client';
 import { useToast } from '@/hooks/useToast';
+import { useAuthStore } from '@/store/useAuthStore';
 
 interface ChatMessage {
     role: 'user' | 'model';
@@ -15,6 +16,7 @@ interface ChatMessage {
 
 export default function AgentsPage() {
   const { addToast } = useToast();
+  const { user } = useAuthStore(); // Usando store para garantir company_id
   const [prompt, setPrompt] = useState("Você é um assistente de suporte útil para o Wancora CRM. Seja educado e conciso.");
   const [agentName, setAgentName] = useState("Agente Principal");
   const [knowledgeBase, setKnowledgeBase] = useState("");
@@ -34,11 +36,14 @@ export default function AgentsPage() {
   const supabase = createClient();
 
   useEffect(() => {
+    if (!user?.company_id) return;
+
     const loadAgent = async () => {
         try {
             const { data } = await supabase
                 .from('agents')
                 .select('*')
+                .eq('company_id', user.company_id) // Filtro explícito de segurança
                 .limit(1)
                 .maybeSingle();
             
@@ -55,7 +60,7 @@ export default function AgentsPage() {
         }
     };
     loadAgent();
-  }, [supabase]);
+  }, [supabase, user?.company_id]);
 
   useEffect(() => {
       if(isSimulatorOpen) {
@@ -64,9 +69,20 @@ export default function AgentsPage() {
   }, [simMessages, isSimulatorOpen]);
 
   const handleSave = async () => {
+    if (!user?.company_id) {
+        addToast({ type: 'error', title: 'Erro', message: 'Sessão inválida. Recarregue a página.' });
+        return;
+    }
+
     setIsSaving(true);
     try {
-        const { data: existingAgent } = await supabase.from('agents').select('id').limit(1).maybeSingle();
+        // Verifica existência usando company_id
+        const { data: existingAgent } = await supabase
+            .from('agents')
+            .select('id')
+            .eq('company_id', user.company_id)
+            .limit(1)
+            .maybeSingle();
 
         let error;
         if (existingAgent) {
@@ -81,8 +97,6 @@ export default function AgentsPage() {
                 .eq('id', existingAgent.id);
              error = updError;
         } else {
-             // In a real multi-tenant app, company_id comes from auth trigger or session
-             const { data: { session } } = await supabase.auth.getSession();
              const { error: insError } = await supabase
                 .from('agents')
                 .insert({ 
@@ -90,7 +104,7 @@ export default function AgentsPage() {
                     prompt_instruction: prompt,
                     knowledge_base: knowledgeBase,
                     is_active: isActive,
-                    company_id: session?.user?.user_metadata?.company_id 
+                    company_id: user.company_id 
                 });
              error = insError;
         }
@@ -134,7 +148,6 @@ export default function AgentsPage() {
       setIsSimLoading(true);
 
       try {
-          // Map to Gemini format for Server Action
           const apiHistory = newHistory.map(m => ({
               role: m.role,
               parts: [{ text: m.text }]

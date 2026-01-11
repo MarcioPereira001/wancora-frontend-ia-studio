@@ -15,11 +15,7 @@ const nextConfig: NextConfig = {
     // your project has type errors.
     ignoreBuildErrors: true,
   },
-  eslint: {
-    // Warning: This allows production builds to successfully complete even if
-    // your project has ESLint errors.
-    ignoreDuringBuilds: true,
-  },
+  // Fix: Removed 'eslint' property to resolve type error "Object literal may only specify known properties"
   experimental: {
     serverActions: {
       bodySizeLimit: '2mb',

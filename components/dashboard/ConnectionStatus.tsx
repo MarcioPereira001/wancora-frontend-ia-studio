@@ -1,54 +1,186 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { createClient } from '@/utils/supabase/client';
-import { useAuthStore } from '@/store/useAuthStore';
-import { CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
-import { WhatsAppInstance } from '@/types';
+import React, { useState, useEffect } from 'react';
+import { QRCodeSVG } from 'qrcode.react';
+import { Smartphone, Loader2, Battery, Power, Trash2, RefreshCw, CheckCircle2 } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { whatsappService } from '@/services/whatsappService';
+import { Instance } from '@/types';
+import { useToast } from '@/hooks/useToast';
 
 export function ConnectionStatus() {
-  const { user } = useAuthStore();
-  const supabase = createClient();
-  const [status, setStatus] = useState<WhatsAppInstance['status']>('disconnected');
-  const [loading, setLoading] = useState(true);
+  const { addToast } = useToast();
+  const [instance, setInstance] = useState<Instance | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  const fetchStatus = async () => {
+      const data = await whatsappService.getInstanceStatus();
+      setInstance(data);
+      if (data?.status === 'connected') setIsSyncing(false);
+  };
 
   useEffect(() => {
-    if (!user) return;
-    const fetchStatus = async () => {
-        const { data } = await supabase
-            .from('instances')
-            .select('status')
-            .eq('company_id', user.company_id)
-            .maybeSingle();
-        
-        if (data) setStatus(data.status);
-        setLoading(false);
-    };
     fetchStatus();
-    
-    // Polling is better for this than realtime subscription for simple status
-    const interval = setInterval(fetchStatus, 5000);
+    // Polling inteligente: rápido se conectando, lento se estável
+    const intervalTime = (instance?.status === 'connecting' || instance?.status === 'qr_ready') ? 2000 : 5000;
+    const interval = setInterval(fetchStatus, intervalTime);
     return () => clearInterval(interval);
-  }, [user]);
+  }, [instance?.status]);
 
-  if (loading) return <div className="h-2 w-2 bg-zinc-700 rounded-full animate-pulse" />;
+  const handleConnect = async () => {
+    setLoading(true);
+    try {
+        await whatsappService.connectInstance();
+        addToast({ type: 'info', title: 'Conectando', message: 'Gerando QR Code...' });
+    } catch (e: any) {
+        addToast({ type: 'error', title: 'Erro', message: e.message });
+    } finally {
+        setLoading(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    if (!confirm("Desconectar o WhatsApp?")) return;
+    setLoading(true);
+    try {
+        await whatsappService.logoutInstance();
+        setInstance(prev => prev ? { ...prev, status: 'disconnected', qrcode_url: undefined } : null);
+    } catch (e: any) {
+        addToast({ type: 'error', title: 'Erro', message: e.message });
+    } finally {
+        setLoading(false);
+    }
+  };
+
+  const renderContent = () => {
+    const status = instance?.status || 'disconnected';
+
+    // 1. Loading / Conectando
+    if (loading || status === 'connecting' || isSyncing) {
+      return (
+        <div className="flex flex-col items-center gap-4 animate-in fade-in zoom-in">
+          <div className="relative">
+             <div className="absolute inset-0 bg-green-500/20 blur-xl rounded-full"></div>
+             <Loader2 className="w-12 h-12 text-green-500 animate-spin relative z-10" />
+          </div>
+          <p className="text-zinc-400 text-sm animate-pulse font-medium">
+            {isSyncing ? "Sincronizando..." : "Estabelecendo conexão..."}
+          </p>
+        </div>
+      );
+    }
+
+    // 2. Conectado
+    if (status === 'connected') {
+      return (
+        <div className="flex flex-col items-center gap-4 animate-in fade-in slide-in-from-bottom-4">
+           <div className="relative group">
+              <img 
+                src={instance?.profile_pic_url || 'https://via.placeholder.com/150'} 
+                className="w-24 h-24 rounded-full border-2 border-green-500 p-1 shadow-[0_0_30px_rgba(34,197,94,0.3)] object-cover"
+                alt="Avatar"
+              />
+              <div className="absolute -bottom-1 -right-1 bg-zinc-950 p-1.5 rounded-full border border-zinc-800">
+                <Battery className={cn("w-4 h-4", (instance?.battery_level || 0) < 20 ? "text-red-500" : "text-green-400")} />
+              </div>
+           </div>
+           <div className="text-center">
+              <p className="text-white font-bold text-lg">{instance?.name || 'WhatsApp'}</p>
+              <div className="flex items-center gap-2 justify-center text-zinc-400 text-sm mt-1">
+                <CheckCircle2 className="w-4 h-4 text-green-500" />
+                <span className="text-green-500 font-medium">Sessão Ativa</span>
+              </div>
+           </div>
+        </div>
+      );
+    }
+
+    // 3. QR Code
+    if (status === 'qr_ready' && instance?.qrcode_url) {
+      const qrSrc = instance.qrcode_url.startsWith('data:') ? instance.qrcode_url : `data:image/png;base64,${instance.qrcode_url}`;
+      return (
+        <div className="text-center space-y-4 animate-in fade-in zoom-in">
+          <div className="p-4 bg-white rounded-xl shadow-[0_0_30px_rgba(34,197,94,0.15)] relative mx-auto w-fit group">
+             <img src={qrSrc} className="w-48 h-48 object-contain" alt="QR Code" />
+             <div className="absolute top-0 left-0 w-full h-1 bg-green-500/50 shadow-[0_0_15px_rgba(34,197,94,0.8)] animate-[scan_2s_ease-in-out_infinite]" />
+          </div>
+          <p className="text-emerald-400 text-xs font-mono font-bold tracking-widest animate-pulse">
+            ESCANEIE AGORA
+          </p>
+          <button 
+            onClick={() => setIsSyncing(true)}
+            className="text-[10px] text-zinc-500 hover:text-white underline cursor-pointer"
+          >
+            Demorando para atualizar?
+          </button>
+        </div>
+      );
+    }
+
+    // 4. Desconectado
+    return (
+      <div className="text-center space-y-4 animate-in fade-in zoom-in">
+        <div className="w-20 h-20 bg-zinc-800/50 rounded-full flex items-center justify-center mx-auto mb-2 border border-zinc-700 shadow-inner">
+          <Power className="w-8 h-8 text-zinc-600" />
+        </div>
+        <button 
+          onClick={handleConnect}
+          disabled={loading}
+          className="px-6 py-3 bg-primary hover:bg-primary/90 text-primary-foreground font-bold rounded-lg transition-all shadow-[0_0_20px_rgba(34,197,94,0.3)] flex items-center gap-2 mx-auto active:scale-95 disabled:opacity-50"
+        >
+          INICIAR CONEXÃO
+        </button>
+      </div>
+    );
+  };
 
   return (
-    <div className="flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-full border bg-zinc-900 border-zinc-800">
-        {status === 'connected' ? (
-            <>
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
-                </span>
-                <span className="text-green-500">WhatsApp Online</span>
-            </>
-        ) : (
-            <>
-                 <AlertCircle className="w-3 h-3 text-red-500" />
-                 <span className="text-zinc-500">Desconectado</span>
-            </>
-        )}
+    <div className="glass-panel rounded-2xl p-6 relative overflow-hidden transition-all duration-500 hover:border-zinc-700 group min-h-[320px] flex flex-col justify-between border border-zinc-800 bg-zinc-900/30">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-3">
+          <div className={cn(
+            "p-2 rounded-lg transition-colors duration-300 border",
+            instance?.status === 'connected' ? "bg-green-500/10 border-green-500/20 text-green-400" : "bg-zinc-800 border-zinc-700 text-zinc-500"
+          )}>
+            <Smartphone className="w-5 h-5" />
+          </div>
+          <div>
+            <h3 className="text-white font-bold tracking-tight text-sm">Dispositivo</h3>
+            <p className="text-[10px] text-zinc-500 font-mono uppercase tracking-widest opacity-70">
+              {instance?.status === 'connected' ? instance.session_id.slice(0,8) : 'OFFLINE'}
+            </p>
+          </div>
+        </div>
+        
+        <div className="flex items-center gap-2">
+            <div className={cn(
+            "flex items-center gap-2 text-[10px] font-bold px-3 py-1 rounded-full border transition-all duration-300",
+            instance?.status === 'connected' ? "text-green-400 bg-green-500/10 border-green-500/20" : 
+            (instance?.status === 'connecting' || isSyncing) ? "text-yellow-400 bg-yellow-500/10 border-yellow-500/20" :
+            "text-zinc-500 bg-zinc-900 border-zinc-800"
+            )}>
+            {(instance?.status === 'connecting' || isSyncing) && <RefreshCw className="w-3 h-3 animate-spin" />}
+            {isSyncing ? "SYNC" : (instance?.status || 'DISCONNECTED').toUpperCase()}
+            </div>
+
+            {instance?.status === 'connected' && (
+                <button 
+                onClick={handleLogout}
+                title="Desconectar"
+                className="p-1.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 rounded-lg text-red-500 transition-colors"
+                >
+                <Trash2 className="w-4 h-4" />
+                </button>
+            )}
+        </div>
+      </div>
+
+      {/* Conteúdo Central */}
+      <div className="flex-1 flex items-center justify-center w-full">
+        {renderContent()}
+      </div>
     </div>
   );
 }

@@ -13,9 +13,10 @@ import {
   Bar
 } from 'recharts';
 import { ArrowUpRight, ArrowDownRight, Users, MessageCircle, DollarSign, Activity, Loader2 } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { createClient } from '@/utils/supabase/client';
 import { formatCurrency } from '@/lib/utils';
+import { useAuthStore } from '@/store/useAuthStore';
 
 const dataMockGrafico = [
   { name: 'Seg', value: 4000, leads: 240 },
@@ -56,28 +57,31 @@ export default function DashboardPage() {
     conversionRate: 0
   });
   const supabase = createClient();
+  const { user } = useAuthStore();
 
   useEffect(() => {
+    if (!user?.company_id) return;
+
     const fetchStats = async () => {
       try {
         setLoading(true);
         
+        // Leads e Receita Potencial
         const { count: leadsCount, data: leadsData } = await supabase
           .from('leads')
-          .select('value_potential', { count: 'exact' });
+          .select('value_potential, temperature', { count: 'exact' })
+          .eq('company_id', user.company_id);
 
-        const totalRevenue = leadsData?.reduce((acc, curr) => acc + (curr.value_potential || 0), 0) || 0;
+        const totalRevenue = leadsData?.reduce((acc, curr) => acc + (Number(curr.value_potential) || 0), 0) || 0;
+        
+        const hotLeads = leadsData?.filter(l => l.temperature === 'hot').length || 0;
+        const conversionRateCalc = leadsCount ? ((hotLeads / leadsCount) * 100) : 0;
 
+        // Mensagens
         const { count: messagesCount } = await supabase
           .from('messages')
-          .select('*', { count: 'exact', head: true });
-
-        const { count: hotLeads } = await supabase
-            .from('leads')
-            .select('*', { count: 'exact', head: true })
-            .eq('temperature', 'hot');
-
-        const conversionRateCalc = leadsCount ? ((hotLeads || 0) / leadsCount) * 100 : 0;
+          .select('*', { count: 'exact', head: true })
+          .eq('company_id', user.company_id);
 
         setStats({
           totalLeads: leadsCount || 0,
@@ -94,7 +98,7 @@ export default function DashboardPage() {
     };
 
     fetchStats();
-  }, [supabase]);
+  }, [supabase, user?.company_id]);
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
@@ -141,7 +145,7 @@ export default function DashboardPage() {
           loading={loading}
         />
         <StatCard 
-          title="Conversão (Hot)" 
+          title="Taxa de Leads Hot" 
           value={`${stats.conversionRate}%`} 
           change={2.1} 
           isPositive={false} 

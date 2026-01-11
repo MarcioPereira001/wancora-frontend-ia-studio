@@ -4,65 +4,106 @@ import React, { useEffect } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useRouter, usePathname } from 'next/navigation';
+import { useToast } from '@/hooks/useToast';
 
 export default function AuthProvider({ children }: { children: React.ReactNode }) {
-  const { setUser, setLoading } = useAuthStore();
+  const { setUser, setLoading, user: currentUser } = useAuthStore();
   const supabase = createClient();
   const router = useRouter();
   const pathname = usePathname();
+  const { addToast } = useToast();
 
   useEffect(() => {
+    let mounted = true;
+
     const checkUser = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
         
+        if (sessionError) throw sessionError;
+
         if (!session) {
-          if (!pathname.startsWith('/auth') && pathname !== '/') {
-            router.push('/auth/login');
+          if (!pathname?.startsWith('/auth') && pathname !== '/') {
+            router.replace('/auth/login');
           }
-          setLoading(false);
+          if (mounted) {
+            setUser(null);
+            setLoading(false);
+          }
           return;
         }
 
-        // Busca dados reais do perfil para obter o company_id
-        const { data: profile, error } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', session.user.id)
-            .single();
-
-        if (error && !profile) {
-            console.error("Erro ao buscar perfil:", error);
-            // Fallback para metadados ou estado de erro, se necessário
+        // Se já temos o usuário carregado e o ID bate, não fazemos fetch de novo (Performance)
+        if (currentUser?.id === session.user.id) {
+            if (mounted) setLoading(false);
+            return;
         }
 
-        setUser({
-          id: session.user.id,
-          email: session.user.email!,
-          name: profile?.name || session.user.user_metadata.name || 'Usuário',
-          role: profile?.role || 'admin',
-          company_id: profile?.company_id || session.user.user_metadata.company_id
-        });
+        // Busca dados do perfil com retry simples para evitar race condition no cadastro
+        let profile = null;
+        let attempts = 0;
+        
+        while (!profile && attempts < 3) {
+            const { data, error } = await supabase
+                .from('profiles')
+                .select('*, companies(name, plan, status)')
+                .eq('id', session.user.id)
+                .single();
+            
+            if (!error && data) {
+                profile = data;
+            } else if (error.code === 'PGRST116') {
+                // Perfil não encontrado, espera um pouco (pode estar sendo criado)
+                await new Promise(r => setTimeout(r, 1000));
+                attempts++;
+            } else {
+                console.error("Erro ao buscar perfil:", error);
+                break;
+            }
+        }
+
+        if (mounted) {
+            setUser({
+              id: session.user.id,
+              email: session.user.email!,
+              name: profile?.name || session.user.user_metadata.full_name || 'Usuário',
+              role: profile?.role || 'user',
+              company_id: profile?.company_id,
+              avatar_url: profile?.profile_pic_url
+            });
+        }
 
       } catch (error) {
         console.error("Auth check failed:", error);
+        // Em caso de erro crítico de token inválido, faz logout
+        if ((error as any)?.message?.includes('token')) {
+            await supabase.auth.signOut();
+            router.push('/auth/login');
+        }
       } finally {
-        setLoading(false);
+        if (mounted) setLoading(false);
       }
     };
 
     checkUser();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    // Listener para eventos de Auth (Logout em outra aba, etc)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
         if (event === 'SIGNED_OUT') {
             setUser(null);
             router.push('/auth/login');
         } else if (event === 'SIGNED_IN' && session) {
-            checkUser(); // Re-fetch profile on sign-in
+            // Se o usuário logou, mas o estado global está vazio, recarrega
+            if (!useAuthStore.getState().user) {
+                checkUser();
+            }
         }
     });
 
-    return () => subscription.unsubscribe();
+    return () => { 
+        mounted = false;
+        subscription.unsubscribe();
+    };
   }, [pathname, router, setUser, setLoading, supabase]);
 
   return <>{children}</>;

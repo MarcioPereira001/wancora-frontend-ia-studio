@@ -86,16 +86,19 @@ export default function ChatPage() {
           return;
       }
 
-      const tempMsg = {
+      // Fix: Added missing properties (session_id, company_id, message_type) and fixed 'type' key to 'message_type'
+      const tempMsg: Message = {
           id: Date.now().toString(),
           remote_jid: activeContact.remote_jid,
           from_me: true,
           content: input,
           body: input,
-          type: 'text',
+          message_type: 'text',
           status: 'sent',
-          created_at: new Date().toISOString()
-      } as Message;
+          created_at: new Date().toISOString(),
+          session_id: 'default',
+          company_id: user?.company_id || ''
+      };
 
       setMessages(prev => [...prev, tempMsg]);
       setInput("");
