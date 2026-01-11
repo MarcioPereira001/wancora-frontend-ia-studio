@@ -56,13 +56,16 @@ export const whatsappService = {
     }
   },
 
-  // Inicia a sessão no Backend (Render) com suporte a SessionID dinâmico
-  connectInstance: async (sessionId: string = 'default') => {
+  // Inicia a sessão no Backend (Render) com suporte a SessionID dinâmico e Nome Descritivo
+  connectInstance: async (sessionId: string = 'default', instanceName?: string) => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const { data: profile } = await supabase.from('profiles').select('company_id').eq('id', session?.user.id).single();
       
       if (!profile?.company_id) throw new Error("Usuário sem empresa.");
+
+      // Nome padrão se não for fornecido
+      const displayName = instanceName || (sessionId === 'default' ? 'Principal' : sessionId);
 
       // 1. Verifica se já existe a instância
       const { data: existing } = await supabase
@@ -75,7 +78,12 @@ export const whatsappService = {
       if (existing) {
           // Atualiza para connecting para dar feedback visual
           await supabase.from('instances')
-            .update({ status: 'connecting', qrcode_url: null, updated_at: new Date().toISOString() })
+            .update({ 
+                status: 'connecting', 
+                qrcode_url: null, 
+                name: displayName, // Atualiza o nome caso tenha mudado
+                updated_at: new Date().toISOString() 
+            })
             .eq('id', existing.id);
       } else {
           // Cria registro inicial
@@ -83,7 +91,7 @@ export const whatsappService = {
               company_id: profile.company_id, 
               session_id: sessionId, 
               status: 'connecting',
-              name: sessionId === 'default' ? 'Principal' : sessionId,
+              name: displayName,
               updated_at: new Date().toISOString()
           });
           if (insertError) throw insertError;

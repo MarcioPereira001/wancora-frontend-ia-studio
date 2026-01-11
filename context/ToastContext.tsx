@@ -20,7 +20,11 @@ interface ToastContextData {
 
 export const ToastContext = createContext<ToastContextData>({} as ToastContextData);
 
-export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+interface ToastProviderProps {
+  children: React.ReactNode;
+}
+
+export function ToastProvider({ children }: ToastProviderProps) {
   const [toasts, setToasts] = useState<Toast[]>([]);
 
   const addToast = useCallback(({ type, title, message, duration = 4000 }: Omit<Toast, 'id'>) => {
@@ -75,4 +79,4 @@ export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       </div>
     </ToastContext.Provider>
   );
-};
+}

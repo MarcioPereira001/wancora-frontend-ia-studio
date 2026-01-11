@@ -6,7 +6,11 @@ import { useAuthStore } from '@/store/useAuthStore';
 import { useRouter, usePathname } from 'next/navigation';
 import { useToast } from '@/hooks/useToast';
 
-export default function AuthProvider({ children }: { children: React.ReactNode }) {
+interface AuthProviderProps {
+  children: React.ReactNode;
+}
+
+export default function AuthProvider({ children }: AuthProviderProps) {
   const { setUser, setLoading, user: currentUser } = useAuthStore();
   const supabase = createClient();
   const router = useRouter();

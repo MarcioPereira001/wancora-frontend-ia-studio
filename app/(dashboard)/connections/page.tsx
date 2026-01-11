@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Smartphone, RefreshCw, Power, CheckCircle, AlertCircle, Loader2, Plus, Lock, QrCode, Trash2, Signal, Wifi, Activity, Terminal } from 'lucide-react';
+import { Smartphone, RefreshCw, Power, CheckCircle, AlertCircle, Loader2, Plus, Lock, QrCode, Trash2, Signal, Wifi, Activity, Terminal, MessageCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { whatsappService } from '@/services/whatsappService';
 import { Instance } from '@/types';
@@ -72,15 +72,17 @@ export default function ConnectionsPage() {
       if(!newSessionName.trim()) return;
       setIsCreating(true);
       try {
-          // Normaliza o nome para ser um ID válido
+          // 1. Gera ID técnico (sanitizado) para o Backend/Baileys
           const sessionId = newSessionName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
           
           if(instances.find(i => i.session_id === sessionId)) {
-              throw new Error("Já existe uma conexão com este nome.");
+              throw new Error("Já existe uma conexão com este ID.");
           }
 
-          await whatsappService.connectInstance(sessionId);
-          addToast({ type: 'success', title: 'Inicializando Protocolo', message: 'Estabelecendo uplink...' });
+          // 2. Chama o serviço passando o ID técnico E o Nome Original (Display Name)
+          await whatsappService.connectInstance(sessionId, newSessionName);
+          
+          addToast({ type: 'success', title: 'Solicitação Enviada', message: 'Gerando QR Code...' });
           setIsModalOpen(false);
           setNewSessionName('');
       } catch (error: any) {
@@ -101,8 +103,8 @@ export default function ConnectionsPage() {
         <div className="absolute -bottom-px left-0 w-32 h-px bg-primary shadow-[0_0_10px_rgba(34,197,94,0.5)]"></div>
         <div>
           <h1 className="text-4xl font-bold text-white tracking-tight flex items-center gap-3">
-            <Signal className="w-8 h-8 text-primary animate-pulse" />
-            Conexões de Rede
+            <MessageCircle className="w-8 h-8 text-primary animate-pulse" />
+            Conexões WhatsApp
           </h1>
           <p className="text-zinc-400 mt-2 font-light">
             Gerenciamento de gateways WhatsApp e instâncias ativas.
@@ -180,11 +182,11 @@ export default function ConnectionsPage() {
                   </div>
               </div>
               <div>
-                  <label className="text-xs font-bold text-primary uppercase mb-2 block tracking-wider">Session ID</label>
+                  <label className="text-xs font-bold text-primary uppercase mb-2 block tracking-wider">Nome da Sessão</label>
                   <Input 
                     value={newSessionName} 
                     onChange={e => setNewSessionName(e.target.value)}
-                    placeholder="Ex: comando-central" 
+                    placeholder="Ex: Comercial 01" 
                     className="h-12 bg-zinc-900 border-zinc-700 text-white font-mono"
                     autoFocus
                   />
@@ -201,15 +203,16 @@ export default function ConnectionsPage() {
 }
 
 // Sub-componente Card Otimizado
-function ConnectionCard({ instance }: { instance: Instance }) {
+const ConnectionCard: React.FC<{ instance: Instance }> = ({ instance }) => {
     const { addToast } = useToast();
     const [actionLoading, setActionLoading] = useState(false);
 
     const handleConnect = async () => {
         setActionLoading(true);
         try {
-            await whatsappService.connectInstance(instance.session_id);
-            addToast({ type: 'info', title: 'System', message: 'Gerando chaves de criptografia...' });
+            // Re-usa o nome existente para não sobrescrever com o session_id
+            await whatsappService.connectInstance(instance.session_id, instance.name);
+            addToast({ type: 'info', title: 'System', message: 'Solicitando novo QR Code...' });
         } catch (e: any) {
             addToast({ type: 'error', title: 'Erro', message: e.message });
         } finally {
@@ -252,7 +255,7 @@ function ConnectionCard({ instance }: { instance: Instance }) {
             : `data:image/png;base64,${instance.qrcode_url}`;
 
         return (
-            <div className="relative group">
+            <div className="relative group animate-in zoom-in duration-300">
                 <div className="absolute -inset-0.5 bg-gradient-to-r from-primary to-emerald-600 rounded-lg blur opacity-40 group-hover:opacity-75 transition duration-1000 group-hover:duration-200"></div>
                 <div className="relative bg-white p-3 rounded-lg shadow-2xl overflow-hidden">
                     <img src={src} alt="Scan Me" className="w-48 h-48 object-contain relative z-10" />

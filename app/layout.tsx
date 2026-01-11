@@ -16,9 +16,9 @@ export const metadata: Metadata = {
 
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode;
-}>) {
+}) {
   return (
     <html lang="pt-BR" className="dark">
       <body className={`${inter.variable} ${jetbrains.variable} bg-background font-sans text-foreground`}>
