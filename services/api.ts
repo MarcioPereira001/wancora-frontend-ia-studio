@@ -1,7 +1,14 @@
 import { BACKEND_URL } from '../config';
 import { createClient } from '@/utils/supabase/client';
 
-// Wrapper para Fetch API com tratamento de erro robusto
+// Helper para limpar URLs duplas (ex: /api/v1//instance)
+const cleanUrl = (base: string | undefined, path: string) => {
+    if (!base) return path;
+    const cleanBase = base.endsWith('/') ? base.slice(0, -1) : base;
+    const cleanPath = path.startsWith('/') ? path : `/${path}`;
+    return `${cleanBase}${cleanPath}`;
+};
+
 const getHeaders = async () => {
     const supabase = createClient();
     const { data: { session } } = await supabase.auth.getSession();
@@ -12,10 +19,8 @@ const getHeaders = async () => {
     };
     
     if (session) {
-        // Authenticated request
         headers['Authorization'] = `Bearer ${session.access_token}`;
         
-        // Tentativa de obter company_id do metadata
         const companyId = session.user.user_metadata?.company_id;
         if (companyId) {
             headers['x-company-id'] = companyId;
@@ -28,7 +33,9 @@ export const api = {
   get: async (endpoint: string) => {
     try {
       const headers = await getHeaders();
-      const response = await fetch(`${BACKEND_URL}${endpoint}`, {
+      const url = cleanUrl(BACKEND_URL, endpoint);
+      
+      const response = await fetch(url, {
         method: 'GET',
         headers
       });
@@ -48,7 +55,9 @@ export const api = {
   post: async (endpoint: string, body: any) => {
     try {
       const headers = await getHeaders();
-      const response = await fetch(`${BACKEND_URL}${endpoint}`, {
+      const url = cleanUrl(BACKEND_URL, endpoint);
+
+      const response = await fetch(url, {
         method: 'POST',
         headers,
         body: JSON.stringify(body)
@@ -59,7 +68,6 @@ export const api = {
         throw new Error(`API Error ${response.status}: ${errorBody}`);
       }
 
-      // Tenta fazer parse do JSON, mas se não tiver corpo (ex: 204), retorna null
       const text = await response.text();
       return text ? JSON.parse(text) : {};
     } catch (error) {
@@ -71,7 +79,9 @@ export const api = {
   delete: async (endpoint: string) => {
     try {
         const headers = await getHeaders();
-        const response = await fetch(`${BACKEND_URL}${endpoint}`, {
+        const url = cleanUrl(BACKEND_URL, endpoint);
+        
+        const response = await fetch(url, {
             method: 'DELETE',
             headers
         });

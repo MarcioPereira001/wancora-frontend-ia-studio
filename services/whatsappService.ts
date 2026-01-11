@@ -64,7 +64,6 @@ export const whatsappService = {
       const supabase = createClient();
       const { data: { session } } = await supabase.auth.getSession();
       
-      // Validação Crítica: Garante que o ID existe antes de usar na query
       if (!session?.user?.id) {
           throw new Error("Sessão expirada. Por favor, recarregue a página.");
       }
@@ -76,13 +75,12 @@ export const whatsappService = {
         .single();
       
       if (profileError || !profile?.company_id) {
-          console.error("Profile Error:", profileError);
           throw new Error("Usuário sem empresa vinculada.");
       }
 
       const displayName = instanceName || (sessionId === 'default' ? 'Principal' : sessionId);
 
-      // 1. Upsert no Supabase para garantir que o registro exista com status 'connecting'
+      // 1. Upsert no Supabase
       const { data: instanceData, error: dbError } = await supabase
         .from('instances')
         .upsert({ 
@@ -101,9 +99,14 @@ export const whatsappService = {
       }
 
       // 2. Chama API do Backend para iniciar o processo
-      await api.post('/instance/connect', {
-        sessionId: sessionId,
-        companyId: profile.company_id
+      // MUDANÇA: Endpoint alterado para /instance/create que é o padrão REST mais comum para iniciar instâncias
+      // Payload expandido para garantir que o backend receba os identificadores corretos
+      await api.post('/instance/create', {
+        id: sessionId,          // Para backends que usam 'id'
+        sessionId: sessionId,   // Para backends que usam 'sessionId'
+        name: displayName,      // Nome display
+        companyId: profile.company_id,
+        webhook: true           // Habilitar webhooks se suportado
       });
       
       return instanceData as Instance;
@@ -125,6 +128,7 @@ export const whatsappService = {
 
       if (!profile?.company_id) throw new Error("Usuário sem empresa.");
 
+      // Endpoint padrão para delete/logout
       await api.delete(`/instance/logout/${sessionId}`);
       
       await supabase
