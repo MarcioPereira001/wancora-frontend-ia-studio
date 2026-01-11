@@ -383,7 +383,7 @@ function ConnectionCard({ instance }: { instance: Instance }) {
                         <div>
                             <h3 className="text-white font-bold text-lg">Sincronização Completa</h3>
                             <p className="text-zinc-500 text-xs mt-2 max-w-[220px] mx-auto font-mono">
-                                > Uplink estabelecido<br/>> Mensagens fluindo...
+                                &gt; Uplink estabelecido<br/>&gt; Mensagens fluindo...
                             </p>
                         </div>
                     </div>
@@ -392,7 +392,7 @@ function ConnectionCard({ instance }: { instance: Instance }) {
                         <p className="text-zinc-400 text-xs font-mono uppercase tracking-widest mb-2 animate-pulse">Aguardando Escaneamento...</p>
                         {renderQrCode()}
                         <div className="mt-4 px-4 py-2 bg-zinc-900/80 rounded border border-zinc-800 text-xs text-zinc-500 font-mono">
-                            WhatsApp > Menu > Aparelhos Conectados
+                            WhatsApp &gt; Menu &gt; Aparelhos Conectados
                         </div>
                     </div>
                 ) : (
