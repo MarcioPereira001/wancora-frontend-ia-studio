@@ -1,7 +1,0 @@
-{
-  "name": "Wancora CRM",
-  "description": "A high-performance B2B Multi-Tenant SaaS for WhatsApp automation, CRM, and AI Agents with a Cyberpunk Corporate aesthetic.",
-  "requestFramePermissions": [
-    "microphone"
-  ]
-}
