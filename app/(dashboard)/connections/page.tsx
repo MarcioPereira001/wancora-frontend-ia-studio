@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
-import { Smartphone, RefreshCw, Power, QrCode, Trash2, Wifi, Activity, Terminal, MessageCircle, CheckCircle2, Loader2, Plus, Lock, AlertCircle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Smartphone, RefreshCw, Power, Trash2, Wifi, Terminal, MessageCircle, CheckCircle2, Loader2, Plus, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { whatsappService } from '@/services/whatsappService';
 import { Instance } from '@/types';
@@ -58,7 +58,7 @@ export default function ConnectionsPage() {
     return () => { supabase.removeChannel(channel); };
   }, [company?.id, supabase]);
 
-  // --- MONITORAMENTO CRÍTICO DO MODAL ---
+  // --- MONITORAMENTO DO MODAL (QR CODE) ---
   useEffect(() => {
     if (!isModalOpen || !currentInstance?.session_id) return;
 
@@ -66,23 +66,23 @@ export default function ConnectionsPage() {
     let intervalId: ReturnType<typeof setInterval>;
 
     const checkStatus = async () => {
-        // Busca direta para garantir dados frescos
-        const freshData = await whatsappService.getOneInstance(sessionId);
+        // Busca direta (bypassing cache se possível)
+        const { data: freshData, error } = await supabase
+            .from('instances')
+            .select('*')
+            .eq('session_id', sessionId)
+            .maybeSingle();
         
-        // 1. Instância foi deletada pelo Backend? (Caso de erro fatal no backend)
-        if (freshData === null) {
-            if (step === 'initializing' || step === 'qr_scan') {
-                setStep('input');
-                setIsModalOpen(false);
-                addToast({ type: 'error', title: 'Conexão Perdida', message: 'O servidor reiniciou ou perdeu a conexão. Tente novamente.' });
-            }
+        if (error || !freshData) {
+            // Se sumiu do banco, pode ter sido deletado ou erro fatal
+            console.log("Instância não encontrada ou erro:", error);
             return;
         }
 
-        // 2. Instância Existe - Atualiza Estado
-        setCurrentInstance(freshData);
+        // Atualiza estado local
+        setCurrentInstance(freshData as Instance);
 
-        // Lógica de Prioridade de Estado
+        // 1. CONECTADO
         if (freshData.status === 'connected') {
             if (step !== 'success') {
                 setStep('success');
@@ -94,8 +94,8 @@ export default function ConnectionsPage() {
                 }, 2000);
             }
         } 
-        // Backend usa 'qr_ready' para sinalizar QR disponível
-        else if (freshData.qrcode_url && (freshData.status === 'qr_ready' || freshData.status === 'qrcode' || freshData.status === 'connecting')) {
+        // 2. QR CODE DISPONÍVEL (Qualquer status que não seja connected, se tiver QR string, mostre!)
+        else if (freshData.qrcode_url && freshData.qrcode_url.length > 10) {
             if (step !== 'qr_scan') setStep('qr_scan');
         }
     };
@@ -103,18 +103,23 @@ export default function ConnectionsPage() {
     // Executa imediatamente
     checkStatus();
 
-    // Polling de 1.5s
-    intervalId = setInterval(checkStatus, 1500);
+    // Polling a cada 2s (suficiente para não travar a rede)
+    intervalId = setInterval(checkStatus, 2000);
 
-    // Realtime via Supabase
+    // Realtime via Supabase (Backup do Polling)
     const modalChannel = supabase
       .channel(`instance-modal-${sessionId}`)
       .on('postgres_changes', { 
-          event: '*',
+          event: 'UPDATE', 
           schema: 'public', 
           table: 'instances', 
           filter: `session_id=eq.${sessionId}` 
-      }, () => checkStatus())
+      }, (payload) => {
+          // Reagir imediatamente ao evento do banco
+          const newRow = payload.new as Instance;
+          if (newRow.qrcode_url) setStep('qr_scan');
+          if (newRow.status === 'connected') setStep('success');
+      })
       .subscribe();
 
     return () => { 
@@ -129,24 +134,54 @@ export default function ConnectionsPage() {
       setCurrentInstance(null);
   }
 
-  const handleStartProtocol = async () => {
-      if(!newSessionName.trim()) return;
+  const handleStartProtocol = async (sessionNameOverride?: string) => {
+      const nameToUse = sessionNameOverride || newSessionName;
+      if(!nameToUse.trim()) return;
+      
       setStep('initializing');
+      setNewSessionName(nameToUse); // Garante que o input mostre o nome se for restart
       
       try {
-          const sanitized = newSessionName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-          const randomSuffix = Math.random().toString(36).substring(2, 6);
-          const sessionId = `${sanitized}-${randomSuffix}`;
+          // Sanitiza nome para criar ID
+          const sanitized = nameToUse.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+          // Se for restart, usa o nome exato como ID se possível, ou gera novo se for criação
+          const sessionId = sessionNameOverride ? sanitized : `${sanitized}-${Math.random().toString(36).substring(2, 6)}`;
           
-          const newInstance = await whatsappService.connectInstance(sessionId, newSessionName);
+          const newInstance = await whatsappService.connectInstance(sessionId, nameToUse);
           setCurrentInstance(newInstance);
           
+          // Se já vier com QR (raro), atualiza
           if(newInstance.qrcode_url) setStep('qr_scan');
 
       } catch (error: any) {
           console.error(error);
-          addToast({ type: 'error', title: 'Erro de Protocolo', message: error.message });
+          addToast({ type: 'error', title: 'Falha no Protocolo', message: error.message });
           setStep('input');
+      }
+  };
+
+  // Função chamada pelo botão de Restart do Card
+  const handleRestart = async (instance: Instance) => {
+      // 1. Abre o modal
+      setIsModalOpen(true);
+      setStep('initializing');
+      setNewSessionName(instance.name);
+      
+      try {
+          // 2. Tenta fazer logout forçado primeiro para limpar o backend
+          await whatsappService.logoutInstance(instance.session_id);
+      } catch (e) {
+          console.log("Erro ao limpar sessão antiga, continuando...", e);
+      }
+
+      // 3. Reinicia processo com o MESMO session_id para manter histórico se possível
+      // Ou gera um novo se preferir limpar tudo. Aqui vamos recriar com o mesmo ID para tentar manter consistência.
+      try {
+          const newInstance = await whatsappService.connectInstance(instance.session_id, instance.name);
+          setCurrentInstance(newInstance);
+      } catch (error: any) {
+          addToast({ type: 'error', title: 'Erro ao reiniciar', message: error.message });
+          setIsModalOpen(false);
       }
   };
 
@@ -186,7 +221,12 @@ export default function ConnectionsPage() {
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
         {instances.map((instance) => (
-            <ConnectionCard key={instance.id} instance={instance} refresh={fetchInstances} />
+            <ConnectionCard 
+                key={instance.id} 
+                instance={instance} 
+                refresh={fetchInstances} 
+                onRestart={() => handleRestart(instance)}
+            />
         ))}
 
         {Array.from({ length: Math.max(0, limit - instances.length) }).map((_, i) => (
@@ -236,7 +276,7 @@ export default function ConnectionsPage() {
                           />
                       </div>
                       <div className="flex justify-end pt-4">
-                          <Button onClick={handleStartProtocol} disabled={!newSessionName.trim()} className="w-full">
+                          <Button onClick={() => handleStartProtocol()} disabled={!newSessionName.trim()} className="w-full">
                               Iniciar Protocolo de Conexão
                           </Button>
                       </div>
@@ -311,8 +351,8 @@ export default function ConnectionsPage() {
   );
 }
 
-// Card Atualizado com botão de Lixeira
-const ConnectionCard: React.FC<{ instance: Instance, refresh: () => void }> = ({ instance, refresh }) => {
+// Card Atualizado com botão de Lixeira e Restart
+const ConnectionCard: React.FC<{ instance: Instance, refresh: () => void, onRestart: () => void }> = ({ instance, refresh, onRestart }) => {
     const { addToast } = useToast();
     const [loadingAction, setLoadingAction] = useState(false);
     
@@ -348,26 +388,45 @@ const ConnectionCard: React.FC<{ instance: Instance, refresh: () => void }> = ({
         <div className="group bg-zinc-950/50 border border-zinc-800 hover:border-primary/30 rounded-2xl p-6 flex items-center justify-between transition-all">
             <div className="flex items-center gap-4">
                 <div className={cn(
-                    "w-12 h-12 rounded-xl flex items-center justify-center border shadow-inner",
+                    "w-12 h-12 rounded-xl flex items-center justify-center border shadow-inner relative",
                     instance.status === 'connected' ? 'bg-zinc-900 border-primary text-primary' : 'bg-zinc-900 border-zinc-700 text-zinc-500'
                 )}>
                     {instance.status === 'connected' ? <Wifi className="w-6 h-6" /> : <Power className="w-6 h-6" />}
+                    {instance.status !== 'connected' && (
+                        <div className="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full border-2 border-zinc-950 animate-pulse"></div>
+                    )}
                 </div>
                 <div>
                     <h3 className="font-bold text-white text-lg">{instance.name}</h3>
                     <div className="flex items-center gap-2">
                         <span className={cn("w-2 h-2 rounded-full", instance.status === 'connected' ? "bg-green-500 animate-pulse" : "bg-red-500")} />
-                        <span className="text-xs text-zinc-500 uppercase font-mono">{instance.status}</span>
+                        <span className="text-xs text-zinc-500 uppercase font-mono">
+                            {instance.status === 'qr_ready' ? 'AGUARDANDO LEITURA' : instance.status}
+                        </span>
                     </div>
                 </div>
             </div>
             
             <div className="flex gap-2">
+                {instance.status !== 'connected' && (
+                    <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        onClick={onRestart} 
+                        disabled={loadingAction} 
+                        className="hover:bg-blue-500/10 hover:text-blue-500" 
+                        title="Reiniciar Conexão / Gerar QR Code"
+                    >
+                        <RotateCcw className="w-5 h-5" />
+                    </Button>
+                )}
+
                 {instance.status === 'connected' && (
                     <Button variant="ghost" size="icon" onClick={handleLogout} disabled={loadingAction} className="hover:bg-yellow-500/10 hover:text-yellow-500" title="Desconectar">
                         <Power className="w-5 h-5" />
                     </Button>
                 )}
+                
                 <Button variant="ghost" size="icon" onClick={handleDelete} disabled={loadingAction} className="hover:bg-red-500/10 hover:text-red-500" title="Excluir Instância">
                     {loadingAction ? <Loader2 className="w-5 h-5 animate-spin" /> : <Trash2 className="w-5 h-5" />}
                 </Button>
