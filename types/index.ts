@@ -35,7 +35,11 @@ export interface WhatsAppInstance {
   qrcode?: string;
   session_id: string;
   updated_at: string;
+  qrcode_url?: string;
+  battery_level?: number;
 }
+
+export type Instance = WhatsAppInstance;
 
 export interface ChatContact {
   id: string;
@@ -57,6 +61,8 @@ export interface Message {
   created_at: string;
   type: 'text' | 'image' | 'video' | 'audio';
   status: 'sent' | 'delivered' | 'read' | 'failed';
+  content?: string;
+  message_type?: string;
 }
 
 export interface Campaign {
