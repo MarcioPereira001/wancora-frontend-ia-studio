@@ -61,14 +61,15 @@ export const whatsappService = {
   getOneInstance: async (sessionId: string): Promise<Instance | null> => {
     try {
         const supabase = createClient();
-        // Adicionado cache-busting para garantir leitura fresca
+        // maybeSingle evita erro se não encontrar ou se houver duplicidade momentânea (retorna null ou o primeiro)
         const { data } = await supabase
             .from('instances')
             .select('*')
             .eq('session_id', sessionId)
-            .single();
+            .maybeSingle();
         return data as Instance;
     } catch (error) {
+        console.error("Erro ao buscar instância específica:", error);
         return null;
     }
   },
@@ -95,7 +96,7 @@ export const whatsappService = {
 
       const displayName = instanceName || (sessionId === 'default' ? 'Principal' : sessionId);
 
-      // 1. Upsert no Supabase para garantir que o registro exista para monitoramento Realtime
+      // 1. Upsert no Supabase - Define status como connecting e limpa QR Code antigo
       const { data: instanceData, error: dbError } = await supabase
         .from('instances')
         .upsert({ 
@@ -114,6 +115,7 @@ export const whatsappService = {
       }
 
       // 2. Chama API do Backend para iniciar o processo (/session/start)
+      // O backend irá atualizar a tabela instances com o QR Code assim que o Baileys gerar
       await api.post('/session/start', {
         sessionId: sessionId,
         companyId: profile.company_id
@@ -127,7 +129,6 @@ export const whatsappService = {
     }
   },
 
-  // Apenas desconecta (Logout), mantendo o registro no banco
   logoutInstance: async (sessionId: string = 'default') => {
     try {
       const supabase = createClient();
@@ -158,7 +159,6 @@ export const whatsappService = {
     }
   },
 
-  // NOVO: Exclui a instância permanentemente (Lixeira)
   deleteInstance: async (sessionId: string) => {
       try {
         const supabase = createClient();
@@ -168,17 +168,15 @@ export const whatsappService = {
         const { data: profile } = await supabase.from('profiles').select('company_id').eq('id', session.user.id).single();
         if (!profile?.company_id) throw new Error("Usuário sem empresa.");
   
-        // 1. Tenta desconectar no backend primeiro (se estiver rodando)
         try {
             await api.post('/session/logout', {
                 sessionId: sessionId,
                 companyId: profile.company_id
             });
         } catch (e) {
-            console.log("Backend já estava desconectado ou inacessível, prosseguindo com delete do DB.");
+            console.log("Backend já desconectado, continuando exclusão.");
         }
   
-        // 2. Remove do Supabase
         const { error } = await supabase
             .from('instances')
             .delete()

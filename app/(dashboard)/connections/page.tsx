@@ -32,14 +32,6 @@ export default function ConnectionsPage() {
   const [newSessionName, setNewSessionName] = useState('');
   const [currentInstance, setCurrentInstance] = useState<Instance | null>(null);
 
-  // Ref para controlar o polling e evitar closures obsoletas
-  const currentInstanceRef = useRef<Instance | null>(null);
-  
-  // Sincroniza Ref com State
-  useEffect(() => {
-    currentInstanceRef.current = currentInstance;
-  }, [currentInstance]);
-
   // Busca inicial
   const fetchInstances = async () => {
       try {
@@ -66,52 +58,46 @@ export default function ConnectionsPage() {
     return () => { supabase.removeChannel(channel); };
   }, [company?.id, supabase]);
 
-  // Monitoramento Específico para o Modal (QR Code)
+  // --- MONITORAMENTO DO MODAL DE CONEXÃO ---
   useEffect(() => {
     if (!isModalOpen || !currentInstance?.session_id) return;
 
     const sessionId = currentInstance.session_id;
+    let intervalId: NodeJS.Timeout;
 
-    // Função de verificação de estado
     const checkStatus = async () => {
-        // Usa o Ref para garantir que estamos comparando com o dado mais recente em memória
-        // e não com o valor do closure do intervalo
-        const currentRef = currentInstanceRef.current;
-        
-        // Se já conectou, para de verificar
-        if (currentRef?.status === 'connected') return;
-
+        // Busca direta sem depender de refs complicadas
         const freshData = await whatsappService.getOneInstance(sessionId);
         
         if (freshData) {
-            // Atualiza o state local se houver mudança relevante
-            if (
-                freshData.qrcode_url !== currentRef?.qrcode_url || 
-                freshData.status !== currentRef?.status
-            ) {
-                console.log("Atualização detectada:", freshData.status);
-                setCurrentInstance(freshData);
+            setCurrentInstance(freshData); // Atualiza dados da tela (incluindo QR Code string)
 
-                // Lógica de Transição de Estado
-                if (freshData.status === 'connected') {
+            // Lógica de Estado: A prioridade é CONECTADO > QR CODE > INICIALIZANDO
+            if ((freshData.status as string) === 'connected') {
+                if (step !== 'success') {
                     setStep('success');
-                    addToast({ type: 'success', title: 'Conectado!', message: 'Instância sincronizada com sucesso.' });
+                    addToast({ type: 'success', title: 'Conectado!', message: 'Instância sincronizada.' });
                     setTimeout(() => {
                         setIsModalOpen(false);
                         resetModal();
-                        fetchInstances(); // Atualiza lista principal
+                        fetchInstances();
                     }, 2000);
-                } else if (freshData.qrcode_url) {
-                    setStep('qr_scan');
                 }
-            }
+            } else if (freshData.qrcode_url && freshData.status !== 'connected') {
+                // Se tem QR e não tá conectado, mostra QR
+                if (step !== 'qr_scan') setStep('qr_scan');
+            } 
+            // Se não tem QR e não tá conectado, continua 'initializing' (padrão)
         }
     };
 
-    // 1. Polling de Segurança (A cada 2s)
-    const pollInterval = setInterval(checkStatus, 2000);
+    // 1. Executa imediatamente
+    checkStatus();
 
-    // 2. Realtime (Para resposta rápida)
+    // 2. Polling agressivo (2s)
+    intervalId = setInterval(checkStatus, 2000);
+
+    // 3. Realtime (Backup)
     const modalChannel = supabase
       .channel(`instance-modal-${sessionId}`)
       .on('postgres_changes', { 
@@ -119,26 +105,20 @@ export default function ConnectionsPage() {
           schema: 'public', 
           table: 'instances', 
           filter: `session_id=eq.${sessionId}` 
-      }, async (payload) => {
-          // Quando receber update, força uma checagem completa
-          await checkStatus();
-      })
+      }, () => checkStatus())
       .subscribe();
-
-    // Executa uma vez imediatamente para caso o QR já tenha sido gerado
-    checkStatus();
 
     return () => { 
         supabase.removeChannel(modalChannel);
-        clearInterval(pollInterval);
+        clearInterval(intervalId);
     };
-  }, [isModalOpen, currentInstance?.session_id, supabase, addToast]); // Dependências reduzidas para evitar recriação desnecessária
+  }, [isModalOpen, currentInstance?.session_id, step, supabase, addToast]); 
+  // Nota: `step` na dependência garante que se mudar pra 'qr_scan', o efeito re-roda mas a lógica if(step !== 'qr_scan') previne loops infinitos de setStep.
 
   const resetModal = () => {
       setStep('input');
       setNewSessionName('');
       setCurrentInstance(null);
-      currentInstanceRef.current = null;
   }
 
   const handleStartProtocol = async () => {
@@ -150,11 +130,10 @@ export default function ConnectionsPage() {
           const randomSuffix = Math.random().toString(36).substring(2, 6);
           const sessionId = `${sanitized}-${randomSuffix}`;
           
-          // Cria registro e dispara backend
           const newInstance = await whatsappService.connectInstance(sessionId, newSessionName);
           setCurrentInstance(newInstance);
           
-          // Se o backend for muito rápido e já tiver QR (raro, mas possível)
+          // Se já vier com QR (raro), atualiza
           if(newInstance.qrcode_url) setStep('qr_scan');
 
       } catch (error: any) {
@@ -295,12 +274,10 @@ export default function ConnectionsPage() {
                               Menu &gt; Aparelhos Conectados &gt; Conectar
                           </p>
                       </div>
-                      {/* Status indicador se mudar para connecting enquanto escaneia */}
-                      {currentInstance.status === 'connecting' && !currentInstance.qrcode_url && (
-                          <div className="flex items-center gap-2 text-yellow-500 text-sm font-bold animate-pulse">
-                              <RefreshCw className="w-4 h-4 animate-spin" /> Lendo dados...
-                          </div>
-                      )}
+                      {/* Status indicador */}
+                      <div className="flex items-center gap-2 text-yellow-500 text-sm font-bold animate-pulse">
+                          <RefreshCw className="w-4 h-4 animate-spin" /> Aguardando leitura...
+                      </div>
                   </div>
               )}
 

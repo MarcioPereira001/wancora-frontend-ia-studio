@@ -35,7 +35,7 @@ pnpm-debug.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# Vite / Legacy cleanup (Ignorar se existirem)
+# Vite / Legacy cleanup
 vite.config.ts
 index.html
 index.tsx
