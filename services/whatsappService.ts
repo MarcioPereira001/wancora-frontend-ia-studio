@@ -3,7 +3,7 @@ import { supabase } from './supabaseClient';
 import { Instance } from '../types';
 
 export const whatsappService = {
-  // Busca o status da instância principal (Backward Compatibility para o Chat)
+  // Busca o status da instância principal (Backward Compatibility)
   getInstanceStatus: async (): Promise<Instance | null> => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -33,7 +33,7 @@ export const whatsappService = {
     }
   },
 
-  // NOVO: Busca TODAS as instâncias da empresa para o Grid de Conexões
+  // Busca TODAS as instâncias da empresa
   getAllInstances: async (): Promise<Instance[]> => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -64,27 +64,33 @@ export const whatsappService = {
       
       if (!profile?.company_id) throw new Error("Usuário sem empresa.");
 
-      // 1. Atualiza status local para 'connecting' para feedback visual imediato
+      // 1. Verifica se já existe a instância
       const { data: existing } = await supabase
         .from('instances')
-        .select('id')
+        .select('id, status')
         .eq('company_id', profile.company_id)
         .eq('session_id', sessionId)
         .maybeSingle();
       
       if (existing) {
-          await supabase.from('instances').update({ status: 'connecting', qrcode_url: null }).eq('id', existing.id);
+          // Atualiza para connecting para dar feedback visual
+          await supabase.from('instances')
+            .update({ status: 'connecting', qrcode_url: null, updated_at: new Date().toISOString() })
+            .eq('id', existing.id);
       } else {
-          // Cria registro se não existir
-          await supabase.from('instances').insert({ 
+          // Cria registro inicial
+          const { error: insertError } = await supabase.from('instances').insert({ 
               company_id: profile.company_id, 
               session_id: sessionId, 
               status: 'connecting',
-              name: sessionId === 'default' ? 'Principal' : sessionId
+              name: sessionId === 'default' ? 'Principal' : sessionId,
+              updated_at: new Date().toISOString()
           });
+          if (insertError) throw insertError;
       }
 
       // 2. Chama API do Render para iniciar o processo do Baileys
+      // OBS: O Backend deve atualizar a tabela 'instances' com o QR Code via Supabase Admin
       const response = await api.post('/instance/connect', {
         sessionId: sessionId,
         companyId: profile.company_id
