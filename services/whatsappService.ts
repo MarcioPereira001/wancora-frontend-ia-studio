@@ -3,7 +3,7 @@ import { createClient } from '@/utils/supabase/client';
 import { Instance } from '../types';
 
 export const whatsappService = {
-  // Busca o status da instância principal
+  // Busca o status da instância principal via Banco de Dados (Supabase)
   getInstanceStatus: async (): Promise<Instance | null> => {
     try {
       const supabase = createClient();
@@ -80,7 +80,7 @@ export const whatsappService = {
 
       const displayName = instanceName || (sessionId === 'default' ? 'Principal' : sessionId);
 
-      // 1. Upsert no Supabase
+      // 1. Upsert no Supabase para garantir que o registro exista para monitoramento Realtime
       const { data: instanceData, error: dbError } = await supabase
         .from('instances')
         .upsert({ 
@@ -99,14 +99,10 @@ export const whatsappService = {
       }
 
       // 2. Chama API do Backend para iniciar o processo
-      // MUDANÇA: Endpoint alterado para /instance/create que é o padrão REST mais comum para iniciar instâncias
-      // Payload expandido para garantir que o backend receba os identificadores corretos
-      await api.post('/instance/create', {
-        id: sessionId,          // Para backends que usam 'id'
-        sessionId: sessionId,   // Para backends que usam 'sessionId'
-        name: displayName,      // Nome display
-        companyId: profile.company_id,
-        webhook: true           // Habilitar webhooks se suportado
+      // CORREÇÃO: Endpoint ajustado para bater com routes.js (/session/start)
+      await api.post('/session/start', {
+        sessionId: sessionId,
+        companyId: profile.company_id
       });
       
       return instanceData as Instance;
@@ -128,9 +124,13 @@ export const whatsappService = {
 
       if (!profile?.company_id) throw new Error("Usuário sem empresa.");
 
-      // Endpoint padrão para delete/logout
-      await api.delete(`/instance/logout/${sessionId}`);
+      // CORREÇÃO: Endpoint ajustado para bater com routes.js (/session/logout) e método POST
+      await api.post('/session/logout', {
+          sessionId: sessionId,
+          companyId: profile.company_id
+      });
       
+      // Atualiza visualmente no banco
       await supabase
         .from('instances')
         .update({ status: 'disconnected', qrcode_url: null })

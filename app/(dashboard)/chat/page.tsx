@@ -80,7 +80,7 @@ export default function ChatPage() {
   }, [activeContact, supabase]);
 
   const handleSendMessage = async () => {
-      if(!input.trim() || !activeContact) return;
+      if(!input.trim() || !activeContact || !user?.company_id) return;
       if(isDisconnected) {
           addToast({ type: 'warning', title: 'Offline', message: 'WhatsApp desconectado.' });
           return;
@@ -97,7 +97,7 @@ export default function ChatPage() {
           status: 'sent',
           created_at: new Date().toISOString(),
           session_id: 'default',
-          company_id: user?.company_id || ''
+          company_id: user.company_id
       };
 
       setMessages(prev => [...prev, tempMsg]);
@@ -105,12 +105,16 @@ export default function ChatPage() {
       setTimeout(scrollToBottom, 50);
 
       try {
-          await api.post('/messages/send', {
-              jid: activeContact.remote_jid,
-              message: tempMsg.content
+          // CORREÇÃO: Rota /message/send (singular) e payload completo conforme routes.js
+          await api.post('/message/send', {
+              sessionId: 'default', // Assumindo sessão padrão
+              companyId: user.company_id,
+              to: activeContact.remote_jid,
+              text: tempMsg.content
           });
       } catch (error) {
           addToast({ type: 'error', title: 'Erro', message: 'Falha ao enviar mensagem.' });
+          console.error(error);
       }
   };
 
