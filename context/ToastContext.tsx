@@ -21,7 +21,7 @@ interface ToastContextData {
 export const ToastContext = createContext<ToastContextData>({} as ToastContextData);
 
 interface ToastProviderProps {
-  children: React.ReactNode;
+  children?: React.ReactNode;
 }
 
 export function ToastProvider({ children }: ToastProviderProps) {

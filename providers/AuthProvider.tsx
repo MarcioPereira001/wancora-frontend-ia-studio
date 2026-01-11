@@ -7,7 +7,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { useToast } from '@/hooks/useToast';
 
 interface AuthProviderProps {
-  children: React.ReactNode;
+  children?: React.ReactNode;
 }
 
 export default function AuthProvider({ children }: AuthProviderProps) {
