@@ -32,6 +32,14 @@ export default function ConnectionsPage() {
   const [newSessionName, setNewSessionName] = useState('');
   const [currentInstance, setCurrentInstance] = useState<Instance | null>(null);
 
+  // Ref para controlar o polling e evitar closures obsoletas
+  const currentInstanceRef = useRef<Instance | null>(null);
+  
+  // Sincroniza Ref com State
+  useEffect(() => {
+    currentInstanceRef.current = currentInstance;
+  }, [currentInstance]);
+
   // Busca inicial
   const fetchInstances = async () => {
       try {
@@ -47,7 +55,7 @@ export default function ConnectionsPage() {
     fetchInstances();
     if (!company?.id) return;
 
-    // Monitoramento Global da Lista
+    // Monitoramento Global da Lista (Para atualizar os cards fora do modal)
     const channel = supabase
       .channel('instances-global')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'instances', filter: `company_id=eq.${company.id}` }, 
@@ -58,74 +66,79 @@ export default function ConnectionsPage() {
     return () => { supabase.removeChannel(channel); };
   }, [company?.id, supabase]);
 
-  // Monitoramento Específico para o Modal (QR Code Realtime + Polling Híbrido)
+  // Monitoramento Específico para o Modal (QR Code)
   useEffect(() => {
     if (!isModalOpen || !currentInstance?.session_id) return;
 
-    // 1. Polling de Segurança (A cada 2s)
-    // Garante que se o Websocket falhar, o QR code aparece via fetch normal
-    const pollInterval = setInterval(async () => {
-        if(step === 'success') return;
+    const sessionId = currentInstance.session_id;
+
+    // Função de verificação de estado
+    const checkStatus = async () => {
+        // Usa o Ref para garantir que estamos comparando com o dado mais recente em memória
+        // e não com o valor do closure do intervalo
+        const currentRef = currentInstanceRef.current;
         
-        const freshData = await whatsappService.getOneInstance(currentInstance.session_id);
-        if(freshData) {
-            // Atualiza estado se mudou algo crítico
-            if(freshData.qrcode_url !== currentInstance.qrcode_url || freshData.status !== currentInstance.status) {
+        // Se já conectou, para de verificar
+        if (currentRef?.status === 'connected') return;
+
+        const freshData = await whatsappService.getOneInstance(sessionId);
+        
+        if (freshData) {
+            // Atualiza o state local se houver mudança relevante
+            if (
+                freshData.qrcode_url !== currentRef?.qrcode_url || 
+                freshData.status !== currentRef?.status
+            ) {
+                console.log("Atualização detectada:", freshData.status);
                 setCurrentInstance(freshData);
-                
-                if (freshData.qrcode_url && step === 'initializing') {
-                    setStep('qr_scan');
-                }
+
+                // Lógica de Transição de Estado
                 if (freshData.status === 'connected') {
                     setStep('success');
                     addToast({ type: 'success', title: 'Conectado!', message: 'Instância sincronizada com sucesso.' });
                     setTimeout(() => {
                         setIsModalOpen(false);
                         resetModal();
-                    }, 3000);
+                        fetchInstances(); // Atualiza lista principal
+                    }, 2000);
+                } else if (freshData.qrcode_url) {
+                    setStep('qr_scan');
                 }
             }
         }
-    }, 2000);
+    };
 
-    // 2. Realtime
+    // 1. Polling de Segurança (A cada 2s)
+    const pollInterval = setInterval(checkStatus, 2000);
+
+    // 2. Realtime (Para resposta rápida)
     const modalChannel = supabase
-      .channel(`instance-modal-${currentInstance.session_id}`)
+      .channel(`instance-modal-${sessionId}`)
       .on('postgres_changes', { 
           event: 'UPDATE', 
           schema: 'public', 
           table: 'instances', 
-          filter: `session_id=eq.${currentInstance.session_id}` 
-      }, (payload) => {
-          const updated = payload.new as Instance;
-          setCurrentInstance(updated);
-
-          // Transições de Estado Automáticas
-          if (updated.qrcode_url && step === 'initializing') {
-              setStep('qr_scan');
-          }
-          if (updated.status === 'connected') {
-              setStep('success');
-              addToast({ type: 'success', title: 'Conectado!', message: 'Instância sincronizada com sucesso.' });
-              setTimeout(() => {
-                  setIsModalOpen(false);
-                  resetModal();
-              }, 3000);
-          }
+          filter: `session_id=eq.${sessionId}` 
+      }, async (payload) => {
+          // Quando receber update, força uma checagem completa
+          await checkStatus();
       })
       .subscribe();
+
+    // Executa uma vez imediatamente para caso o QR já tenha sido gerado
+    checkStatus();
 
     return () => { 
         supabase.removeChannel(modalChannel);
         clearInterval(pollInterval);
     };
-  }, [isModalOpen, currentInstance?.session_id, step, supabase, addToast]);
-
+  }, [isModalOpen, currentInstance?.session_id, supabase, addToast]); // Dependências reduzidas para evitar recriação desnecessária
 
   const resetModal = () => {
       setStep('input');
       setNewSessionName('');
       setCurrentInstance(null);
+      currentInstanceRef.current = null;
   }
 
   const handleStartProtocol = async () => {
@@ -303,7 +316,7 @@ export default function ConnectionsPage() {
                               A instância <strong>{currentInstance?.name}</strong> está online e pronta para uso.
                           </p>
                       </div>
-                      <Button onClick={() => setIsModalOpen(false)} className="bg-zinc-800 hover:bg-zinc-700 text-white min-w-[150px]">
+                      <Button onClick={() => { setIsModalOpen(false); fetchInstances(); }} className="bg-zinc-800 hover:bg-zinc-700 text-white min-w-[150px]">
                           Fechar Janela
                       </Button>
                   </div>

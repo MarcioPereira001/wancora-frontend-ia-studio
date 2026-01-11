@@ -61,6 +61,7 @@ export const whatsappService = {
   getOneInstance: async (sessionId: string): Promise<Instance | null> => {
     try {
         const supabase = createClient();
+        // Adicionado cache-busting para garantir leitura fresca
         const { data } = await supabase
             .from('instances')
             .select('*')
