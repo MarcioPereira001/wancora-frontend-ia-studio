@@ -1,6 +1,6 @@
 {
   "name": "wancora-crm-next",
-  "version": "2.0.6",
+  "version": "2.0.7",
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
@@ -21,6 +21,7 @@
     "framer-motion": "^11.0.0",
     "lucide-react": "^0.300.0",
     "next": "latest",
+    "qrcode.react": "^4.0.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "recharts": "^2.10.3",

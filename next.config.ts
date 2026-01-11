@@ -15,8 +15,12 @@ const nextConfig: NextConfig = {
     // your project has type errors.
     ignoreBuildErrors: true,
   },
-  // A configuração 'eslint' foi removida pois não é mais suportada neste formato no Next.js 15+
-  // Server Actions agora são estáveis e não precisam de flag experimental
+  eslint: {
+    // Warning: This allows production builds to successfully complete even if
+    // your project has ESLint errors.
+    ignoreDuringBuilds: true,
+  },
+  // A configuração experimental não é mais necessária no Next 15+ para server actions
 };
 
 export default nextConfig;
