@@ -47,7 +47,7 @@ export default function ConnectionsPage() {
     fetchInstances();
     if (!company?.id) return;
 
-    // Monitoramento Global da Lista
+    // Monitoramento Global da Lista (Para atualizar os cards de fundo)
     const channel = supabase
       .channel('instances-global')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'instances', filter: `company_id=eq.${company.id}` }, 
@@ -58,15 +58,16 @@ export default function ConnectionsPage() {
     return () => { supabase.removeChannel(channel); };
   }, [company?.id, supabase]);
 
-  // --- MONITORAMENTO DO MODAL (QR CODE) ---
+  // --- MONITORAMENTO CRÍTICO DO MODAL (QR CODE) ---
   useEffect(() => {
+    // Só monitora se o modal estiver aberto e tivermos um ID de sessão alvo
     if (!isModalOpen || !currentInstance?.session_id) return;
 
     const sessionId = currentInstance.session_id;
     let intervalId: ReturnType<typeof setInterval>;
 
     const checkStatus = async () => {
-        // Busca direta (bypassing cache se possível)
+        // Busca direta no Supabase (bypassing cache local do state para garantir dados frescos)
         const { data: freshData, error } = await supabase
             .from('instances')
             .select('*')
@@ -74,19 +75,19 @@ export default function ConnectionsPage() {
             .maybeSingle();
         
         if (error || !freshData) {
-            // Se sumiu do banco, pode ter sido deletado ou erro fatal
-            console.log("Instância não encontrada ou erro:", error);
+            // Se o registro sumiu ou deu erro, não faz nada por enquanto (pode ser delay de rede)
             return;
         }
 
-        // Atualiza estado local
+        // Atualiza o objeto local para refletir o banco
         setCurrentInstance(freshData as Instance);
 
-        // 1. CONECTADO
+        // 1. LÓGICA DE SUCESSO: Se estiver conectado
         if (freshData.status === 'connected') {
             if (step !== 'success') {
                 setStep('success');
                 addToast({ type: 'success', title: 'Conectado!', message: 'Instância sincronizada.' });
+                // Fecha o modal automaticamente após 2s
                 setTimeout(() => {
                     setIsModalOpen(false);
                     resetModal();
@@ -94,19 +95,23 @@ export default function ConnectionsPage() {
                 }, 2000);
             }
         } 
-        // 2. QR CODE DISPONÍVEL (Qualquer status que não seja connected, se tiver QR string, mostre!)
-        else if (freshData.qrcode_url && freshData.qrcode_url.length > 10) {
-            if (step !== 'qr_scan') setStep('qr_scan');
+        // 2. LÓGICA DE QR CODE: Prioridade total para a existência da URL
+        // Se existe URL e não está conectado, MOSTRA O QR, independente do status ser "connecting" ou "qr_ready"
+        else if (freshData.qrcode_url && freshData.qrcode_url.length > 20) {
+            if (step !== 'qr_scan') {
+                console.log("QR Code detectado, mudando etapa...");
+                setStep('qr_scan');
+            }
         }
     };
 
-    // Executa imediatamente
+    // Executa imediatamente ao montar/abrir
     checkStatus();
 
-    // Polling a cada 2s (suficiente para não travar a rede)
-    intervalId = setInterval(checkStatus, 2000);
+    // Polling de 1.5s (Looping controlado para verificar atualização do backend)
+    intervalId = setInterval(checkStatus, 1500);
 
-    // Realtime via Supabase (Backup do Polling)
+    // Realtime via Supabase (Backup do Polling para resposta instantânea)
     const modalChannel = supabase
       .channel(`instance-modal-${sessionId}`)
       .on('postgres_changes', { 
@@ -117,7 +122,7 @@ export default function ConnectionsPage() {
       }, (payload) => {
           // Reagir imediatamente ao evento do banco
           const newRow = payload.new as Instance;
-          if (newRow.qrcode_url) setStep('qr_scan');
+          if (newRow.qrcode_url && newRow.status !== 'connected') setStep('qr_scan');
           if (newRow.status === 'connected') setStep('success');
       })
       .subscribe();
@@ -134,23 +139,33 @@ export default function ConnectionsPage() {
       setCurrentInstance(null);
   }
 
-  const handleStartProtocol = async (sessionNameOverride?: string) => {
+  // Ação de Criar Nova Conexão
+  const handleStartProtocol = async (sessionNameOverride?: string, sessionIdOverride?: string) => {
       const nameToUse = sessionNameOverride || newSessionName;
       if(!nameToUse.trim()) return;
       
-      setStep('initializing');
-      setNewSessionName(nameToUse); // Garante que o input mostre o nome se for restart
+      setStep('initializing'); // Mostra spinner "Iniciando Servidor..."
+      
+      // Se for restart, já temos o nome no input, se não, limpamos
+      if(sessionNameOverride) setNewSessionName(sessionNameOverride);
       
       try {
-          // Sanitiza nome para criar ID
-          const sanitized = nameToUse.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-          // Se for restart, usa o nome exato como ID se possível, ou gera novo se for criação
-          const sessionId = sessionNameOverride ? sanitized : `${sanitized}-${Math.random().toString(36).substring(2, 6)}`;
+          // Se não tiver ID forçado (restart), cria um novo
+          let sessionId = sessionIdOverride;
           
+          if (!sessionId) {
+            const sanitized = nameToUse.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+            const randomSuffix = Math.random().toString(36).substring(2, 6);
+            sessionId = `${sanitized}-${randomSuffix}`;
+          }
+          
+          // Chama o serviço que cria no banco E dispara o backend
           const newInstance = await whatsappService.connectInstance(sessionId, nameToUse);
+          
+          // Define a instância atual para o useEffect começar a monitorar
           setCurrentInstance(newInstance);
           
-          // Se já vier com QR (raro), atualiza
+          // Se por milagre já vier com QR (muito rápido), atualiza
           if(newInstance.qrcode_url) setStep('qr_scan');
 
       } catch (error: any) {
@@ -160,25 +175,28 @@ export default function ConnectionsPage() {
       }
   };
 
-  // Função chamada pelo botão de Restart do Card
+  // Ação do Botão Restart (Reconectar)
   const handleRestart = async (instance: Instance) => {
-      // 1. Abre o modal
+      // 1. Abre o modal imediatamente com estado de loading
       setIsModalOpen(true);
       setStep('initializing');
       setNewSessionName(instance.name);
+      setCurrentInstance(instance); // Foca o monitoramento nesta instância
       
       try {
-          // 2. Tenta fazer logout forçado primeiro para limpar o backend
+          // 2. Tenta fazer logout forçado primeiro para garantir que o backend mate processos velhos
           await whatsappService.logoutInstance(instance.session_id);
+          console.log("Sessão limpa, reiniciando...");
       } catch (e) {
-          console.log("Erro ao limpar sessão antiga, continuando...", e);
+          console.log("Erro ao limpar sessão antiga (pode já estar offline), continuando...", e);
       }
 
-      // 3. Reinicia processo com o MESMO session_id para manter histórico se possível
-      // Ou gera um novo se preferir limpar tudo. Aqui vamos recriar com o mesmo ID para tentar manter consistência.
+      // 3. Pequeno delay para o backend respirar
+      await new Promise(r => setTimeout(r, 1000));
+
+      // 4. Reinicia processo com o MESMO session_id
       try {
-          const newInstance = await whatsappService.connectInstance(instance.session_id, instance.name);
-          setCurrentInstance(newInstance);
+          await handleStartProtocol(instance.name, instance.session_id);
       } catch (error: any) {
           addToast({ type: 'error', title: 'Erro ao reiniciar', message: error.message });
           setIsModalOpen(false);
@@ -249,11 +267,12 @@ export default function ConnectionsPage() {
         title={
             step === 'input' ? "Nova Conexão" : 
             step === 'success' ? "Conexão Estabelecida" :
+            step === 'qr_scan' ? "Escaneie o QR Code" :
             `Conectando: ${newSessionName}`
         }
         maxWidth="md"
       >
-          <div className="min-h-[300px] flex flex-col justify-center">
+          <div className="min-h-[350px] flex flex-col justify-center">
               
               {/* STEP 1: INPUT */}
               {step === 'input' && (
@@ -295,6 +314,9 @@ export default function ConnectionsPage() {
                           <p className="text-zinc-500 text-sm mt-2 max-w-xs mx-auto">
                               O sistema está preparando a instância segura do WhatsApp. O QR Code aparecerá em instantes.
                           </p>
+                          <p className="text-zinc-600 text-xs mt-4 font-mono">
+                              Aguardando resposta do backend...
+                          </p>
                       </div>
                       <div className="w-full bg-zinc-900/50 rounded-full h-1.5 overflow-hidden max-w-[200px]">
                           <div className="h-full bg-primary animate-progress-indeterminate"></div>
@@ -308,22 +330,24 @@ export default function ConnectionsPage() {
                       <div className="relative group p-4 bg-white rounded-xl shadow-[0_0_40px_rgba(34,197,94,0.2)]">
                           <QRCodeSVG
                               value={currentInstance.qrcode_url}
-                              size={200}
-                              level={"H"}
+                              size={220}
+                              level={"L"} // Level Low para scan mais rápido
                               includeMargin={true}
                               className="w-56 h-56 object-contain"
                           />
                           <div className="absolute top-0 left-0 w-full h-1 bg-red-500 shadow-[0_0_15px_rgba(239,68,68,0.8)] animate-scan"></div>
                       </div>
                       <div>
-                          <h3 className="text-lg font-bold text-white mb-1">Escaneie com seu WhatsApp</h3>
-                          <p className="text-zinc-500 text-xs font-mono bg-zinc-900 px-3 py-1 rounded inline-block">
-                              Menu &gt; Aparelhos Conectados &gt; Conectar
-                          </p>
+                          <h3 className="text-lg font-bold text-white mb-1">Abra seu WhatsApp e Escaneie</h3>
+                          <div className="text-zinc-500 text-xs font-mono bg-zinc-900 px-3 py-2 rounded mt-2 inline-block text-left">
+                              1. Toque em <strong>Mais opções</strong> (Android) ou <strong>Configurações</strong> (iOS)<br/>
+                              2. Toque em <strong>Aparelhos conectados</strong><br/>
+                              3. Toque em <strong>Conectar um aparelho</strong>
+                          </div>
                       </div>
                       {/* Status indicador */}
                       <div className="flex items-center gap-2 text-yellow-500 text-sm font-bold animate-pulse">
-                          <RefreshCw className="w-4 h-4 animate-spin" /> Aguardando leitura...
+                          <RefreshCw className="w-4 h-4 animate-spin" /> Sincronizando com WhatsApp...
                       </div>
                   </div>
               )}
@@ -335,9 +359,10 @@ export default function ConnectionsPage() {
                           <CheckCircle2 className="w-12 h-12 text-green-500" />
                       </div>
                       <div>
-                          <h3 className="text-2xl font-bold text-white">Sincronizado!</h3>
+                          <h3 className="text-2xl font-bold text-white">Sincronizado com Sucesso!</h3>
                           <p className="text-zinc-400 mt-2">
-                              A instância <strong>{currentInstance?.name}</strong> está online e pronta para uso.
+                              A instância <strong>{currentInstance?.name}</strong> está online.<br/>
+                              Importando conversas e contatos...
                           </p>
                       </div>
                       <Button onClick={() => { setIsModalOpen(false); fetchInstances(); }} className="bg-zinc-800 hover:bg-zinc-700 text-white min-w-[150px]">
@@ -401,7 +426,7 @@ const ConnectionCard: React.FC<{ instance: Instance, refresh: () => void, onRest
                     <div className="flex items-center gap-2">
                         <span className={cn("w-2 h-2 rounded-full", instance.status === 'connected' ? "bg-green-500 animate-pulse" : "bg-red-500")} />
                         <span className="text-xs text-zinc-500 uppercase font-mono">
-                            {instance.status === 'qr_ready' ? 'AGUARDANDO LEITURA' : instance.status}
+                            {instance.status === 'connected' ? 'ONLINE' : instance.qrcode_url ? 'QR CODE PRONTO' : 'DESCONECTADO'}
                         </span>
                     </div>
                 </div>
@@ -414,7 +439,7 @@ const ConnectionCard: React.FC<{ instance: Instance, refresh: () => void, onRest
                         size="icon" 
                         onClick={onRestart} 
                         disabled={loadingAction} 
-                        className="hover:bg-blue-500/10 hover:text-blue-500" 
+                        className="bg-blue-500/10 text-blue-500 hover:bg-blue-500/20 hover:text-blue-400 border border-blue-500/20" 
                         title="Reiniciar Conexão / Gerar QR Code"
                     >
                         <RotateCcw className="w-5 h-5" />
