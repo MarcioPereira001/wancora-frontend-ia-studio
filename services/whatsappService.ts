@@ -3,7 +3,7 @@ import { supabase } from './supabaseClient';
 import { Instance } from '../types';
 
 export const whatsappService = {
-  // Busca o status da instância principal (Backward Compatibility)
+  // Busca o status da instância principal
   getInstanceStatus: async (): Promise<Instance | null> => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -18,12 +18,11 @@ export const whatsappService = {
         .from('instances')
         .select('*')
         .eq('company_id', companyId)
-        .order('created_at', { ascending: false }) // Alterado de updated_at para created_at
+        .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
 
       if (error) {
-          console.error('Supabase error:', error);
           return null;
       }
       return data as Instance;
@@ -33,7 +32,6 @@ export const whatsappService = {
     }
   },
 
-  // Busca TODAS as instâncias da empresa
   getAllInstances: async (): Promise<Instance[]> => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -56,65 +54,50 @@ export const whatsappService = {
     }
   },
 
-  // Inicia a sessão no Backend (Render) com suporte a SessionID dinâmico e Nome Descritivo
-  connectInstance: async (sessionId: string = 'default', instanceName?: string) => {
+  // Retorna o objeto Instance criado/atualizado para o frontend monitorar
+  connectInstance: async (sessionId: string = 'default', instanceName?: string): Promise<Instance> => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const { data: profile } = await supabase.from('profiles').select('company_id').eq('id', session?.user.id).single();
       
       if (!profile?.company_id) throw new Error("Usuário sem empresa.");
 
-      // Nome padrão se não for fornecido
       const displayName = instanceName || (sessionId === 'default' ? 'Principal' : sessionId);
 
-      // 1. Verifica se já existe a instância (pela sessão ou ID da empresa)
-      const { data: existing } = await supabase
+      // 1. Upsert no Supabase para garantir que o registro exista com status 'connecting'
+      // Usamos upsert para evitar erros de chave duplicada e resetar estados antigos
+      const { data: instanceData, error: dbError } = await supabase
         .from('instances')
-        .select('id, status')
-        .eq('company_id', profile.company_id)
-        .eq('session_id', sessionId)
-        .maybeSingle();
-      
-      if (existing) {
-          // Atualiza para connecting para dar feedback visual
-          await supabase.from('instances')
-            .update({ 
-                status: 'connecting', 
-                qrcode_url: null, 
-                name: displayName
-                // updated_at removido
-            })
-            .eq('id', existing.id);
-      } else {
-          // Cria registro inicial
-          const { error: insertError } = await supabase.from('instances').insert({ 
-              company_id: profile.company_id, 
-              session_id: sessionId, 
-              status: 'connecting',
-              name: displayName
-              // created_at é default now() no banco
-          });
-          if (insertError) {
-              console.error("Erro insert supabase:", insertError);
-              throw insertError;
-          }
+        .upsert({ 
+            company_id: profile.company_id, 
+            session_id: sessionId, 
+            status: 'connecting',
+            name: displayName,
+            qrcode_url: null // Limpa QR antigo
+        }, { onConflict: 'session_id' })
+        .select()
+        .single();
+
+      if (dbError) {
+          console.error("Erro DB Supabase:", dbError);
+          throw new Error("Falha ao registrar instância no banco de dados.");
       }
 
-      // 2. Chama API do Render para iniciar o processo do Baileys
-      // OBS: O Backend deve atualizar a tabela 'instances' com o QR Code via Supabase Admin
-      const response = await api.post('/instance/connect', {
+      // 2. Chama API do Backend para iniciar o processo
+      // Não esperamos o QR code aqui, pois o backend deve atualizar o banco via webhook/admin client
+      await api.post('/instance/connect', {
         sessionId: sessionId,
         companyId: profile.company_id
       });
       
-      return response;
+      return instanceData as Instance;
+
     } catch (error) {
       console.error('Erro ao conectar instância:', error);
       throw error;
     }
   },
 
-  // Desconecta a sessão específica
   logoutInstance: async (sessionId: string = 'default') => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -122,10 +105,8 @@ export const whatsappService = {
 
       if (!profile?.company_id) throw new Error("Usuário sem empresa.");
 
-      // Chama endpoint de logout
       await api.delete(`/instance/logout/${sessionId}`);
       
-      // Força atualização no banco caso o backend demore
       await supabase
         .from('instances')
         .update({ status: 'disconnected', qrcode_url: null })
