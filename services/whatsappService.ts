@@ -18,7 +18,7 @@ export const whatsappService = {
         .from('instances')
         .select('*')
         .eq('company_id', companyId)
-        .order('updated_at', { ascending: false })
+        .order('created_at', { ascending: false }) // Alterado de updated_at para created_at
         .limit(1)
         .maybeSingle();
 
@@ -67,7 +67,7 @@ export const whatsappService = {
       // Nome padrão se não for fornecido
       const displayName = instanceName || (sessionId === 'default' ? 'Principal' : sessionId);
 
-      // 1. Verifica se já existe a instância
+      // 1. Verifica se já existe a instância (pela sessão ou ID da empresa)
       const { data: existing } = await supabase
         .from('instances')
         .select('id, status')
@@ -81,8 +81,8 @@ export const whatsappService = {
             .update({ 
                 status: 'connecting', 
                 qrcode_url: null, 
-                name: displayName, // Atualiza o nome caso tenha mudado
-                updated_at: new Date().toISOString() 
+                name: displayName
+                // updated_at removido
             })
             .eq('id', existing.id);
       } else {
@@ -91,10 +91,13 @@ export const whatsappService = {
               company_id: profile.company_id, 
               session_id: sessionId, 
               status: 'connecting',
-              name: displayName,
-              updated_at: new Date().toISOString()
+              name: displayName
+              // created_at é default now() no banco
           });
-          if (insertError) throw insertError;
+          if (insertError) {
+              console.error("Erro insert supabase:", insertError);
+              throw insertError;
+          }
       }
 
       // 2. Chama API do Render para iniciar o processo do Baileys

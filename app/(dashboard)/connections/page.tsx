@@ -72,21 +72,23 @@ export default function ConnectionsPage() {
       if(!newSessionName.trim()) return;
       setIsCreating(true);
       try {
-          // 1. Gera ID técnico (sanitizado) para o Backend/Baileys
-          const sessionId = newSessionName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+          // 1. Gera ID técnico (sanitizado e ÚNICO) para o Backend/Baileys
+          // IMPORTANTE: Adiciona timestamp ou random suffix para garantir unicidade global no banco
+          const sanitized = newSessionName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+          const randomSuffix = Math.random().toString(36).substring(2, 6);
+          const sessionId = `${sanitized}-${randomSuffix}`;
           
-          if(instances.find(i => i.session_id === sessionId)) {
-              throw new Error("Já existe uma conexão com este ID.");
-          }
-
           // 2. Chama o serviço passando o ID técnico E o Nome Original (Display Name)
           await whatsappService.connectInstance(sessionId, newSessionName);
           
           addToast({ type: 'success', title: 'Solicitação Enviada', message: 'Gerando QR Code...' });
           setIsModalOpen(false);
           setNewSessionName('');
+          // Força refresh manual imediato
+          setTimeout(fetchInstances, 1000);
       } catch (error: any) {
-          addToast({ type: 'error', title: 'Erro de Conexão', message: error.message });
+          console.error(error);
+          addToast({ type: 'error', title: 'Erro de Conexão', message: error.message || "Erro ao criar registro." });
       } finally {
           setIsCreating(false);
       }
@@ -300,7 +302,7 @@ const ConnectionCard: React.FC<{ instance: Instance }> = ({ instance }) => {
                                 <h3 className="font-bold text-white text-xl tracking-tight">{instance.name || instance.session_id}</h3>
                                 <div className="flex items-center gap-2 mt-1">
                                     <span className="text-[10px] text-zinc-500 font-mono uppercase bg-zinc-900 px-1.5 py-0.5 rounded border border-zinc-800">
-                                        ID: {instance.session_id}
+                                        ID: {instance.session_id.slice(0, 15)}...
                                     </span>
                                 </div>
                             </div>

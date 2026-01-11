@@ -95,7 +95,8 @@ export interface WhatsAppInstance {
   qrcode_url?: string; // Base64 ou URL
   battery_level?: number;
   profile_pic_url?: string;
-  updated_at: string;
+  created_at?: string;
+  // updated_at removido pois não existe no schema
 }
 
 // Alias para compatibilidade
