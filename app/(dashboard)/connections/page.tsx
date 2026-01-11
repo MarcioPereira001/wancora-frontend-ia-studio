@@ -75,7 +75,6 @@ export default function ConnectionsPage() {
             .maybeSingle();
         
         if (error || !freshData) {
-            // Se o registro sumiu ou deu erro, não faz nada por enquanto (pode ser delay de rede)
             return;
         }
 
@@ -95,11 +94,12 @@ export default function ConnectionsPage() {
                 }, 2000);
             }
         } 
-        // 2. LÓGICA DE QR CODE: Prioridade total para a existência da URL
-        // Se existe URL e não está conectado, MOSTRA O QR, independente do status ser "connecting" ou "qr_ready"
+        // 2. LÓGICA DE QR CODE (CORREÇÃO CRÍTICA)
+        // O backend salva o QR na coluna 'qrcode_url'. Se ela existir, mostramos o QR.
+        // Ignoramos se o status é 'connecting', 'qr_ready' ou 'qrcode'. A presença da string QR é o gatilho.
         else if (freshData.qrcode_url && freshData.qrcode_url.length > 20) {
             if (step !== 'qr_scan') {
-                console.log("QR Code detectado, mudando etapa...");
+                console.log("QR Code detectado no banco, exibindo...");
                 setStep('qr_scan');
             }
         }
@@ -108,10 +108,10 @@ export default function ConnectionsPage() {
     // Executa imediatamente ao montar/abrir
     checkStatus();
 
-    // Polling de 1.5s (Looping controlado para verificar atualização do backend)
+    // Polling de 1.5s (Backup garantido)
     intervalId = setInterval(checkStatus, 1500);
 
-    // Realtime via Supabase (Backup do Polling para resposta instantânea)
+    // Realtime via Supabase (Resposta instantânea)
     const modalChannel = supabase
       .channel(`instance-modal-${sessionId}`)
       .on('postgres_changes', { 
@@ -159,15 +159,12 @@ export default function ConnectionsPage() {
             sessionId = `${sanitized}-${randomSuffix}`;
           }
           
-          // Chama o serviço que cria no banco E dispara o backend
+          // Chama o serviço que cria no banco E dispara o backend (session/start)
           const newInstance = await whatsappService.connectInstance(sessionId, nameToUse);
           
           // Define a instância atual para o useEffect começar a monitorar
           setCurrentInstance(newInstance);
           
-          // Se por milagre já vier com QR (muito rápido), atualiza
-          if(newInstance.qrcode_url) setStep('qr_scan');
-
       } catch (error: any) {
           console.error(error);
           addToast({ type: 'error', title: 'Falha no Protocolo', message: error.message });
@@ -184,14 +181,14 @@ export default function ConnectionsPage() {
       setCurrentInstance(instance); // Foca o monitoramento nesta instância
       
       try {
-          // 2. Tenta fazer logout forçado primeiro para garantir que o backend mate processos velhos
+          // 2. Tenta fazer logout forçado primeiro
           await whatsappService.logoutInstance(instance.session_id);
           console.log("Sessão limpa, reiniciando...");
       } catch (e) {
           console.log("Erro ao limpar sessão antiga (pode já estar offline), continuando...", e);
       }
 
-      // 3. Pequeno delay para o backend respirar
+      // 3. Pequeno delay para o backend processar
       await new Promise(r => setTimeout(r, 1000));
 
       // 4. Reinicia processo com o MESMO session_id
@@ -315,7 +312,7 @@ export default function ConnectionsPage() {
                               O sistema está preparando a instância segura do WhatsApp. O QR Code aparecerá em instantes.
                           </p>
                           <p className="text-zinc-600 text-xs mt-4 font-mono">
-                              Aguardando resposta do backend...
+                              Aguardando resposta do backend (qrcode_url)...
                           </p>
                       </div>
                       <div className="w-full bg-zinc-900/50 rounded-full h-1.5 overflow-hidden max-w-[200px]">
