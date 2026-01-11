@@ -364,5 +364,3 @@ export default function LandingPage() {
     </div>
   );
 }
-
-// comentário para fazer atualização

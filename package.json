@@ -3,7 +3,9 @@
   "version": "2.0.5",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbopack",
+    "cleanup": "rm -rf app/chat/page.tsx app/dashboard/page.tsx index.html index.tsx vite.config.ts",
+    "prebuild": "npm run cleanup",
+    "dev": "npm run cleanup && next dev --turbopack",
     "build": "next build",
     "start": "next start",
     "lint": "next lint"
