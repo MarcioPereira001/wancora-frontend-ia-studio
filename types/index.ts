@@ -110,11 +110,13 @@ export interface Message {
   from_me: boolean;
   content: string;
   body?: string; // Fallback para content
-  message_type: 'text' | 'image' | 'video' | 'audio' | 'document' | 'sticker' | 'location';
+  message_type: 'text' | 'image' | 'video' | 'audio' | 'document' | 'sticker' | 'location' | 'poll';
   status: 'sent' | 'delivered' | 'read' | 'failed' | 'sending';
   created_at: string;
   has_media?: boolean;
   media_url?: string;
+  fileName?: string;
+  caption?: string;
 }
 
 export interface ChatContact {

@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { useAuthStore } from '@/store/useAuthStore';
-import { ChatContact, Message } from '@/types';
+import { ChatContact } from '@/types';
 import { cleanJid } from '@/lib/utils';
 
 export function useChatList() {
@@ -9,12 +9,6 @@ export function useChatList() {
   const supabase = createClient();
   const [contacts, setContacts] = useState<ChatContact[]>([]);
   const [loading, setLoading] = useState(true);
-
-  // Helper para normalizar JID
-  const normalizeJid = (jid: string) => {
-      if (!jid) return '';
-      return jid.includes('@') ? jid.split('@')[0] : jid;
-  };
 
   useEffect(() => {
     if (!user?.company_id) return;
@@ -32,7 +26,7 @@ export function useChatList() {
             if (contactsError) throw contactsError;
 
             // 2. Buscar últimas mensagens (para montar a lista de conversas ativas)
-            // Limitamos para performance. Em produção, idealmente usaríamos uma View Materializada.
+            // Traz mensagens ordenadas para pegar a mais recente
             const { data: messagesData } = await supabase
                 .from('messages')
                 .select('remote_jid, content, created_at, message_type, from_me, status')
@@ -43,7 +37,6 @@ export function useChatList() {
             // 3. Processamento e Merge
             const chatMap = new Map<string, ChatContact>();
             
-            // Mapeia contatos conhecidos primeiro
             const contactDetailsMap = new Map();
             contactsData?.forEach((c: any) => {
                 contactDetailsMap.set(cleanJid(c.jid), c);
@@ -53,18 +46,21 @@ export function useChatList() {
                 messagesData.forEach((msg) => {
                     const cleanRemoteJid = cleanJid(msg.remote_jid);
                     
-                    // Se já processamos este chat, pula (pois ordenamos por data desc, o primeiro é o mais recente)
                     if (chatMap.has(cleanRemoteJid)) return;
 
                     const contactInfo = contactDetailsMap.get(cleanRemoteJid);
                     
-                    // Formata preview da mensagem
+                    // Formata preview da mensagem baseado no message_type
                     let preview = msg.content;
-                    if (msg.message_type === 'image') preview = '📷 Imagem';
-                    else if (msg.message_type === 'audio') preview = '🎵 Áudio';
-                    else if (msg.message_type === 'video') preview = '🎥 Vídeo';
-                    else if (msg.message_type === 'document') preview = '📄 Arquivo';
-                    else if (msg.message_type === 'sticker') preview = '👾 Figurinha';
+                    const type = msg.message_type || (msg as any).type; // Fallback
+
+                    if (type === 'image') preview = '📷 Imagem';
+                    else if (type === 'audio') preview = '🎵 Áudio';
+                    else if (type === 'video') preview = '🎥 Vídeo';
+                    else if (type === 'document') preview = '📄 Arquivo';
+                    else if (type === 'sticker') preview = '👾 Figurinha';
+                    else if (type === 'poll') preview = '📊 Enquete';
+                    else if (type === 'location') preview = '📍 Localização';
 
                     chatMap.set(cleanRemoteJid, {
                         jid: msg.remote_jid,
@@ -77,14 +73,13 @@ export function useChatList() {
                         last_message: preview,
                         last_message_time: msg.created_at,
                         updated_at: msg.created_at,
-                        unread_count: 0 // Implementar lógica de contagem depois se necessário
+                        unread_count: 0
                     });
                 });
             }
 
             const formatted = Array.from(chatMap.values());
             
-            // Ordenar por mensagem mais recente
             formatted.sort((a, b) => {
                 const dateA = new Date(a.last_message_time || 0).getTime();
                 const dateB = new Date(b.last_message_time || 0).getTime();
@@ -102,7 +97,7 @@ export function useChatList() {
 
     fetchChatData();
     
-    // Realtime subscriptions
+    // Inscreve para atualizações em tempo real
     const channel = supabase
         .channel(`chat_list_main:${user.company_id}`)
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `company_id=eq.${user.company_id}` }, () => fetchChatData())

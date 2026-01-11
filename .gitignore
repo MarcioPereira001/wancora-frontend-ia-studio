@@ -40,3 +40,11 @@ vite.config.ts
 index.html
 index.tsx
 vite-env.d.ts
+
+# --- BACKEND & SQL IGNORE ---
+controllers/
+routes.js
+*.sql
+server.js
+app.js
+backend/
