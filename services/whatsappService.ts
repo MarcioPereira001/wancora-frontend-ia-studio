@@ -58,6 +58,20 @@ export const whatsappService = {
     }
   },
 
+  getOneInstance: async (sessionId: string): Promise<Instance | null> => {
+    try {
+        const supabase = createClient();
+        const { data } = await supabase
+            .from('instances')
+            .select('*')
+            .eq('session_id', sessionId)
+            .single();
+        return data as Instance;
+    } catch (error) {
+        return null;
+    }
+  },
+
   // Retorna o objeto Instance criado/atualizado para o frontend monitorar
   connectInstance: async (sessionId: string = 'default', instanceName?: string): Promise<Instance> => {
     try {
@@ -98,8 +112,7 @@ export const whatsappService = {
           throw new Error("Falha ao registrar instância no banco de dados.");
       }
 
-      // 2. Chama API do Backend para iniciar o processo
-      // CORREÇÃO: Endpoint ajustado para bater com routes.js (/session/start)
+      // 2. Chama API do Backend para iniciar o processo (/session/start)
       await api.post('/session/start', {
         sessionId: sessionId,
         companyId: profile.company_id
@@ -113,6 +126,7 @@ export const whatsappService = {
     }
   },
 
+  // Apenas desconecta (Logout), mantendo o registro no banco
   logoutInstance: async (sessionId: string = 'default') => {
     try {
       const supabase = createClient();
@@ -124,7 +138,7 @@ export const whatsappService = {
 
       if (!profile?.company_id) throw new Error("Usuário sem empresa.");
 
-      // CORREÇÃO: Endpoint ajustado para bater com routes.js (/session/logout) e método POST
+      // Chama backend para matar processo
       await api.post('/session/logout', {
           sessionId: sessionId,
           companyId: profile.company_id
@@ -141,5 +155,40 @@ export const whatsappService = {
       console.error('Erro ao desconectar:', error);
       throw error;
     }
+  },
+
+  // NOVO: Exclui a instância permanentemente (Lixeira)
+  deleteInstance: async (sessionId: string) => {
+      try {
+        const supabase = createClient();
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.user?.id) throw new Error("Usuário não autenticado.");
+  
+        const { data: profile } = await supabase.from('profiles').select('company_id').eq('id', session.user.id).single();
+        if (!profile?.company_id) throw new Error("Usuário sem empresa.");
+  
+        // 1. Tenta desconectar no backend primeiro (se estiver rodando)
+        try {
+            await api.post('/session/logout', {
+                sessionId: sessionId,
+                companyId: profile.company_id
+            });
+        } catch (e) {
+            console.log("Backend já estava desconectado ou inacessível, prosseguindo com delete do DB.");
+        }
+  
+        // 2. Remove do Supabase
+        const { error } = await supabase
+            .from('instances')
+            .delete()
+            .eq('company_id', profile.company_id)
+            .eq('session_id', sessionId);
+
+        if (error) throw error;
+        
+      } catch (error) {
+        console.error('Erro ao excluir instância:', error);
+        throw error;
+      }
   }
 };

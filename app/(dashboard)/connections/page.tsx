@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Smartphone, RefreshCw, Power, QrCode, Trash2, Wifi, Activity, Terminal, MessageCircle, CheckCircle2, Loader2, Plus, Lock, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { whatsappService } from '@/services/whatsappService';
@@ -57,17 +57,44 @@ export default function ConnectionsPage() {
     return () => { supabase.removeChannel(channel); };
   }, [company?.id, supabase]);
 
-  // Monitoramento Específico para o Modal (QR Code Realtime)
+  // Monitoramento Específico para o Modal (QR Code Realtime + Polling Híbrido)
   useEffect(() => {
-    if (!isModalOpen || !currentInstance?.id) return;
+    if (!isModalOpen || !currentInstance?.session_id) return;
 
+    // 1. Polling de Segurança (A cada 2s)
+    // Garante que se o Websocket falhar, o QR code aparece via fetch normal
+    const pollInterval = setInterval(async () => {
+        if(step === 'success') return;
+        
+        const freshData = await whatsappService.getOneInstance(currentInstance.session_id);
+        if(freshData) {
+            // Atualiza estado se mudou algo crítico
+            if(freshData.qrcode_url !== currentInstance.qrcode_url || freshData.status !== currentInstance.status) {
+                setCurrentInstance(freshData);
+                
+                if (freshData.qrcode_url && step === 'initializing') {
+                    setStep('qr_scan');
+                }
+                if (freshData.status === 'connected') {
+                    setStep('success');
+                    addToast({ type: 'success', title: 'Conectado!', message: 'Instância sincronizada com sucesso.' });
+                    setTimeout(() => {
+                        setIsModalOpen(false);
+                        resetModal();
+                    }, 3000);
+                }
+            }
+        }
+    }, 2000);
+
+    // 2. Realtime
     const modalChannel = supabase
-      .channel(`instance-modal-${currentInstance.id}`)
+      .channel(`instance-modal-${currentInstance.session_id}`)
       .on('postgres_changes', { 
           event: 'UPDATE', 
           schema: 'public', 
           table: 'instances', 
-          filter: `id=eq.${currentInstance.id}` 
+          filter: `session_id=eq.${currentInstance.session_id}` 
       }, (payload) => {
           const updated = payload.new as Instance;
           setCurrentInstance(updated);
@@ -87,8 +114,11 @@ export default function ConnectionsPage() {
       })
       .subscribe();
 
-    return () => { supabase.removeChannel(modalChannel); };
-  }, [isModalOpen, currentInstance?.id, step, supabase, addToast]);
+    return () => { 
+        supabase.removeChannel(modalChannel);
+        clearInterval(pollInterval);
+    };
+  }, [isModalOpen, currentInstance?.session_id, step, supabase, addToast]);
 
 
   const resetModal = () => {
@@ -156,7 +186,7 @@ export default function ConnectionsPage() {
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
         {instances.map((instance) => (
-            <ConnectionCard key={instance.id} instance={instance} />
+            <ConnectionCard key={instance.id} instance={instance} refresh={fetchInstances} />
         ))}
 
         {Array.from({ length: Math.max(0, limit - instances.length) }).map((_, i) => (
@@ -281,18 +311,37 @@ export default function ConnectionsPage() {
   );
 }
 
-// Card Simplificado para manter o código limpo
-const ConnectionCard: React.FC<{ instance: Instance }> = ({ instance }) => {
+// Card Atualizado com botão de Lixeira
+const ConnectionCard: React.FC<{ instance: Instance, refresh: () => void }> = ({ instance, refresh }) => {
     const { addToast } = useToast();
+    const [loadingAction, setLoadingAction] = useState(false);
     
-    const handleLogout = async () => {
-        if (!confirm(`Desconectar ${instance.name}?`)) return;
+    const handleDelete = async () => {
+        if (!confirm(`TEM CERTEZA? Isso excluirá a instância "${instance.name}" e desconectará o WhatsApp.`)) return;
+        setLoadingAction(true);
         try {
-            await whatsappService.logoutInstance(instance.session_id);
-            addToast({ type: 'success', title: 'Desconectado', message: 'Sessão encerrada.' });
+            await whatsappService.deleteInstance(instance.session_id);
+            addToast({ type: 'success', title: 'Excluído', message: 'Instância removida com sucesso.' });
+            refresh();
         } catch (e: any) {
             addToast({ type: 'error', title: 'Erro', message: e.message });
+        } finally {
+            setLoadingAction(false);
         }
+    };
+
+    const handleLogout = async () => {
+         if (!confirm(`Desconectar sessão do WhatsApp?`)) return;
+         setLoadingAction(true);
+         try {
+             await whatsappService.logoutInstance(instance.session_id);
+             addToast({ type: 'success', title: 'Desconectado', message: 'Sessão encerrada.' });
+             refresh();
+         } catch (e: any) {
+             addToast({ type: 'error', title: 'Erro', message: e.message });
+         } finally {
+             setLoadingAction(false);
+         }
     };
 
     return (
@@ -300,7 +349,7 @@ const ConnectionCard: React.FC<{ instance: Instance }> = ({ instance }) => {
             <div className="flex items-center gap-4">
                 <div className={cn(
                     "w-12 h-12 rounded-xl flex items-center justify-center border shadow-inner",
-                    instance.status === 'connected' ? 'bg-zinc-900 border-primary text-primary' : 'bg-zinc-900 border-red-900 text-red-700'
+                    instance.status === 'connected' ? 'bg-zinc-900 border-primary text-primary' : 'bg-zinc-900 border-zinc-700 text-zinc-500'
                 )}>
                     {instance.status === 'connected' ? <Wifi className="w-6 h-6" /> : <Power className="w-6 h-6" />}
                 </div>
@@ -313,13 +362,16 @@ const ConnectionCard: React.FC<{ instance: Instance }> = ({ instance }) => {
                 </div>
             </div>
             
-            {instance.status === 'connected' ? (
-                <Button variant="ghost" size="icon" onClick={handleLogout} className="hover:bg-red-500/10 hover:text-red-500">
-                    <Power className="w-5 h-5" />
+            <div className="flex gap-2">
+                {instance.status === 'connected' && (
+                    <Button variant="ghost" size="icon" onClick={handleLogout} disabled={loadingAction} className="hover:bg-yellow-500/10 hover:text-yellow-500" title="Desconectar">
+                        <Power className="w-5 h-5" />
+                    </Button>
+                )}
+                <Button variant="ghost" size="icon" onClick={handleDelete} disabled={loadingAction} className="hover:bg-red-500/10 hover:text-red-500" title="Excluir Instância">
+                    {loadingAction ? <Loader2 className="w-5 h-5 animate-spin" /> : <Trash2 className="w-5 h-5" />}
                 </Button>
-            ) : (
-                <div className="text-xs text-zinc-500 font-mono">OFFLINE</div>
-            )}
+            </div>
         </div>
     );
 }
