@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils';
 import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/input';
 import { createClient } from '@/utils/supabase/client';
+import { QRCodeSVG } from 'qrcode.react';
 
 const PLAN_LIMITS = {
   starter: 1,
@@ -266,10 +267,12 @@ export default function ConnectionsPage() {
               {step === 'qr_scan' && currentInstance?.qrcode_url && (
                   <div className="flex flex-col items-center text-center space-y-6 animate-in fade-in slide-in-from-bottom-4">
                       <div className="relative group p-4 bg-white rounded-xl shadow-[0_0_40px_rgba(34,197,94,0.2)]">
-                          <img 
-                            src={currentInstance.qrcode_url.startsWith('data:') ? currentInstance.qrcode_url : `data:image/png;base64,${currentInstance.qrcode_url}`} 
-                            alt="Scan QR" 
-                            className="w-56 h-56 object-contain" 
+                          <QRCodeSVG
+                              value={currentInstance.qrcode_url}
+                              size={200}
+                              level={"H"}
+                              includeMargin={true}
+                              className="w-56 h-56 object-contain"
                           />
                           <div className="absolute top-0 left-0 w-full h-1 bg-red-500 shadow-[0_0_15px_rgba(239,68,68,0.8)] animate-scan"></div>
                       </div>

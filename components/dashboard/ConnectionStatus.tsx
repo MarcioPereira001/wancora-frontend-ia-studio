@@ -98,11 +98,15 @@ export function ConnectionStatus() {
 
     // 3. QR Code
     if (status === 'qr_ready' && instance?.qrcode_url) {
-      const qrSrc = instance.qrcode_url.startsWith('data:') ? instance.qrcode_url : `data:image/png;base64,${instance.qrcode_url}`;
       return (
         <div className="text-center space-y-4 animate-in fade-in zoom-in">
           <div className="p-4 bg-white rounded-xl shadow-[0_0_30px_rgba(34,197,94,0.15)] relative mx-auto w-fit group">
-             <img src={qrSrc} className="w-48 h-48 object-contain" alt="QR Code" />
+             <QRCodeSVG 
+                value={instance.qrcode_url}
+                size={180}
+                level="H"
+                includeMargin={true}
+             />
              <div className="absolute top-0 left-0 w-full h-1 bg-green-500/50 shadow-[0_0_15px_rgba(34,197,94,0.8)] animate-[scan_2s_ease-in-out_infinite]" />
           </div>
           <p className="text-emerald-400 text-xs font-mono font-bold tracking-widest animate-pulse">
