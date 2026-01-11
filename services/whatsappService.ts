@@ -1,13 +1,15 @@
 import { api } from './api';
-import { supabase } from './supabaseClient';
+import { createClient } from '@/utils/supabase/client';
 import { Instance } from '../types';
 
 export const whatsappService = {
   // Busca o status da instância principal
   getInstanceStatus: async (): Promise<Instance | null> => {
     try {
+      const supabase = createClient();
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return null;
+      
+      if (!session?.user?.id) return null;
 
       const { data: profile } = await supabase.from('profiles').select('company_id').eq('id', session.user.id).single();
       const companyId = profile?.company_id;
@@ -34,8 +36,10 @@ export const whatsappService = {
 
   getAllInstances: async (): Promise<Instance[]> => {
     try {
+      const supabase = createClient();
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return [];
+      
+      if (!session?.user?.id) return [];
 
       const { data: profile } = await supabase.from('profiles').select('company_id').eq('id', session.user.id).single();
       if (!profile?.company_id) return [];
@@ -57,15 +61,28 @@ export const whatsappService = {
   // Retorna o objeto Instance criado/atualizado para o frontend monitorar
   connectInstance: async (sessionId: string = 'default', instanceName?: string): Promise<Instance> => {
     try {
+      const supabase = createClient();
       const { data: { session } } = await supabase.auth.getSession();
-      const { data: profile } = await supabase.from('profiles').select('company_id').eq('id', session?.user.id).single();
       
-      if (!profile?.company_id) throw new Error("Usuário sem empresa.");
+      // Validação Crítica: Garante que o ID existe antes de usar na query
+      if (!session?.user?.id) {
+          throw new Error("Sessão expirada. Por favor, recarregue a página.");
+      }
+
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('company_id')
+        .eq('id', session.user.id)
+        .single();
+      
+      if (profileError || !profile?.company_id) {
+          console.error("Profile Error:", profileError);
+          throw new Error("Usuário sem empresa vinculada.");
+      }
 
       const displayName = instanceName || (sessionId === 'default' ? 'Principal' : sessionId);
 
       // 1. Upsert no Supabase para garantir que o registro exista com status 'connecting'
-      // Usamos upsert para evitar erros de chave duplicada e resetar estados antigos
       const { data: instanceData, error: dbError } = await supabase
         .from('instances')
         .upsert({ 
@@ -73,7 +90,7 @@ export const whatsappService = {
             session_id: sessionId, 
             status: 'connecting',
             name: displayName,
-            qrcode_url: null // Limpa QR antigo
+            qrcode_url: null 
         }, { onConflict: 'session_id' })
         .select()
         .single();
@@ -84,7 +101,6 @@ export const whatsappService = {
       }
 
       // 2. Chama API do Backend para iniciar o processo
-      // Não esperamos o QR code aqui, pois o backend deve atualizar o banco via webhook/admin client
       await api.post('/instance/connect', {
         sessionId: sessionId,
         companyId: profile.company_id
@@ -100,8 +116,12 @@ export const whatsappService = {
 
   logoutInstance: async (sessionId: string = 'default') => {
     try {
+      const supabase = createClient();
       const { data: { session } } = await supabase.auth.getSession();
-      const { data: profile } = await supabase.from('profiles').select('company_id').eq('id', session?.user.id).single();
+
+      if (!session?.user?.id) throw new Error("Usuário não autenticado.");
+
+      const { data: profile } = await supabase.from('profiles').select('company_id').eq('id', session.user.id).single();
 
       if (!profile?.company_id) throw new Error("Usuário sem empresa.");
 

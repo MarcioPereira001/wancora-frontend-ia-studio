@@ -1,9 +1,11 @@
 import { BACKEND_URL } from '../config';
-import { supabase } from './supabaseClient';
+import { createClient } from '@/utils/supabase/client';
 
 // Wrapper para Fetch API com tratamento de erro robusto
 const getHeaders = async () => {
+    const supabase = createClient();
     const { data: { session } } = await supabase.auth.getSession();
+    
     const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         'Accept': 'application/json'
@@ -13,8 +15,7 @@ const getHeaders = async () => {
         // Authenticated request
         headers['Authorization'] = `Bearer ${session.access_token}`;
         
-        // Tentativa de obter company_id do metadata (assumindo que foi salvo no login/signup)
-        // Se não houver, o backend deve tratar ou o usuário deve relogar
+        // Tentativa de obter company_id do metadata
         const companyId = session.user.user_metadata?.company_id;
         if (companyId) {
             headers['x-company-id'] = companyId;
