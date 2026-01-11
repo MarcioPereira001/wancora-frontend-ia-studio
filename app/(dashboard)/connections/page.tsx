@@ -47,7 +47,7 @@ export default function ConnectionsPage() {
     fetchInstances();
     if (!company?.id) return;
 
-    // Monitoramento Global da Lista (Para atualizar os cards fora do modal)
+    // Monitoramento Global da Lista
     const channel = supabase
       .channel('instances-global')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'instances', filter: `company_id=eq.${company.id}` }, 
@@ -58,50 +58,59 @@ export default function ConnectionsPage() {
     return () => { supabase.removeChannel(channel); };
   }, [company?.id, supabase]);
 
-  // --- MONITORAMENTO DO MODAL DE CONEXÃO ---
+  // --- MONITORAMENTO CRÍTICO DO MODAL ---
   useEffect(() => {
     if (!isModalOpen || !currentInstance?.session_id) return;
 
     const sessionId = currentInstance.session_id;
-    let intervalId: NodeJS.Timeout;
+    let intervalId: ReturnType<typeof setInterval>;
 
     const checkStatus = async () => {
-        // Busca direta sem depender de refs complicadas
+        // Busca direta para garantir dados frescos
         const freshData = await whatsappService.getOneInstance(sessionId);
         
-        if (freshData) {
-            setCurrentInstance(freshData); // Atualiza dados da tela (incluindo QR Code string)
+        // 1. Instância foi deletada pelo Backend? (Caso de erro fatal no backend)
+        if (freshData === null) {
+            if (step === 'initializing' || step === 'qr_scan') {
+                setStep('input');
+                setIsModalOpen(false);
+                addToast({ type: 'error', title: 'Conexão Perdida', message: 'O servidor reiniciou ou perdeu a conexão. Tente novamente.' });
+            }
+            return;
+        }
 
-            // Lógica de Estado: A prioridade é CONECTADO > QR CODE > INICIALIZANDO
-            if ((freshData.status as string) === 'connected') {
-                if (step !== 'success') {
-                    setStep('success');
-                    addToast({ type: 'success', title: 'Conectado!', message: 'Instância sincronizada.' });
-                    setTimeout(() => {
-                        setIsModalOpen(false);
-                        resetModal();
-                        fetchInstances();
-                    }, 2000);
-                }
-            } else if (freshData.qrcode_url && freshData.status !== 'connected') {
-                // Se tem QR e não tá conectado, mostra QR
-                if (step !== 'qr_scan') setStep('qr_scan');
-            } 
-            // Se não tem QR e não tá conectado, continua 'initializing' (padrão)
+        // 2. Instância Existe - Atualiza Estado
+        setCurrentInstance(freshData);
+
+        // Lógica de Prioridade de Estado
+        if (freshData.status === 'connected') {
+            if (step !== 'success') {
+                setStep('success');
+                addToast({ type: 'success', title: 'Conectado!', message: 'Instância sincronizada.' });
+                setTimeout(() => {
+                    setIsModalOpen(false);
+                    resetModal();
+                    fetchInstances();
+                }, 2000);
+            }
+        } 
+        // Backend usa 'qr_ready' para sinalizar QR disponível
+        else if (freshData.qrcode_url && (freshData.status === 'qr_ready' || freshData.status === 'qrcode' || freshData.status === 'connecting')) {
+            if (step !== 'qr_scan') setStep('qr_scan');
         }
     };
 
-    // 1. Executa imediatamente
+    // Executa imediatamente
     checkStatus();
 
-    // 2. Polling agressivo (2s)
-    intervalId = setInterval(checkStatus, 2000);
+    // Polling de 1.5s
+    intervalId = setInterval(checkStatus, 1500);
 
-    // 3. Realtime (Backup)
+    // Realtime via Supabase
     const modalChannel = supabase
       .channel(`instance-modal-${sessionId}`)
       .on('postgres_changes', { 
-          event: 'UPDATE', 
+          event: '*',
           schema: 'public', 
           table: 'instances', 
           filter: `session_id=eq.${sessionId}` 
@@ -113,7 +122,6 @@ export default function ConnectionsPage() {
         clearInterval(intervalId);
     };
   }, [isModalOpen, currentInstance?.session_id, step, supabase, addToast]); 
-  // Nota: `step` na dependência garante que se mudar pra 'qr_scan', o efeito re-roda mas a lógica if(step !== 'qr_scan') previne loops infinitos de setStep.
 
   const resetModal = () => {
       setStep('input');
@@ -133,12 +141,11 @@ export default function ConnectionsPage() {
           const newInstance = await whatsappService.connectInstance(sessionId, newSessionName);
           setCurrentInstance(newInstance);
           
-          // Se já vier com QR (raro), atualiza
           if(newInstance.qrcode_url) setStep('qr_scan');
 
       } catch (error: any) {
           console.error(error);
-          addToast({ type: 'error', title: 'Falha no Protocolo', message: error.message });
+          addToast({ type: 'error', title: 'Erro de Protocolo', message: error.message });
           setStep('input');
       }
   };

@@ -36,15 +36,11 @@ export interface Lead {
   phone: string;
   email?: string;
   profile_pic_url?: string;
-  
-  // Dados de Negócio
-  value_potential?: number; // Valor monetário (R$)
+  value_potential?: number;
   lead_score?: number;
   temperature: 'cold' | 'warm' | 'hot';
   tags: string[];
   notes?: string;
-  
-  // Metadados
   created_at: string;
   updated_at?: string;
   next_appointment_at?: string;
@@ -58,7 +54,7 @@ export interface PipelineStage {
   name: string;
   position: number;
   color: string;
-  items?: Lead[]; // Populado no frontend
+  items?: Lead[];
 }
 
 export interface Pipeline {
@@ -91,15 +87,14 @@ export interface WhatsAppInstance {
   company_id: string;
   session_id: string;
   name: string;
-  status: 'connected' | 'disconnected' | 'qr_ready' | 'connecting';
-  qrcode_url?: string; // Base64 ou URL
+  // 'qr_ready' é o status exato que o backend envia quando tem QR
+  status: 'connected' | 'disconnected' | 'qr_ready' | 'qrcode' | 'connecting';
+  qrcode_url?: string;
   battery_level?: number;
   profile_pic_url?: string;
   created_at?: string;
-  // updated_at removido pois não existe no schema
 }
 
-// Alias para compatibilidade
 export type Instance = WhatsAppInstance;
 
 export interface Message {
@@ -108,13 +103,13 @@ export interface Message {
   company_id: string;
   remote_jid: string;
   from_me: boolean;
-  content: string;
-  body?: string; // Fallback para content
-  message_type: 'text' | 'image' | 'video' | 'audio' | 'document' | 'sticker' | 'location' | 'poll';
+  content: string; // Conteúdo principal (texto ou JSON de enquete)
+  body?: string; // Fallback legacy
+  message_type: 'text' | 'image' | 'video' | 'audio' | 'document' | 'sticker' | 'location' | 'poll' | 'contact';
   status: 'sent' | 'delivered' | 'read' | 'failed' | 'sending';
   created_at: string;
   has_media?: boolean;
-  media_url?: string;
+  media_url?: string; // URL pública do arquivo
   fileName?: string;
   caption?: string;
 }
@@ -122,8 +117,8 @@ export interface Message {
 export interface ChatContact {
   id?: string;
   company_id: string;
-  jid: string; // ID bruto do WP
-  remote_jid: string; // Alias
+  jid: string;
+  remote_jid: string;
   name: string;
   push_name?: string;
   profile_pic_url?: string;

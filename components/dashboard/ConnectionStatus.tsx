@@ -23,7 +23,7 @@ export function ConnectionStatus() {
   useEffect(() => {
     fetchStatus();
     // Polling inteligente: rápido se conectando, lento se estável
-    const intervalTime = (instance?.status === 'connecting' || instance?.status === 'qr_ready') ? 2000 : 5000;
+    const intervalTime = (instance?.status === 'connecting' || instance?.status === 'qr_ready' || instance?.status === 'qrcode') ? 2000 : 5000;
     const interval = setInterval(fetchStatus, intervalTime);
     return () => clearInterval(interval);
   }, [instance?.status]);
@@ -97,7 +97,7 @@ export function ConnectionStatus() {
     }
 
     // 3. QR Code
-    if (status === 'qr_ready' && instance?.qrcode_url) {
+    if ((status === 'qr_ready' || status === 'qrcode') && instance?.qrcode_url) {
       return (
         <div className="text-center space-y-4 animate-in fade-in zoom-in">
           <div className="p-4 bg-white rounded-xl shadow-[0_0_30px_rgba(34,197,94,0.15)] relative mx-auto w-fit group">

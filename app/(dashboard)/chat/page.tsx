@@ -34,16 +34,16 @@ export default function ChatPage() {
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [isDisconnected, setIsDisconnected] = useState(false);
 
-  // --- STATES DE MÍDIA ---
+  // States de Mídia
   const [isRecording, setIsRecording] = useState(false);
   const [mediaMenuOpen, setMediaMenuOpen] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // --- POLL MODAL ---
+  // Poll Modal
   const [pollModalOpen, setPollModalOpen] = useState(false);
   const [pollQuestion, setPollQuestion] = useState("");
   const [pollOptions, setPollOptions] = useState(["", ""]);
@@ -62,6 +62,7 @@ export default function ChatPage() {
     check();
   }, []);
 
+  // Fetch e Realtime de Mensagens
   useEffect(() => {
       if(!activeContact) return;
       
@@ -80,32 +81,41 @@ export default function ChatPage() {
 
       fetchMsgs();
 
+      // Escuta INSERT (novas) e UPDATE (status: delivered/read)
       const subscription = supabase
         .channel(`chat:${activeContact.remote_jid}`)
         .on('postgres_changes', { 
-            event: 'INSERT', 
+            event: '*', 
             schema: 'public', 
             table: 'messages',
             filter: `remote_jid=eq.${activeContact.remote_jid}`
         }, (payload) => {
-            setMessages(prev => [...prev, payload.new as Message]);
-            setTimeout(scrollToBottom, 100);
+            if (payload.eventType === 'INSERT') {
+                // Evita duplicar se já tivermos o ID (optimistic UI)
+                setMessages(prev => {
+                    if (prev.some(m => m.id === payload.new.id)) return prev;
+                    return [...prev, payload.new as Message];
+                });
+                setTimeout(scrollToBottom, 100);
+            } else if (payload.eventType === 'UPDATE') {
+                setMessages(prev => prev.map(m => m.id === payload.new.id ? payload.new as Message : m));
+            }
         })
         .subscribe();
 
       return () => { subscription.unsubscribe(); };
   }, [activeContact, supabase]);
 
-  // --- ENVIO GENÉRICO (TEXTO, MÍDIA, ETC) ---
+  // --- ENVIO UNIFICADO (Seguindo Contrato do Backend) ---
   const dispatchMessage = async (payload: any) => {
       if(!activeContact || !user?.company_id) return;
 
       const optimisticId = Date.now().toString();
 
-      // Monta preview do conteúdo para Optimistic Update
+      // Preview para UI Otimista
       let contentPreview = payload.text || payload.caption || "";
       if(payload.type === 'poll') contentPreview = JSON.stringify({ name: payload.name, options: payload.options });
-      if(payload.type === 'audio') contentPreview = payload.url; // URL do audio para o player
+      if(payload.type === 'audio') contentPreview = payload.url;
       if(payload.type === 'image' || payload.type === 'video') contentPreview = payload.url;
 
       const tempMsg: Message = {
@@ -119,7 +129,6 @@ export default function ChatPage() {
           created_at: new Date().toISOString(),
           session_id: 'default',
           company_id: user.company_id,
-          // Propriedade auxiliar para nosso componente saber que é midia
           media_url: payload.url 
       } as any;
 
@@ -127,16 +136,21 @@ export default function ChatPage() {
       setTimeout(scrollToBottom, 50);
 
       try {
+          // O backend espera: { sessionId, to, text, type, url, caption, options, companyId }
           await api.post('/message/send', {
               sessionId: 'default',
               companyId: user.company_id,
               to: activeContact.remote_jid,
-              ...payload // Espalha type, url, caption, options, ptt, etc.
+              type: payload.type || 'text',
+              text: payload.text,       // Para mensagens de texto
+              url: payload.url,         // Para mídia
+              caption: payload.caption, // Legenda
+              options: payload.options, // Opções da enquete
+              name: payload.name        // Nome da enquete
           });
       } catch (error) {
           addToast({ type: 'error', title: 'Erro', message: 'Falha ao enviar mensagem.' });
           console.error(error);
-          // Remove a mensagem otimista em caso de erro
           setMessages(prev => prev.filter(m => m.id !== optimisticId));
       }
   };
@@ -147,43 +161,38 @@ export default function ChatPage() {
       setInput("");
   };
 
-  // --- UPLOAD DE ARQUIVO (Imagem, Vídeo, Doc) ---
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file || !user?.company_id) return;
       setMediaMenuOpen(false);
 
-      addToast({ type: 'info', title: 'Enviando...', message: 'Fazendo upload da mídia.', duration: 3000 });
+      addToast({ type: 'info', title: 'Enviando...', message: 'Fazendo upload.' });
 
       try {
-          // 1. Upload Supabase
           const { publicUrl, fileName } = await uploadChatMedia(file, user.company_id);
 
-          // 2. Determinar Tipo
           let type = 'document';
           if (file.type.startsWith('image/')) type = 'image';
           else if (file.type.startsWith('video/')) type = 'video';
           else if (file.type.startsWith('audio/')) type = 'audio';
 
-          // 3. Enviar para Backend
           await dispatchMessage({
               type,
               url: publicUrl,
               fileName: fileName,
-              caption: input, // Usa o texto do input como legenda se houver
+              caption: input,
               mimetype: file.type
           });
           
-          setInput(""); // Limpa input se foi usado como legenda
+          setInput(""); 
 
       } catch (error: any) {
-          addToast({ type: 'error', title: 'Falha no Upload', message: error.message });
+          addToast({ type: 'error', title: 'Falha', message: error.message });
       } finally {
           if (fileInputRef.current) fileInputRef.current.value = '';
       }
   };
 
-  // --- GRAVAÇÃO DE ÁUDIO (PTT) ---
   const startRecording = async () => {
       try {
           const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -196,25 +205,22 @@ export default function ChatPage() {
           };
 
           mediaRecorder.onstop = async () => {
-              // Converte chunks para blob e arquivo
               const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/mp3' });
               const audioFile = new File([audioBlob], `ptt-${Date.now()}.mp3`, { type: 'audio/mp3' });
               
               if(user?.company_id) {
                   try {
-                      addToast({ type: 'info', title: 'Enviando Áudio...', message: 'Processando voz.' });
+                      addToast({ type: 'info', title: 'Enviando Áudio...', message: 'Processando...' });
                       const { publicUrl } = await uploadChatMedia(audioFile, user.company_id);
                       await dispatchMessage({
                           type: 'audio',
                           url: publicUrl,
-                          ptt: true // Flag importante para Voice Note
+                          ptt: true
                       });
                   } catch (e) {
                       addToast({ type: 'error', title: 'Erro', message: 'Falha ao enviar áudio.' });
                   }
               }
-              
-              // Limpeza
               stream.getTracks().forEach(track => track.stop());
           };
 
@@ -224,18 +230,13 @@ export default function ChatPage() {
           timerRef.current = setInterval(() => setRecordingTime(prev => prev + 1), 1000);
 
       } catch (e) {
-          addToast({ type: 'error', title: 'Permissão Negada', message: 'Não foi possível acessar o microfone.' });
+          addToast({ type: 'error', title: 'Erro', message: 'Microfone não acessível.' });
       }
   };
 
   const stopRecording = (cancel = false) => {
       if (mediaRecorderRef.current && isRecording) {
-          if (cancel) {
-               // Apenas para o recorder, não processa o onstop logic se fosse mais complexo, 
-               // mas aqui o onstop sempre dispara. Vamos ignorar o envio se for cancel.
-               // Hack simples: limpar chunks antes de parar
-               audioChunksRef.current = [];
-          }
+          if (cancel) audioChunksRef.current = [];
           mediaRecorderRef.current.stop();
       }
       if (timerRef.current) clearInterval(timerRef.current);
@@ -249,7 +250,6 @@ export default function ChatPage() {
       return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // --- ENQUETES ---
   const handleCreatePoll = () => {
       if(!pollQuestion || pollOptions.some(o => !o.trim())) {
           addToast({ type: 'warning', title: 'Atenção', message: 'Preencha a pergunta e as opções.' });
@@ -259,8 +259,7 @@ export default function ChatPage() {
       dispatchMessage({
           type: 'poll',
           name: pollQuestion,
-          options: pollOptions,
-          selectableCount: 1
+          options: pollOptions
       });
 
       setPollModalOpen(false);
@@ -279,7 +278,7 @@ export default function ChatPage() {
           const result = await generateSmartReplyAction(history);
           if (result.error) throw new Error(result.error);
           setInput(result.text || "");
-          addToast({ type: 'success', title: 'IA Wancora', message: 'Sugestão gerada.' });
+          addToast({ type: 'success', title: 'IA', message: 'Sugestão gerada.' });
       } catch (error) {
           addToast({ type: 'error', title: 'Erro IA', message: 'Falha ao processar.' });
       } finally {
@@ -328,7 +327,6 @@ export default function ChatPage() {
       <div className="flex-1 flex flex-col bg-[#09090b] relative">
         {activeContact ? (
             <>
-                {/* Header Chat */}
                 <div className="h-16 border-b border-zinc-800 flex items-center justify-between px-6 bg-zinc-900/50 backdrop-blur-md z-10">
                     <div className="flex items-center">
                         <div className="h-10 w-10 rounded-full bg-gradient-to-tr from-zinc-800 to-zinc-700 flex items-center justify-center text-sm font-bold border border-zinc-700">
@@ -344,18 +342,12 @@ export default function ChatPage() {
                     </div>
                 </div>
 
-                {/* Lista de Mensagens */}
                 <div 
                     className="flex-1 overflow-y-auto p-6 space-y-4"
                     style={{ backgroundImage: 'radial-gradient(circle at center, rgba(34, 197, 94, 0.03) 0%, transparent 70%)' }}
                 >
                     {loadingMessages ? (
                         <div className="flex h-full items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-primary/50" /></div>
-                    ) : messages.length === 0 ? (
-                        <div className="flex flex-col h-full items-center justify-center text-zinc-500 opacity-50">
-                            <Bot className="w-12 h-12 mb-2" />
-                            <p>Inicie a conversa</p>
-                        </div>
                     ) : messages.map((msg, idx) => (
                         <div key={msg.id || idx} className={`flex ${msg.from_me ? 'justify-end' : 'justify-start'} animate-in slide-in-from-bottom-2 duration-300`}>
                             <div className={`max-w-[75%] px-3 py-2 shadow-sm text-sm relative group ${
@@ -364,8 +356,13 @@ export default function ChatPage() {
                                     : 'bg-zinc-800/80 text-zinc-200 border border-zinc-700/50 rounded-2xl rounded-tl-sm'
                             }`}>
                                 <MessageBubble message={msg} />
-                                <div className={`flex justify-end mt-1 text-[9px] ${msg.from_me ? 'text-primary/60' : 'text-zinc-500'}`}>
+                                <div className={`flex justify-end mt-1 text-[9px] items-center gap-1 ${msg.from_me ? 'text-primary/60' : 'text-zinc-500'}`}>
                                     {new Date(msg.created_at).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}
+                                    {msg.from_me && (
+                                        <span>
+                                            {msg.status === 'read' ? '✓✓' : msg.status === 'delivered' ? '✓✓' : '✓'}
+                                        </span>
+                                    )}
                                 </div>
                             </div>
                         </div>
@@ -373,10 +370,7 @@ export default function ChatPage() {
                     <div ref={messagesEndRef} />
                 </div>
 
-                {/* Action Bar (Input) */}
                 <div className="p-4 border-t border-zinc-800 bg-zinc-900/30 backdrop-blur relative">
-                    
-                    {/* Botão IA Sugestão */}
                     <div className="flex items-center gap-2 mb-3">
                         <Button 
                             variant="outline" 
@@ -391,8 +385,6 @@ export default function ChatPage() {
                     </div>
 
                     <div className="flex items-end gap-2 bg-zinc-950/80 border border-zinc-800 rounded-xl p-2 focus-within:ring-1 focus-within:ring-primary/50 focus-within:border-primary/50 transition-all shadow-inner relative">
-                        
-                        {/* Menu de Anexos */}
                         <div className="relative">
                             <Button 
                                 variant="ghost" 
@@ -420,7 +412,6 @@ export default function ChatPage() {
                             )}
                         </div>
 
-                        {/* Input Texto */}
                         <textarea 
                             className="flex-1 bg-transparent border-none outline-none text-sm text-white placeholder-zinc-600 resize-none py-2 max-h-32 custom-scrollbar" 
                             placeholder={isRecording ? "Gravando áudio..." : "Digite uma mensagem..."}
@@ -436,7 +427,6 @@ export default function ChatPage() {
                             rows={1}
                         />
 
-                        {/* Controles de Áudio e Envio */}
                         {isRecording ? (
                             <div className="flex items-center gap-2 animate-in fade-in">
                                 <span className="text-red-500 font-mono text-xs animate-pulse">● {formatTime(recordingTime)}</span>
@@ -479,8 +469,6 @@ export default function ChatPage() {
                             </>
                         )}
                     </div>
-                    
-                    {/* Input Hidden para ref de arquivo se precisar resetar */}
                     <input type="file" className="hidden" ref={fileInputRef} />
                 </div>
             </>

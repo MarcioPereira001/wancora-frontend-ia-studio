@@ -3,7 +3,7 @@ import { createClient } from '@/utils/supabase/client';
 import { Instance } from '../types';
 
 export const whatsappService = {
-  // Busca o status da instância principal via Banco de Dados (Supabase)
+  // Busca status da instância (Defensivo: usa maybeSingle)
   getInstanceStatus: async (): Promise<Instance | null> => {
     try {
       const supabase = createClient();
@@ -24,9 +24,7 @@ export const whatsappService = {
         .limit(1)
         .maybeSingle();
 
-      if (error) {
-          return null;
-      }
+      if (error) return null;
       return data as Instance;
     } catch (error) {
       console.error('Erro ao buscar status da instância:', error);
@@ -38,22 +36,19 @@ export const whatsappService = {
     try {
       const supabase = createClient();
       const { data: { session } } = await supabase.auth.getSession();
-      
       if (!session?.user?.id) return [];
 
       const { data: profile } = await supabase.from('profiles').select('company_id').eq('id', session.user.id).single();
       if (!profile?.company_id) return [];
 
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from('instances')
         .select('*')
         .eq('company_id', profile.company_id)
         .order('created_at', { ascending: true });
 
-      if (error) throw error;
       return (data as Instance[]) || [];
     } catch (error) {
-      console.error('Erro ao buscar instâncias:', error);
       return [];
     }
   },
@@ -61,7 +56,6 @@ export const whatsappService = {
   getOneInstance: async (sessionId: string): Promise<Instance | null> => {
     try {
         const supabase = createClient();
-        // maybeSingle evita erro se não encontrar ou se houver duplicidade momentânea (retorna null ou o primeiro)
         const { data } = await supabase
             .from('instances')
             .select('*')
@@ -69,34 +63,25 @@ export const whatsappService = {
             .maybeSingle();
         return data as Instance;
     } catch (error) {
-        console.error("Erro ao buscar instância específica:", error);
         return null;
     }
   },
 
-  // Retorna o objeto Instance criado/atualizado para o frontend monitorar
   connectInstance: async (sessionId: string = 'default', instanceName?: string): Promise<Instance> => {
     try {
       const supabase = createClient();
       const { data: { session } } = await supabase.auth.getSession();
       
-      if (!session?.user?.id) {
-          throw new Error("Sessão expirada. Por favor, recarregue a página.");
-      }
+      if (!session?.user?.id) throw new Error("Sessão expirada.");
 
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('company_id')
-        .eq('id', session.user.id)
-        .single();
+      const { data: profile } = await supabase.from('profiles').select('company_id').eq('id', session.user.id).single();
       
-      if (profileError || !profile?.company_id) {
-          throw new Error("Usuário sem empresa vinculada.");
-      }
+      if (!profile?.company_id) throw new Error("Usuário sem empresa vinculada.");
 
       const displayName = instanceName || (sessionId === 'default' ? 'Principal' : sessionId);
 
-      // 1. Upsert no Supabase - Define status como connecting e limpa QR Code antigo
+      // 1. Reseta estado no banco para 'connecting' antes de chamar a API
+      // Isso evita que o frontend mostre QR Code velho
       const { data: instanceData, error: dbError } = await supabase
         .from('instances')
         .upsert({ 
@@ -109,13 +94,9 @@ export const whatsappService = {
         .select()
         .single();
 
-      if (dbError) {
-          console.error("Erro DB Supabase:", dbError);
-          throw new Error("Falha ao registrar instância no banco de dados.");
-      }
+      if (dbError) throw new Error("Falha no banco de dados.");
 
-      // 2. Chama API do Backend para iniciar o processo (/session/start)
-      // O backend irá atualizar a tabela instances com o QR Code assim que o Baileys gerar
+      // 2. Dispara backend
       await api.post('/session/start', {
         sessionId: sessionId,
         companyId: profile.company_id
@@ -124,7 +105,7 @@ export const whatsappService = {
       return instanceData as Instance;
 
     } catch (error) {
-      console.error('Erro ao conectar instância:', error);
+      console.error('Erro ao conectar:', error);
       throw error;
     }
   },
@@ -133,20 +114,18 @@ export const whatsappService = {
     try {
       const supabase = createClient();
       const { data: { session } } = await supabase.auth.getSession();
-
-      if (!session?.user?.id) throw new Error("Usuário não autenticado.");
+      if (!session?.user?.id) return;
 
       const { data: profile } = await supabase.from('profiles').select('company_id').eq('id', session.user.id).single();
+      if (!profile?.company_id) return;
 
-      if (!profile?.company_id) throw new Error("Usuário sem empresa.");
-
-      // Chama backend para matar processo
+      // Chama backend para logout limpo
       await api.post('/session/logout', {
           sessionId: sessionId,
           companyId: profile.company_id
       });
       
-      // Atualiza visualmente no banco
+      // Força atualização visual
       await supabase
         .from('instances')
         .update({ status: 'disconnected', qrcode_url: null })
@@ -154,7 +133,7 @@ export const whatsappService = {
         .eq('session_id', sessionId);
         
     } catch (error) {
-      console.error('Erro ao desconectar:', error);
+      console.error('Erro logout:', error);
       throw error;
     }
   },
@@ -163,30 +142,30 @@ export const whatsappService = {
       try {
         const supabase = createClient();
         const { data: { session } } = await supabase.auth.getSession();
-        if (!session?.user?.id) throw new Error("Usuário não autenticado.");
+        if (!session?.user?.id) return;
   
         const { data: profile } = await supabase.from('profiles').select('company_id').eq('id', session.user.id).single();
-        if (!profile?.company_id) throw new Error("Usuário sem empresa.");
+        if (!profile?.company_id) return;
   
+        // Tenta desconectar backend
         try {
             await api.post('/session/logout', {
                 sessionId: sessionId,
                 companyId: profile.company_id
             });
         } catch (e) {
-            console.log("Backend já desconectado, continuando exclusão.");
+            console.log("Backend offline, deletando registro apenas.");
         }
   
-        const { error } = await supabase
+        // Remove do banco
+        await supabase
             .from('instances')
             .delete()
             .eq('company_id', profile.company_id)
             .eq('session_id', sessionId);
-
-        if (error) throw error;
         
       } catch (error) {
-        console.error('Erro ao excluir instância:', error);
+        console.error('Erro delete:', error);
         throw error;
       }
   }
