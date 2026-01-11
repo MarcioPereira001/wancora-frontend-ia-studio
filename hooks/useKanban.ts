@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { createClient } from '@/utils/supabase/client';
 import { useAuthStore } from '@/store/useAuthStore';
-import { Lead, KanbanColumn, Pipeline, PipelineStage } from '@/types';
+import { Lead, KanbanColumn, PipelineStage } from '@/types';
 import { useToast } from '@/hooks/useToast';
 
 export function useKanban() {
@@ -37,10 +37,10 @@ export function useKanban() {
               pipeline = newPipe;
               // Criar estágios padrão
               const defaultStages = [
-                  { pipeline_id: newPipe.id, name: 'Novos', position: 0, color: '#3b82f6' },
-                  { pipeline_id: newPipe.id, name: 'Qualificação', position: 1, color: '#eab308' },
-                  { pipeline_id: newPipe.id, name: 'Negociação', position: 2, color: '#f97316' },
-                  { pipeline_id: newPipe.id, name: 'Ganho', position: 3, color: '#22c55e' }
+                  { pipeline_id: newPipe.id, name: 'Novos', position: 0, color: '#3b82f6', company_id: user.company_id },
+                  { pipeline_id: newPipe.id, name: 'Qualificação', position: 1, color: '#eab308', company_id: user.company_id },
+                  { pipeline_id: newPipe.id, name: 'Negociação', position: 2, color: '#f97316', company_id: user.company_id },
+                  { pipeline_id: newPipe.id, name: 'Ganho', position: 3, color: '#22c55e', company_id: user.company_id }
               ];
               await supabase.from('pipeline_stages').insert(defaultStages);
           } else if (createError) {

@@ -3,14 +3,12 @@ import { supabase } from './supabaseClient';
 import { Instance } from '../types';
 
 export const whatsappService = {
-  // Busca o status atualizado diretamente do banco de dados (Single Source of Truth)
+  // Busca o status da instância principal (Backward Compatibility para o Chat)
   getInstanceStatus: async (): Promise<Instance | null> => {
     try {
-      // Obtém sessão para filtrar por empresa
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return null;
 
-      // Pega o ID da empresa do perfil (segurança extra)
       const { data: profile } = await supabase.from('profiles').select('company_id').eq('id', session.user.id).single();
       const companyId = profile?.company_id;
 
@@ -20,6 +18,7 @@ export const whatsappService = {
         .from('instances')
         .select('*')
         .eq('company_id', companyId)
+        .order('updated_at', { ascending: false })
         .limit(1)
         .maybeSingle();
 
@@ -34,7 +33,30 @@ export const whatsappService = {
     }
   },
 
-  // Inicia a sessão no Backend (Render)
+  // NOVO: Busca TODAS as instâncias da empresa para o Grid de Conexões
+  getAllInstances: async (): Promise<Instance[]> => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return [];
+
+      const { data: profile } = await supabase.from('profiles').select('company_id').eq('id', session.user.id).single();
+      if (!profile?.company_id) return [];
+
+      const { data, error } = await supabase
+        .from('instances')
+        .select('*')
+        .eq('company_id', profile.company_id)
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+      return (data as Instance[]) || [];
+    } catch (error) {
+      console.error('Erro ao buscar instâncias:', error);
+      return [];
+    }
+  },
+
+  // Inicia a sessão no Backend (Render) com suporte a SessionID dinâmico
   connectInstance: async (sessionId: string = 'default') => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -58,7 +80,7 @@ export const whatsappService = {
               company_id: profile.company_id, 
               session_id: sessionId, 
               status: 'connecting',
-              name: 'Principal'
+              name: sessionId === 'default' ? 'Principal' : sessionId
           });
       }
 
@@ -75,7 +97,7 @@ export const whatsappService = {
     }
   },
 
-  // Desconecta a sessão
+  // Desconecta a sessão específica
   logoutInstance: async (sessionId: string = 'default') => {
     try {
       const { data: { session } } = await supabase.auth.getSession();

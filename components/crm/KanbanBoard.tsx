@@ -168,7 +168,7 @@ export function KanbanBoard() {
         )}
       </div>
 
-      {/* FIXED: Conditionally render the modal only if selectedLead exists */}
+      {/* Conditionally render the modal only if selectedLead exists */}
       {selectedLead && (
         <LeadDetailsModal 
           lead={selectedLead} 
