@@ -168,11 +168,14 @@ export function KanbanBoard() {
         )}
       </div>
 
-      <LeadDetailsModal 
-        lead={selectedLead} 
-        isOpen={!!selectedLead} 
-        onClose={() => { setSelectedLead(null); refresh(); }} 
-      />
+      {/* FIXED: Conditionally render the modal only if selectedLead exists */}
+      {selectedLead && (
+        <LeadDetailsModal 
+          lead={selectedLead} 
+          isOpen={!!selectedLead} 
+          onClose={() => { setSelectedLead(null); refresh(); }} 
+        />
+      )}
 
       <NewLeadModal 
         isOpen={isNewLeadOpen}

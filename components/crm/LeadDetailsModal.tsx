@@ -9,16 +9,19 @@ import { useToast } from '@/hooks/useToast';
 import { Trash2, Save } from 'lucide-react';
 
 interface LeadDetailsModalProps {
-  lead: Lead;
+  lead: Lead | null;
   isOpen: boolean;
   onClose: () => void;
 }
 
 export function LeadDetailsModal({ lead, isOpen, onClose }: LeadDetailsModalProps) {
-  const [data, setData] = useState<Lead>(lead);
+  // Inicialização defensiva: usa objeto vazio se lead for null para evitar crash no hook, mas retorna null logo após
+  const [data, setData] = useState<Lead>(lead || {} as Lead);
   const [loading, setLoading] = useState(false);
   const supabase = createClient();
   const { addToast } = useToast();
+
+  if (!lead) return null;
 
   const handleSave = async () => {
       setLoading(true);
@@ -52,16 +55,16 @@ export function LeadDetailsModal({ lead, isOpen, onClose }: LeadDetailsModalProp
         <div className="space-y-4">
             <div>
                 <label className="text-xs text-zinc-500 uppercase font-bold">Nome</label>
-                <Input value={data.name} onChange={e => setData({...data, name: e.target.value})} className="mt-1" />
+                <Input value={data.name || ''} onChange={e => setData({...data, name: e.target.value})} className="mt-1" />
             </div>
             <div className="grid grid-cols-2 gap-4">
                 <div>
                     <label className="text-xs text-zinc-500 uppercase font-bold">Telefone</label>
-                    <Input value={data.phone} onChange={e => setData({...data, phone: e.target.value})} className="mt-1" />
+                    <Input value={data.phone || ''} onChange={e => setData({...data, phone: e.target.value})} className="mt-1" />
                 </div>
                 <div>
                     <label className="text-xs text-zinc-500 uppercase font-bold">Valor (R$)</label>
-                    <Input type="number" value={data.value_potential} onChange={e => setData({...data, value_potential: Number(e.target.value)})} className="mt-1" />
+                    <Input type="number" value={data.value_potential || 0} onChange={e => setData({...data, value_potential: Number(e.target.value)})} className="mt-1" />
                 </div>
             </div>
             <div>
