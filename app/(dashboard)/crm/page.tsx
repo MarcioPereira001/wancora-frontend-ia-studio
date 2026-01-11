@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { KanbanBoard } from '@/components/crm/KanbanBoard';
-import { Button } from '@/components/ui/Button';
+import { Button } from '@/components/ui/button';
 import { Plus } from 'lucide-react';
 import { NewLeadModal } from '@/components/crm/NewLeadModal';
 import { useKanban } from '@/hooks/useKanban';
@@ -11,7 +11,6 @@ export default function CRMPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const { columns, refresh } = useKanban();
 
-  // Encontra o ID da primeira coluna para usar como default
   const defaultStageId = columns.length > 0 ? columns[0].id : undefined;
 
   return (

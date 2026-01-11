@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { QrCode, Smartphone, RefreshCw, Power, CheckCircle, AlertCircle, Loader2, CreditCard, Building, ExternalLink } from 'lucide-react';
-import { Button } from '@/components/ui/Button';
+import { Button } from '@/components/ui/button';
 import { whatsappService } from '@/services/whatsappService';
 import { Instance } from '@/types';
 import { useToast } from '@/hooks/useToast';
@@ -136,12 +136,12 @@ export default function SettingsPage() {
                     <div className="flex items-center gap-4 mb-6">
                         <div className={`w-16 h-16 rounded-full flex items-center justify-center border-2 transition-all duration-500 ${
                             instance?.status === 'connected' ? 'border-green-500 bg-green-500/10' : 
-                            instance?.status === 'qrcode' || instance?.status === 'connecting' ? 'border-yellow-500 bg-yellow-500/10' :
+                            instance?.status === 'qr_ready' || instance?.status === 'connecting' ? 'border-yellow-500 bg-yellow-500/10' :
                             'border-red-500 bg-red-500/10'
                         }`}>
                             {instance?.status === 'connected' ? (
                                 <CheckCircle className="w-8 h-8 text-green-500" />
-                            ) : instance?.status === 'qrcode' || instance?.status === 'connecting' ? (
+                            ) : instance?.status === 'qr_ready' || instance?.status === 'connecting' ? (
                                 <Loader2 className="w-8 h-8 text-yellow-500 animate-spin" />
                             ) : (
                                 <AlertCircle className="w-8 h-8 text-red-500" />
@@ -150,7 +150,7 @@ export default function SettingsPage() {
                         <div>
                             <h4 className="font-medium text-white text-lg">
                                 {instance?.status === 'connected' ? 'Online' : 
-                                 instance?.status === 'qrcode' ? 'Lendo QR Code' : 
+                                 instance?.status === 'qr_ready' ? 'Lendo QR Code' : 
                                  instance?.status === 'connecting' ? 'Iniciando...' :
                                  'Desconectado'}
                             </h4>
@@ -187,7 +187,7 @@ export default function SettingsPage() {
                                 className="w-full"
                             >
                                 <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-                                {instance?.status === 'qrcode' ? 'Gerar Novo QR' : 'Iniciar Conexão'}
+                                {instance?.status === 'qr_ready' ? 'Gerar Novo QR' : 'Iniciar Conexão'}
                             </Button>
                         )}
                     </div>

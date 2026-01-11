@@ -13,38 +13,57 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
 
   useEffect(() => {
     const checkUser = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session && !pathname.startsWith('/auth')) {
-        router.push('/auth/login');
-        setLoading(false);
-        return;
-      }
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (!session) {
+          if (!pathname.startsWith('/auth') && pathname !== '/') {
+            router.push('/auth/login');
+          }
+          setLoading(false);
+          return;
+        }
 
-      if (session) {
-        // Fetch additional user data if needed from a 'users' table
-        // For MVP, using metadata or mocking structure
+        // Busca dados reais do perfil para obter o company_id
+        const { data: profile, error } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', session.user.id)
+            .single();
+
+        if (error && !profile) {
+            console.error("Erro ao buscar perfil:", error);
+            // Fallback para metadados ou estado de erro, se necessário
+        }
+
         setUser({
           id: session.user.id,
           email: session.user.email!,
-          name: session.user.user_metadata.name || 'Usuário',
-          role: session.user.user_metadata.role || 'admin',
-          company_id: session.user.user_metadata.company_id || 'default_company'
+          name: profile?.name || session.user.user_metadata.name || 'Usuário',
+          role: profile?.role || 'admin',
+          company_id: profile?.company_id || session.user.user_metadata.company_id
         });
+
+      } catch (error) {
+        console.error("Auth check failed:", error);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     };
 
     checkUser();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-        if (!session && !pathname.startsWith('/auth')) {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+        if (event === 'SIGNED_OUT') {
+            setUser(null);
             router.push('/auth/login');
+        } else if (event === 'SIGNED_IN' && session) {
+            checkUser(); // Re-fetch profile on sign-in
         }
     });
 
     return () => subscription.unsubscribe();
-  }, [pathname, router, setUser, setLoading, supabase.auth]);
+  }, [pathname, router, setUser, setLoading, supabase]);
 
   return <>{children}</>;
 }

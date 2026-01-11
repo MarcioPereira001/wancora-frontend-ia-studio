@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Button } from "@/components/ui/Button";
+import { Button } from "@/components/ui/button";
 import { TagSelector } from "@/components/crm/TagSelector";
 import { Send, Save, Calendar, Users, Loader2, AlertCircle } from 'lucide-react';
 import { useToast } from '@/hooks/useToast';

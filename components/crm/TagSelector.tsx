@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { X, Plus } from 'lucide-react';
-import { Button } from '@/components/ui/Button';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
 interface TagSelectorProps {

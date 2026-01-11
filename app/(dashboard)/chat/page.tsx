@@ -5,23 +5,25 @@ import { createClient } from '@/utils/supabase/client';
 import { useAuthStore } from '@/store/useAuthStore';
 import { ChatContact, Message } from '@/types';
 import { cleanJid } from '@/lib/utils';
-import { Loader2, Search, Send, Paperclip, Sparkles, Mic, Phone, Video, Bot, RefreshCw } from 'lucide-react';
+import { Loader2, Search, Send, Paperclip, Sparkles, Mic, Phone, Video, Bot } from 'lucide-react';
 import { MessageContent } from '@/components/chat/MessageContent';
-import { Button } from '@/components/ui/Button';
-import { generateSmartReplyAction } from '@/app/actions/gemini'; // Server Action import
+import { Button } from '@/components/ui/button';
+import { generateSmartReplyAction } from '@/app/actions/gemini';
 import { useToast } from '@/hooks/useToast';
 import { whatsappService } from '@/services/whatsappService';
 import { api } from '@/services/api';
+import { useChatList } from '@/hooks/useChatList';
 
 export default function ChatPage() {
   const { user } = useAuthStore();
   const supabase = createClient();
   const { addToast } = useToast();
   
-  const [contacts, setContacts] = useState<ChatContact[]>([]);
+  // Usando o Hook Otimizado
+  const { contacts, loading: loadingContacts } = useChatList();
+  
   const [activeContact, setActiveContact] = useState<ChatContact | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [loading, setLoading] = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [input, setInput] = useState("");
   const [isAiLoading, setIsAiLoading] = useState(false);
@@ -33,7 +35,6 @@ export default function ChatPage() {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  // Check Connection
   useEffect(() => {
     const check = async () => {
         const status = await whatsappService.getInstanceStatus();
@@ -42,35 +43,6 @@ export default function ChatPage() {
     check();
   }, []);
 
-  // Load Contacts
-  useEffect(() => {
-    if (!user) return;
-    const fetchContacts = async () => {
-        const { data } = await supabase
-            .from('contacts')
-            .select('*')
-            .order('updated_at', { ascending: false });
-        
-        setContacts((data || []).map((c: any) => ({
-            ...c,
-            phone_number: c.jid.split('@')[0],
-            remote_jid: c.jid
-        })));
-        setLoading(false);
-    };
-    fetchContacts();
-    
-    const subscription = supabase
-        .channel('public:messages_contacts')
-        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, () => {
-            fetchContacts();
-        })
-        .subscribe();
-
-    return () => { subscription.unsubscribe(); };
-  }, [user, supabase]);
-
-  // Load Messages
   useEffect(() => {
       if(!activeContact) return;
       
@@ -79,7 +51,8 @@ export default function ChatPage() {
           const { data } = await supabase
             .from('messages')
             .select('*')
-            .eq('remote_jid', activeContact.remote_jid)
+            // Importante: Filtrar também por company_id se messages tiver essa coluna, ou confiar no RLS
+            .eq('remote_jid', activeContact.remote_jid) 
             .order('created_at', { ascending: true });
           
           setMessages(data || []);
@@ -142,12 +115,10 @@ export default function ChatPage() {
       if(messages.length === 0) return;
       setIsAiLoading(true);
       try {
-          // Construct context string
           const history = messages.slice(-10).map(m => 
             `${m.from_me ? 'Atendente' : 'Cliente'}: ${m.body || m.content}`
           ).join('\n');
 
-          // Call Server Action
           const result = await generateSmartReplyAction(history);
           
           if (result.error) throw new Error(result.error);
@@ -176,7 +147,7 @@ export default function ChatPage() {
             </div>
         </div>
         <div className="flex-1 overflow-y-auto custom-scrollbar">
-            {loading ? (
+            {loadingContacts ? (
                 <div className="flex justify-center p-8"><Loader2 className="animate-spin text-primary" /></div>
             ) : contacts.map(contact => (
                 <div 

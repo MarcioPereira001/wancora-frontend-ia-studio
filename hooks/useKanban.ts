@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { createClient } from '@/utils/supabase/client';
 import { useAuthStore } from '@/store/useAuthStore';
-import { Lead, KanbanColumn } from '@/types/crm';
+import { Lead, KanbanColumn } from '@/types';
 import { useToast } from '@/hooks/useToast';
 
 export function useKanban() {
@@ -23,7 +23,10 @@ export function useKanban() {
         .eq('company_id', user.company_id)
         .order('position');
       
-      if (stagesError) throw stagesError;
+      if (stagesError) {
+          console.error('Error fetching stages:', stagesError);
+          return [];
+      }
 
       // 2. Fetch Leads
       const { data: leads, error: leadsError } = await supabase
@@ -31,7 +34,10 @@ export function useKanban() {
         .select('*')
         .eq('company_id', user.company_id);
 
-      if (leadsError) throw leadsError;
+      if (leadsError) {
+          console.error('Error fetching leads:', leadsError);
+          return [];
+      }
 
       return stages.map((stage: any) => ({
         id: stage.id,
@@ -58,31 +64,41 @@ export function useKanban() {
       return { leadId, toStageId };
     },
     onMutate: async ({ leadId, toStageId }) => {
-      // Optimistic Update
+      // Cancelar queries em andamento
       await queryClient.cancelQueries({ queryKey: ['kanban', user?.company_id] });
-      const previousBoard = queryClient.getQueryData(['kanban', user?.company_id]);
+      
+      // Snapshot do estado anterior
+      const previousBoard = queryClient.getQueryData<KanbanColumn[]>(['kanban', user?.company_id]);
 
+      // Atualização Otimista
       queryClient.setQueryData(['kanban', user?.company_id], (old: KanbanColumn[] | undefined) => {
         if (!old) return [];
-        const newCols = old.map(col => ({ ...col, items: [...(col.items || [])] }));
+        
+        // Deep copy
+        const newCols = old.map(col => ({ 
+            ...col, 
+            items: col.items ? [...col.items] : [] 
+        }));
         
         let movedLead: Lead | undefined;
         
-        // Remove from old column
+        // 1. Encontrar e remover da coluna antiga
         for (const col of newCols) {
-          const idx = col.items?.findIndex(l => l.id === leadId);
-          if (idx !== undefined && idx > -1) {
-            [movedLead] = col.items!.splice(idx, 1);
+          if (!col.items) continue;
+          const idx = col.items.findIndex(l => l.id === leadId);
+          if (idx !== -1) {
+            [movedLead] = col.items.splice(idx, 1);
             break;
           }
         }
 
-        // Add to new column
+        // 2. Adicionar na nova coluna
         if (movedLead) {
-          movedLead.stage_id = toStageId;
+          movedLead.stage_id = toStageId; // Atualiza ID localmente
           const targetCol = newCols.find(c => c.id === toStageId);
           if (targetCol) {
-            targetCol.items?.push(movedLead);
+            if (!targetCol.items) targetCol.items = [];
+            targetCol.items.push(movedLead);
           }
         }
 
@@ -92,10 +108,14 @@ export function useKanban() {
       return { previousBoard };
     },
     onError: (err, newTodo, context) => {
-      queryClient.setQueryData(['kanban', user?.company_id], context?.previousBoard);
+      // Rollback em caso de erro
+      if (context?.previousBoard) {
+        queryClient.setQueryData(['kanban', user?.company_id], context.previousBoard);
+      }
       addToast({ type: 'error', title: 'Erro ao mover', message: 'Não foi possível salvar a alteração.' });
     },
     onSettled: () => {
+      // Revalidar dados reais
       queryClient.invalidateQueries({ queryKey: ['kanban', user?.company_id] });
     },
   });

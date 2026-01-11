@@ -1,7 +1,7 @@
 import React from 'react';
-import { Lead } from '@/types/crm';
+import { Lead } from '@/types';
 import { Card, CardContent } from '@/components/ui/card';
-import { DollarSign, Phone, Mail } from 'lucide-react';
+import { DollarSign, Phone, Mail, User, Clock } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 
 interface KanbanCardProps {
@@ -11,47 +11,60 @@ interface KanbanCardProps {
 }
 
 export const KanbanCard: React.FC<KanbanCardProps> = ({ lead, onDragStart, onClick }) => {
+  const getTemperatureStyle = (temp?: string) => {
+    switch(temp) {
+      case 'hot': return 'border-red-500/30 bg-red-500/10 text-red-400';
+      case 'warm': return 'border-orange-500/30 bg-orange-500/10 text-orange-400';
+      case 'cold': return 'border-blue-500/30 bg-blue-500/10 text-blue-400';
+      default: return 'border-zinc-700 bg-zinc-800 text-zinc-400';
+    }
+  };
+
   return (
-    <Card 
+    <div
       draggable
       onDragStart={(e) => onDragStart(e, lead.id)}
       onClick={onClick}
-      className="bg-zinc-900 border-zinc-800 cursor-grab hover:border-primary/50 transition-all hover:shadow-md active:cursor-grabbing mb-3"
+      className="group relative mb-3 cursor-grab active:cursor-grabbing"
     >
-      <CardContent className="p-3">
-        <div className="flex justify-between items-start mb-2">
-            {lead.temperature && (
-                <span className={`text-[10px] px-2 py-0.5 rounded border font-medium ${
-                    lead.temperature === 'hot' ? 'border-red-900 bg-red-900/20 text-red-400' : 
-                    lead.temperature === 'warm' ? 'border-orange-900 bg-orange-900/20 text-orange-400' :
-                    'border-blue-900 bg-blue-900/20 text-blue-400'
-                }`}>
-                    {lead.temperature === 'hot' ? 'QUENTE' : lead.temperature === 'warm' ? 'MORNO' : 'FRIO'}
-                </span>
-            )}
-        </div>
-        
-        <h4 className="font-medium text-white mb-1">{lead.name}</h4>
-        
-        {lead.value_potential ? (
-            <div className="flex items-center text-green-400 text-xs font-mono mb-2">
-                <DollarSign className="w-3 h-3 mr-1" />
-                {formatCurrency(lead.value_potential)}
+      <div className="absolute -inset-0.5 bg-gradient-to-r from-primary/20 to-secondary/20 rounded-lg blur opacity-0 group-hover:opacity-100 transition duration-500"></div>
+      <Card className="relative bg-zinc-900 border-zinc-800 hover:border-zinc-700 transition-all">
+        <CardContent className="p-3 space-y-3">
+          <div className="flex justify-between items-start">
+            <div className="flex flex-col">
+                <span className="font-semibold text-zinc-200 text-sm line-clamp-1">{lead.name}</span>
+                {lead.value_potential ? (
+                    <span className="text-xs font-mono text-green-400 flex items-center mt-0.5">
+                        <DollarSign className="w-3 h-3 mr-0.5" />
+                        {formatCurrency(lead.value_potential)}
+                    </span>
+                ) : null}
             </div>
-        ) : null}
+            {lead.temperature && (
+                <div className={`w-2 h-2 rounded-full ${lead.temperature === 'hot' ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]' : lead.temperature === 'warm' ? 'bg-orange-500' : 'bg-blue-500'}`} />
+            )}
+          </div>
 
-        <p className="text-xs text-zinc-500 line-clamp-2 mb-3">{lead.notes || 'Sem observações.'}</p>
+          {lead.notes && (
+            <p className="text-[10px] text-zinc-500 line-clamp-2 leading-relaxed bg-zinc-950/50 p-1.5 rounded border border-zinc-800/50">
+              {lead.notes}
+            </p>
+          )}
 
-        <div className="flex items-center gap-2 pt-2 border-t border-zinc-800/50">
-             <div className="w-5 h-5 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center text-[10px] text-zinc-400">
-                 {lead.name?.[0]}
+          <div className="flex items-center justify-between pt-2 border-t border-zinc-800/50">
+             <div className="flex gap-2">
+                 {lead.phone && <Phone className="w-3 h-3 text-zinc-600 hover:text-primary transition-colors" />}
+                 {lead.email && <Mail className="w-3 h-3 text-zinc-600 hover:text-primary transition-colors" />}
              </div>
-             <div className="ml-auto flex gap-1">
-                 {lead.phone && <Phone className="w-3 h-3 text-zinc-500" />}
-                 {lead.email && <Mail className="w-3 h-3 text-zinc-500" />}
+             <div className="text-[10px] text-zinc-600 flex items-center gap-1">
+                <Clock className="w-3 h-3" />
+                <span>{lead.created_at ? new Date(lead.created_at).toLocaleDateString() : 'Hoje'}</span>
              </div>
-        </div>
-      </CardContent>
-    </Card>
+          </div>
+          
+          <div className={`absolute top-0 right-0 w-full h-1 rounded-t-lg opacity-50 ${getTemperatureStyle(lead.temperature).split(' ')[0].replace('border', 'bg')}`} />
+        </CardContent>
+      </Card>
+    </div>
   );
 };

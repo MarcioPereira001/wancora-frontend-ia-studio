@@ -10,11 +10,23 @@ export function useCompany() {
     queryKey: ['company', user?.company_id],
     queryFn: async () => {
       if (!user?.company_id) return null;
-      // Mocking company table response or fetching from metadata
+      
+      const { data, error } = await supabase
+        .from('companies')
+        .select('*')
+        .eq('id', user.company_id)
+        .single();
+
+      if (error) {
+          console.error("Erro ao buscar empresa:", error);
+          return null;
+      }
+
       return {
-          id: user.company_id,
-          name: 'Minha Empresa', // Replace with actual fetch if table exists
-          plan: 'pro'
+          id: data.id,
+          name: data.name,
+          plan: data.plan || 'free',
+          // Mapear outros campos conforme seu schema real
       };
     },
     enabled: !!user?.company_id

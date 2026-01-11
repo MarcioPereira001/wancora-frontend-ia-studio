@@ -1,21 +1,35 @@
+// AUTH TYPES
 export interface User {
   id: string;
   email: string;
   name: string;
   company_id: string;
   role: 'admin' | 'user';
+  avatar_url?: string;
+  created_at?: string;
 }
 
-export interface Ticket {
+export interface AuthSession {
+  user: User | null;
+  accessToken: string | null;
+}
+
+// CRM & PIPELINE TYPES
+export interface Lead {
   id: string;
-  title: string;
-  description?: string;
-  status: string;
   company_id: string;
-  contact_id?: string;
-  created_at: string;
+  stage_id: string;
+  name: string;
+  phone: string;
+  email?: string;
   value_potential?: number;
-  priority: 'low' | 'medium' | 'high';
+  temperature?: 'cold' | 'warm' | 'hot';
+  priority?: 'low' | 'medium' | 'high';
+  tags?: string[];
+  notes?: string;
+  created_at?: string;
+  owner_id?: string;
+  lead_score?: number;
 }
 
 export interface KanbanColumn {
@@ -24,8 +38,19 @@ export interface KanbanColumn {
   order: number;
   company_id: string;
   color?: string;
+  items?: Lead[];
 }
 
+export interface PipelineStage {
+  id: string;
+  pipeline_id?: string;
+  name: string;
+  position: number;
+  color: string;
+  company_id?: string;
+}
+
+// WHATSAPP & CHAT TYPES
 export interface WhatsAppInstance {
   id: string;
   name: string;
@@ -45,7 +70,7 @@ export interface ChatContact {
   id: string;
   name: string;
   profile_pic_url?: string;
-  phone_number: string; // remote_jid limpo
+  phone_number: string;
   remote_jid: string;
   last_message?: string;
   last_message_time?: string;
@@ -65,6 +90,7 @@ export interface Message {
   message_type?: string;
 }
 
+// MARKETING TYPES
 export interface Campaign {
   id?: string;
   name: string;
@@ -72,4 +98,5 @@ export interface Campaign {
   target_tags: string[];
   scheduled_at?: string;
   status: 'draft' | 'scheduled' | 'sent';
+  company_id?: string;
 }

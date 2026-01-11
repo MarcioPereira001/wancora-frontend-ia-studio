@@ -1,13 +1,13 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { 
   Zap, CheckCircle, ArrowRight, Bot, LayoutDashboard, 
-  MessageSquare, BarChart3, ShieldCheck, Globe, Cpu 
+  MessageSquare, BarChart3, Globe, Cpu 
 } from 'lucide-react';
-import { Button } from '@/components/ui/Button';
+import { Button } from '@/components/ui/button';
 
 // --- COMPONENTS SECTIONS ---
 

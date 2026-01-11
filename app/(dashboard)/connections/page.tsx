@@ -4,9 +4,10 @@ import { useState, useEffect } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { useAuthStore } from '@/store/useAuthStore';
 import { WhatsAppInstance } from '@/types';
-import { Button } from '@/components/ui/Button';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Smartphone, RefreshCw, Power, CheckCircle, AlertCircle } from 'lucide-react';
+import { whatsappService } from '@/services/whatsappService';
 
 export default function ConnectionsPage() {
   const { user } = useAuthStore();
@@ -15,26 +16,35 @@ export default function ConnectionsPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user?.company_id) return;
     
-    // Polling simulation for status updates
-    const interval = setInterval(async () => {
-        const { data } = await supabase
-            .from('instances')
-            .select('*')
-            .eq('company_id', user.company_id)
-            .single();
-        
-        if (data) setInstance(data);
+    // Busca inicial
+    const fetchStatus = async () => {
+        const data = await whatsappService.getInstanceStatus();
+        setInstance(data);
         setLoading(false);
-    }, 2000);
+    };
+    fetchStatus();
+
+    // Polling de 3 segundos para atualizar o QR Code ou status
+    const interval = setInterval(fetchStatus, 3000);
 
     return () => clearInterval(interval);
-  }, [user, supabase]);
+  }, [user]);
 
   const handleConnect = async () => {
-      // Mock action
-      alert("Comando enviado: Iniciar Sessão");
+      if (!instance?.session_id) {
+          await whatsappService.connectInstance('default');
+      } else {
+          await whatsappService.connectInstance(instance.session_id);
+      }
+  };
+
+  const handleLogout = async () => {
+      if(instance?.session_id) {
+          await whatsappService.logoutInstance(instance.session_id);
+          setInstance(prev => prev ? {...prev, status: 'disconnected', qrcode_url: undefined} : null);
+      }
   };
 
   return (
@@ -54,27 +64,34 @@ export default function ConnectionsPage() {
             </CardHeader>
             <CardContent className="space-y-6">
                 <div className="flex items-center gap-4">
-                    <div className={`h-16 w-16 rounded-full flex items-center justify-center border-2 ${
-                        instance?.status === 'connected' ? 'border-green-500 bg-green-500/10' : 'border-red-500 bg-red-500/10'
+                    <div className={`h-16 w-16 rounded-full flex items-center justify-center border-2 transition-colors ${
+                        instance?.status === 'connected' ? 'border-green-500 bg-green-500/10' : 
+                        instance?.status === 'connecting' || instance?.status === 'qr_ready' ? 'border-yellow-500 bg-yellow-500/10' :
+                        'border-red-500 bg-red-500/10'
                     }`}>
                         {instance?.status === 'connected' ? <CheckCircle className="h-8 w-8 text-green-500" /> : <AlertCircle className="h-8 w-8 text-red-500" />}
                     </div>
                     <div>
                         <h3 className="text-lg font-medium text-white">
                             {instance?.status === 'connected' ? 'Conectado' : 
-                             instance?.status === 'qr_ready' ? 'Aguardando Leitura' : 'Desconectado'}
+                             instance?.status === 'qr_ready' ? 'Aguardando Leitura' : 
+                             instance?.status === 'connecting' ? 'Iniciando...' : 'Desconectado'}
                         </h3>
                         <p className="text-sm text-zinc-500">{instance?.session_id || 'Padrão'}</p>
                     </div>
                 </div>
 
                 <div className="flex gap-2">
-                    <Button variant="outline" className="w-full" onClick={handleConnect}>
-                        <RefreshCw className="mr-2 h-4 w-4" /> Reconectar
-                    </Button>
-                    <Button variant="destructive" className="w-full">
-                        <Power className="mr-2 h-4 w-4" /> Desconectar
-                    </Button>
+                    {instance?.status !== 'connected' ? (
+                        <Button variant="outline" className="w-full" onClick={handleConnect} disabled={instance?.status === 'connecting'}>
+                            <RefreshCw className={`mr-2 h-4 w-4 ${instance?.status === 'connecting' ? 'animate-spin' : ''}`} /> 
+                            {instance?.status === 'connecting' ? 'Conectando...' : 'Iniciar Conexão'}
+                        </Button>
+                    ) : (
+                        <Button variant="destructive" className="w-full" onClick={handleLogout}>
+                            <Power className="mr-2 h-4 w-4" /> Desconectar
+                        </Button>
+                    )}
                 </div>
             </CardContent>
         </Card>
@@ -82,11 +99,11 @@ export default function ConnectionsPage() {
         {instance?.status !== 'connected' && (
             <Card className="bg-white text-black border-none">
                 <CardContent className="flex flex-col items-center justify-center py-10 space-y-4">
-                    {instance?.qrcode ? (
-                        <img src={instance.qrcode} alt="QR Code" className="w-48 h-48 mix-blend-multiply" />
+                    {instance?.qrcode_url ? (
+                        <img src={instance.qrcode_url.startsWith('data') ? instance.qrcode_url : `data:image/png;base64,${instance.qrcode_url}`} alt="QR Code" className="w-48 h-48 mix-blend-multiply" />
                     ) : (
-                        <div className="w-48 h-48 bg-gray-100 flex items-center justify-center rounded text-sm text-gray-500">
-                            Aguardando QR Code...
+                        <div className="w-48 h-48 bg-gray-100 flex items-center justify-center rounded text-sm text-gray-500 animate-pulse">
+                            {instance?.status === 'connecting' ? 'Gerando QR Code...' : 'Aguardando ação...'}
                         </div>
                     )}
                     <div className="text-center">

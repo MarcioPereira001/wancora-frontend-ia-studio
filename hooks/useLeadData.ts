@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { createClient } from '@/utils/supabase/client';
-import { Lead } from '@/types/crm';
+import { Lead } from '@/types';
 
 export function useLeadData(leadId: string | null) {
   const [lead, setLead] = useState<Lead | null>(null);

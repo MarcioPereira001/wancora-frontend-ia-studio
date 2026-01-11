@@ -1,16 +1,35 @@
-import { BACKEND_URL, COMPANY_ID } from '../config';
+import { BACKEND_URL } from '../config';
+import { supabase } from './supabaseClient';
 
 // Wrapper para Fetch API com tratamento de erro robusto
+const getHeaders = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+    };
+    
+    if (session) {
+        // Authenticated request
+        headers['Authorization'] = `Bearer ${session.access_token}`;
+        
+        // Tentativa de obter company_id do metadata (assumindo que foi salvo no login/signup)
+        // Se não houver, o backend deve tratar ou o usuário deve relogar
+        const companyId = session.user.user_metadata?.company_id;
+        if (companyId) {
+            headers['x-company-id'] = companyId;
+        }
+    }
+    return headers;
+};
+
 export const api = {
   get: async (endpoint: string) => {
     try {
+      const headers = await getHeaders();
       const response = await fetch(`${BACKEND_URL}${endpoint}`, {
         method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-company-id': COMPANY_ID,
-          'Accept': 'application/json'
-        }
+        headers
       });
       
       if (!response.ok) {
@@ -27,13 +46,10 @@ export const api = {
 
   post: async (endpoint: string, body: any) => {
     try {
+      const headers = await getHeaders();
       const response = await fetch(`${BACKEND_URL}${endpoint}`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-company-id': COMPANY_ID,
-          'Accept': 'application/json'
-        },
+        headers,
         body: JSON.stringify(body)
       });
 
@@ -53,12 +69,10 @@ export const api = {
 
   delete: async (endpoint: string) => {
     try {
+        const headers = await getHeaders();
         const response = await fetch(`${BACKEND_URL}${endpoint}`, {
             method: 'DELETE',
-            headers: {
-                'Content-Type': 'application/json',
-                'x-company-id': COMPANY_ID
-            }
+            headers
         });
         if (!response.ok) throw new Error(`API Error: ${response.statusText}`);
         return true;

@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
-import { Button } from '@/components/ui/Button';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Zap, Loader2, ArrowLeft } from 'lucide-react';
@@ -21,13 +21,16 @@ export default function RegisterPage() {
     e.preventDefault();
     setLoading(true);
     
+    // Cadastro básico
     const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
             data: {
                 name: name,
-                company_id: crypto.randomUUID(), // In real app, create company record logic
+                // O company_id será criado/atribuído via Trigger no Supabase normalmente,
+                // ou criado aqui se a lógica for client-side (menos seguro, mas comum em MVPs)
+                company_id: crypto.randomUUID(), 
                 role: 'admin'
             }
         }

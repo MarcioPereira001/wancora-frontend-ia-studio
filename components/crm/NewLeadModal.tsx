@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { Modal } from '@/components/ui/Modal';
-import { Button } from '@/components/ui/Button';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { TagSelector } from './TagSelector';

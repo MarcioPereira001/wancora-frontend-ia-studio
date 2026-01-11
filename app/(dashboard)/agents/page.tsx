@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Bot, Save, Play, Zap, Loader2, Send, Trash2, Sparkles } from 'lucide-react';
-import { Button } from '@/components/ui/Button';
+import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/Modal';
 import { optimizePromptAction, simulateChatAction } from '@/app/actions/gemini';
 import { createClient } from '@/utils/supabase/client';
@@ -81,6 +81,8 @@ export default function AgentsPage() {
                 .eq('id', existingAgent.id);
              error = updError;
         } else {
+             // In a real multi-tenant app, company_id comes from auth trigger or session
+             const { data: { session } } = await supabase.auth.getSession();
              const { error: insError } = await supabase
                 .from('agents')
                 .insert({ 
@@ -88,7 +90,7 @@ export default function AgentsPage() {
                     prompt_instruction: prompt,
                     knowledge_base: knowledgeBase,
                     is_active: isActive,
-                    company_id: '00000000-0000-0000-0000-000000000000' 
+                    company_id: session?.user?.user_metadata?.company_id 
                 });
              error = insError;
         }

@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { useKanban } from '@/hooks/useKanban';
 import { KanbanCard } from './KanbanCard';
-import { Lead } from '@/types/crm';
+import { Lead } from '@/types';
 import { Loader2, Filter, Search } from 'lucide-react';
 import { LeadDetailsModal } from './LeadDetailsModal';
 import { Input } from '@/components/ui/input';

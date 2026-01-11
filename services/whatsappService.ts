@@ -6,11 +6,22 @@ export const whatsappService = {
   // Busca o status atualizado diretamente do banco de dados (Single Source of Truth)
   getInstanceStatus: async (): Promise<Instance | null> => {
     try {
+      // Obtém sessão para filtrar por empresa
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return null;
+
+      // Pega o ID da empresa do perfil (segurança extra)
+      const { data: profile } = await supabase.from('profiles').select('company_id').eq('id', session.user.id).single();
+      const companyId = profile?.company_id;
+
+      if (!companyId) return null;
+
       const { data, error } = await supabase
         .from('instances')
         .select('*')
+        .eq('company_id', companyId)
         .limit(1)
-        .maybeSingle(); // maybeSingle evita erro se não existir
+        .maybeSingle();
 
       if (error) {
           console.error('Supabase error:', error);
@@ -26,23 +37,40 @@ export const whatsappService = {
   // Inicia a sessão no Backend (Render)
   connectInstance: async (sessionId: string = 'default') => {
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const { data: profile } = await supabase.from('profiles').select('company_id').eq('id', session?.user.id).single();
+      
+      if (!profile?.company_id) throw new Error("Usuário sem empresa.");
+
       // 1. Atualiza status local para 'connecting' para feedback visual imediato
-      const { data: existing } = await supabase.from('instances').select('id').eq('session_id', sessionId).maybeSingle();
+      const { data: existing } = await supabase
+        .from('instances')
+        .select('id')
+        .eq('company_id', profile.company_id)
+        .eq('session_id', sessionId)
+        .maybeSingle();
       
       if (existing) {
           await supabase.from('instances').update({ status: 'connecting', qrcode_url: null }).eq('id', existing.id);
+      } else {
+          // Cria registro se não existir
+          await supabase.from('instances').insert({ 
+              company_id: profile.company_id, 
+              session_id: sessionId, 
+              status: 'connecting',
+              name: 'Principal'
+          });
       }
 
       // 2. Chama API do Render para iniciar o processo do Baileys
-      // O Backend deve gerar o QR e atualizar a linha no Supabase
       const response = await api.post('/instance/connect', {
-        sessionId: sessionId
+        sessionId: sessionId,
+        companyId: profile.company_id
       });
       
       return response;
     } catch (error) {
       console.error('Erro ao conectar instância:', error);
-      // Reverte status em caso de erro de rede
       throw error;
     }
   },
@@ -50,6 +78,11 @@ export const whatsappService = {
   // Desconecta a sessão
   logoutInstance: async (sessionId: string = 'default') => {
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const { data: profile } = await supabase.from('profiles').select('company_id').eq('id', session?.user.id).single();
+
+      if (!profile?.company_id) throw new Error("Usuário sem empresa.");
+
       // Chama endpoint de logout
       await api.delete(`/instance/logout/${sessionId}`);
       
@@ -57,6 +90,7 @@ export const whatsappService = {
       await supabase
         .from('instances')
         .update({ status: 'disconnected', qrcode_url: null })
+        .eq('company_id', profile.company_id)
         .eq('session_id', sessionId);
         
     } catch (error) {
