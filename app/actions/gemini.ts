@@ -2,15 +2,10 @@
 
 import { GoogleGenAI } from "@google/genai";
 
-// Server-side environment variable access (Secure)
-// The API key must be obtained exclusively from process.env.API_KEY.
-const apiKey = process.env.API_KEY;
-
-const ai = apiKey ? new GoogleGenAI({ apiKey }) : null;
+// A chave deve vir exclusivamente do ambiente, sem fallbacks manuais no código.
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 export async function generateSmartReplyAction(history: string, tone: string = 'professional') {
-  if (!ai) return { error: "API Key não configurada no servidor." };
-
   const systemPrompt = `
     Você é um assistente especialista em vendas e suporte dentro de um CRM (Wancora).
     Seu objetivo é sugerir uma resposta para a última mensagem da conversa.
@@ -28,27 +23,24 @@ export async function generateSmartReplyAction(history: string, tone: string = '
     return { text: response.text };
   } catch (error: any) {
     console.error("Server Action AI Error:", error);
-    return { error: "Falha ao processar IA." };
+    return { error: "Falha ao processar IA. Verifique a API Key." };
   }
 }
 
 export async function optimizePromptAction(currentPrompt: string) {
-  if (!ai) return { error: "API Key ausente." };
-
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: `Atue como um Engenheiro de Prompt Senior. Otimize a seguinte instrução de sistema para um agente de vendas IA ser mais persuasivo, seguro e claro. Mantenha em Português Brasileiro. Retorne APENAS o prompt otimizado, sem explicações: "${currentPrompt}"`
     });
     return { text: response.text };
-  } catch (error) {
-    return { error: "Erro ao otimizar." };
+  } catch (error: any) {
+    console.error("Optimize Prompt Error:", error);
+    return { error: "Erro ao otimizar prompt." };
   }
 }
 
 export async function simulateChatAction(history: any[], systemInstruction: string, knowledgeBase: string) {
-    if (!ai) return { text: "Simulação Offline (Sem chave de API)." };
-
     const fullSystemPrompt = `
     ${systemInstruction}
     
@@ -64,7 +56,7 @@ export async function simulateChatAction(history: any[], systemInstruction: stri
     try {
         const response = await ai.models.generateContent({
             model: 'gemini-3-flash-preview',
-            contents: history,
+            contents: history, // Array of parts { role, parts: [{ text }] } handled by caller logic mapping
             config: {
                 systemInstruction: fullSystemPrompt,
                 temperature: 0.7,
