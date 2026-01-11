@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Bot, Save, Play, Zap, Loader2, Send, Trash2, Sparkles } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { optimizePromptAction, simulateChatAction } from '@/app/actions/gemini';
 import { createClient } from '@/utils/supabase/client';

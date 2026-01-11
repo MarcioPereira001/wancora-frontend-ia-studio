@@ -7,7 +7,7 @@ import { ChatContact, Message } from '@/types';
 import { cleanJid } from '@/lib/utils';
 import { Loader2, Search, Send, Paperclip, Sparkles, Mic, Phone, Video, Bot, RefreshCw } from 'lucide-react';
 import { MessageContent } from '@/components/chat/MessageContent';
-import { Button } from '@/components/ui/button';
+import { Button } from '@/components/ui/Button';
 import { generateSmartReplyAction } from '@/app/actions/gemini'; // Server Action import
 import { useToast } from '@/hooks/useToast';
 import { whatsappService } from '@/services/whatsappService';

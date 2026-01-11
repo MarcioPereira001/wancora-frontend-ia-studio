@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { KanbanBoard } from '@/components/crm/KanbanBoard';
-import { Button } from '@/components/ui/button';
+import { Button } from '@/components/ui/Button';
 import { Plus } from 'lucide-react';
 import { NewLeadModal } from '@/components/crm/NewLeadModal';
 import { useKanban } from '@/hooks/useKanban';

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { QrCode, Smartphone, RefreshCw, Power, CheckCircle, AlertCircle, Loader2, CreditCard, Building, ExternalLink } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Button } from '@/components/ui/Button';
 import { whatsappService } from '@/services/whatsappService';
 import { Instance } from '@/types';
 import { useToast } from '@/hooks/useToast';

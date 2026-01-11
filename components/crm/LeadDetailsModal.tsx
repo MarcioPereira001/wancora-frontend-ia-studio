@@ -1,6 +1,6 @@
 import { Modal } from '@/components/ui/Modal';
 import { Lead } from '@/types/crm';
-import { Button } from '@/components/ui/button';
+import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useState } from 'react';

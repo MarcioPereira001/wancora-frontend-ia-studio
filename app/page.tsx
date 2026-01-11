@@ -7,7 +7,7 @@ import {
   Zap, CheckCircle, ArrowRight, Bot, LayoutDashboard, 
   MessageSquare, BarChart3, ShieldCheck, Globe, Cpu 
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Button } from '@/components/ui/Button';
 
 // --- COMPONENTS SECTIONS ---
 

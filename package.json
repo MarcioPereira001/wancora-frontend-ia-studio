@@ -9,7 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@google/genai": "^0.1.1",
+    "@google/genai": "*",
     "@radix-ui/react-checkbox": "^1.0.4",
     "@radix-ui/react-slot": "^1.0.2",
     "@supabase/ssr": "^0.1.0",
