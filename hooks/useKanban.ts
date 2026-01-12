@@ -127,10 +127,14 @@ export function useKanban() {
 
       queryClient.setQueryData(queryKey, (old: any | undefined) => {
         if (!old || !old.columns) return old;
+        
+        // Deep clone para evitar mutação direta
         const newColumns = JSON.parse(JSON.stringify(old.columns));
+        let newAllLeads = [...(old.allLeads || [])];
+        
         let movedLead: Lead | undefined;
 
-        // Remove da antiga
+        // 1. Atualiza Colunas (Kanban View)
         for (const col of newColumns) {
           const idx = col.items.findIndex((l: Lead) => l.id === leadId);
           if (idx !== -1) {
@@ -140,7 +144,6 @@ export function useKanban() {
           }
         }
 
-        // Insere na nova
         if (movedLead) {
           movedLead.pipeline_stage_id = toStageId;
           movedLead.position = newPosition;
@@ -151,8 +154,14 @@ export function useKanban() {
             targetCol.items.sort((a: Lead, b: Lead) => (a.position || 0) - (b.position || 0));
             targetCol.totalValue += (Number(movedLead.value_potential) || 0);
           }
+
+          // 2. Atualiza Lista Geral (List View) para consistência
+          newAllLeads = newAllLeads.map(l => 
+            l.id === leadId ? { ...l, pipeline_stage_id: toStageId, position: newPosition } : l
+          );
         }
-        return { ...old, columns: newColumns };
+
+        return { ...old, columns: newColumns, allLeads: newAllLeads };
       });
       return { previousData };
     },

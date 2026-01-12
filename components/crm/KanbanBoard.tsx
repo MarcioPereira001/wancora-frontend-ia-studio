@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import { Search, RefreshCw, Filter, Loader2, DollarSign, GripVertical, Settings2, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -30,22 +30,22 @@ export function KanbanBoard() {
   const startX = useRef(0);
   const scrollLeft = useRef(0);
 
-  // Filtering
-  const getFilteredItems = (items: Lead[] = []) => {
-      let filtered = items;
-      if (searchTerm) {
-          const lower = searchTerm.toLowerCase();
-          filtered = filtered.filter(item => 
-              item.name.toLowerCase().includes(lower) || 
-              item.phone.includes(lower) ||
-              item.tags?.some(t => t.toLowerCase().includes(lower))
-          );
-      }
-      if (selectedUserId !== 'all') {
-          filtered = filtered.filter(item => item.owner_id === selectedUserId);
-      }
-      return filtered; // Items já vêm ordenados por posição da API
-  };
+  // Filtering Optimization: Memoize to avoid recalc on every render
+  const filteredColumns = useMemo(() => {
+      return columns.map(col => ({
+          ...col,
+          items: col.items.filter(item => {
+              const matchesSearch = !searchTerm || 
+                  item.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                  item.phone.includes(searchTerm) ||
+                  item.tags?.some(t => t.toLowerCase().includes(searchTerm.toLowerCase()));
+              
+              const matchesUser = selectedUserId === 'all' || item.owner_id === selectedUserId;
+              
+              return matchesSearch && matchesUser;
+          })
+      }));
+  }, [columns, searchTerm, selectedUserId]);
 
   // --- DND HANDLERS ---
 
@@ -67,52 +67,40 @@ export function KanbanBoard() {
 
     // CARD DROP - LÓGICA SMART (Posicionamento Matemático)
     if (draggingType === 'CARD' && type === 'COLUMN') {
-        const column = columns.find(c => c.id === targetId);
+        const column = filteredColumns.find(c => c.id === targetId);
         if (!column) return;
 
-        // 1. Identificar cards na coluna alvo (filtrados ou todos)
-        const cardsInColumn = getFilteredItems(column.items);
+        // 1. Identificar cards na coluna alvo
+        const cardsInColumn = column.items;
         
         // 2. Calcular onde soltou (baseado no Y do mouse)
         // Precisamos encontrar o card que está LOGO ABAIXO do mouse
-        let cardBelowId: string | null = null;
-        let minDistance = Number.POSITIVE_INFINITY;
-
-        // Itera sobre os elementos visuais da coluna para achar o mais próximo
-        // Nota: Isso assume que os IDs dos elementos DOM são os IDs dos leads (configurado no KanbanCard wrapper)
         const dropY = e.clientY;
+        let cardBelowId: string | null = null;
         
+        // Itera sobre os elementos visuais da coluna
+        // Nota: Isso usa o DOM apenas para calcular a geometria relativa
         cardsInColumn.forEach(card => {
-            // Se for o próprio card arrastado, ignora
-            if (card.id === draggingId) return;
+            if (card.id === draggingId) return; // Ignora a si mesmo
 
             const element = document.getElementById(`card-${card.id}`);
             if (element) {
                 const rect = element.getBoundingClientRect();
                 const center = rect.top + rect.height / 2;
-                const distance = dropY - center;
-
-                // Se dropY está acima do centro do card, distance é negativa. 
-                // Queremos o primeiro positivo pequeno (logo abaixo) ou o menor negativo se no fim?
-                // Simplificação: Se dropY < center, estamos soltando ACIMA deste card.
                 
-                // Vamos simplificar: Achar o elemento cujo topo está logo abaixo do mouse
-                if (dropY < rect.top + rect.height && dropY > rect.top - 20) {
-                     // Aproximação do alvo
-                     // Mas matematicamente, a melhor forma em lista é achar o primeiro elemento cujo "meio" está abaixo do cursor
-                     if (dropY < center) {
-                         if (!cardBelowId) cardBelowId = card.id; 
-                     }
+                // Se o mouse está acima do centro deste card, este card é o "abaixo"
+                if (dropY < center) {
+                     // Queremos o primeiro que satisfaz isso (o mais alto visualmente)
+                     if (!cardBelowId) cardBelowId = card.id; 
                 }
             }
         });
 
-        // Fallback: Se não achou por bounding box, usa lógica de lista simples
-        // Pega todos os cards e vê onde inserir
         if (draggingId) {
             let newPosition = 0;
             
-            // Re-analisa posição exata via Array DOM para precisão
+            // Re-analisa posição exata para inserção precisa
+            // Se não temos elementos visuais suficientes para calcular, usamos a lógica de lista
             const elements = Array.from(document.querySelectorAll(`[data-column-id="${targetId}"] .kanban-card-wrapper`));
             let indexToInsert = elements.length; // Default: final
 
@@ -127,23 +115,22 @@ export function KanbanBoard() {
 
             // Cards visuais nesta ordem
             const targetCards = [...cardsInColumn];
-            // Remove o card se ele já estiver nesta lista (mesma coluna)
             const existingIdx = targetCards.findIndex(c => c.id === draggingId);
             if (existingIdx !== -1) targetCards.splice(existingIdx, 1);
 
             if (targetCards.length === 0) {
-                // Coluna vazia ou único item
+                // Coluna vazia
                 newPosition = Date.now();
             } else if (indexToInsert === 0) {
-                // Topo: Pega posição do primeiro e diminui
+                // Topo
                 newPosition = (targetCards[0].position || 0) - 1000;
             } else if (indexToInsert >= targetCards.length) {
-                // Fundo: Pega último e soma
+                // Fundo
                 newPosition = (targetCards[targetCards.length - 1].position || 0) + 1000;
             } else {
-                // Meio: Média entre anterior e próximo
-                const posAbove = targetCards[indexToInsert - 1].position || 0;
-                const posBelow = targetCards[indexToInsert].position || 0;
+                // Meio
+                const posAbove = targetCards[indexToInsert - 1]?.position || 0;
+                const posBelow = targetCards[indexToInsert]?.position || 0;
                 newPosition = (posAbove + posBelow) / 2;
             }
 
@@ -172,18 +159,13 @@ export function KanbanBoard() {
     setDraggingFromCol(null);
   };
 
-  // --- SCROLL PAN HANDLERS (CORRIGIDO) ---
+  // --- SCROLL PAN HANDLERS ---
   const onMouseDown = (e: React.MouseEvent) => {
-     // Só ativa se clicar no fundo ou header da coluna (não em elementos interativos)
      if ((e.target as HTMLElement).closest('.interactive') || draggingType) return;
-     
-     // PREVINE SELEÇÃO DE TEXTO - CRUCIAL PARA O SCROLL FUNCIONAR
      e.preventDefault(); 
-
      isDown.current = true;
      if(scrollContainerRef.current) {
          scrollContainerRef.current.classList.add('cursor-grabbing');
-         // Usa pageX para consistência global
          startX.current = e.pageX - scrollContainerRef.current.offsetLeft;
          scrollLeft.current = scrollContainerRef.current.scrollLeft;
      }
@@ -204,7 +186,6 @@ export function KanbanBoard() {
       e.preventDefault();
       if(scrollContainerRef.current) {
           const x = e.pageX - scrollContainerRef.current.offsetLeft;
-          // Multiplicador ajustado para sensação de peso
           const walk = (x - startX.current) * 1.5; 
           scrollContainerRef.current.scrollLeft = scrollLeft.current - walk;
       }
@@ -269,10 +250,11 @@ export function KanbanBoard() {
         onMouseUp={onMouseUp}
         onMouseMove={onMouseMove}
         className="flex-1 flex gap-4 overflow-x-auto pb-4 px-1 cursor-grab active:cursor-grabbing custom-scrollbar"
-        style={{ scrollBehavior: 'auto' }} // Remove smooth scroll para o drag funcionar bem
+        style={{ scrollBehavior: 'auto' }} 
       >
-        {columns.map((col) => {
-          const filteredItems = getFilteredItems(col.items);
+        {filteredColumns.map((col) => {
+          // Itens já estão filtrados pelo useMemo
+          const items = col.items;
           
           return (
             <div 
@@ -301,7 +283,7 @@ export function KanbanBoard() {
                         
                         <div className="flex items-center gap-2">
                             <span className="bg-zinc-950 text-zinc-500 text-[10px] px-2 py-0.5 rounded-full font-mono font-bold border border-zinc-800">
-                                {filteredItems.length}
+                                {items.length}
                             </span>
                             <button 
                                 onClick={(e) => { e.stopPropagation(); setEditingStage(col); }}
@@ -326,14 +308,14 @@ export function KanbanBoard() {
                     )}
                     onDragOver={handleDragOver}
                     onDrop={(e) => handleDrop(e, col.id, 'COLUMN')} 
-                    data-column-id={col.id} // Identificador para o DOM Query
+                    data-column-id={col.id} 
                 >
                 {/* Placeholder para Drop */}
                 {draggingType === 'CARD' && draggingFromCol && draggingFromCol !== col.id && (
                     <div className="absolute inset-0 pointer-events-none border-2 border-dashed border-primary/20 rounded-b-xl z-0" />
                 )}
 
-                {filteredItems.map(lead => (
+                {items.map(lead => (
                     <div 
                         key={lead.id} 
                         id={`card-${lead.id}`} 
@@ -348,7 +330,7 @@ export function KanbanBoard() {
                     </div>
                 ))}
                 
-                {filteredItems.length === 0 && (
+                {items.length === 0 && (
                     <div className="h-32 flex flex-col items-center justify-center text-zinc-600 border-2 border-dashed border-zinc-800/30 rounded-xl m-1">
                         <p className="text-xs font-medium opacity-50">Solte aqui</p>
                     </div>

@@ -229,7 +229,9 @@ export default function DashboardPage() {
                           <p className="text-zinc-500 text-sm text-center py-10">Sem dados para ranking.</p>
                       ) : (
                           top3.map((r) => (
-                              <GamificationCard key={r.user_id} user={r} />
+                              <React.Fragment key={r.user_id}>
+                                <GamificationCard user={r} />
+                              </React.Fragment>
                           ))
                       )}
                   </div>

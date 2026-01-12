@@ -7,7 +7,7 @@ import { ChatContact, Message, Instance } from '@/types';
 import { cleanJid, cn } from '@/lib/utils';
 import { 
     Loader2, Search, Send, Paperclip, Sparkles, Mic, Bot, 
-    Image as IconImage, FileText, BarChart2, X, Trash2, ArrowLeft, User, Smartphone, Wifi
+    Image as IconImage, FileText, BarChart2, X, Trash2, ArrowLeft, User, Smartphone, Wifi, Camera
 } from 'lucide-react';
 import { MessageBubble } from '@/components/chat/MessageBubble';
 import { Button } from '@/components/ui/button';
@@ -47,7 +47,7 @@ export default function ChatPage() {
           }
       };
       fetchInstances();
-  }, [user?.company_id, supabase]); // selectedInstance removido das deps para não resetar loop
+  }, [user?.company_id, supabase]); 
 
   // --- HOOK DE CHAT (VINCULADO À INSTÂNCIA SELECIONADA) ---
   const { contacts, loading: loadingContacts } = useChatList(selectedInstance?.session_id || null);
@@ -85,7 +85,7 @@ export default function ChatPage() {
             .from('messages')
             .select('*')
             .eq('remote_jid', activeContact.remote_jid) 
-            .eq('session_id', selectedInstance.session_id) // <--- GARANTIA DE ISOLAMENTO
+            .eq('session_id', selectedInstance.session_id) 
             .eq('company_id', user?.company_id)
             .order('created_at', { ascending: true });
           
@@ -104,7 +104,6 @@ export default function ChatPage() {
             table: 'messages',
             filter: `remote_jid=eq.${activeContact.remote_jid}`
         }, (payload) => {
-            // Verifica rigorosa se a mensagem nova pertence a esta sessão
             if (payload.new && (payload.new as any).session_id === selectedInstance.session_id) {
                 if (payload.eventType === 'INSERT') {
                     setMessages(prev => {
@@ -142,7 +141,7 @@ export default function ChatPage() {
           message_type: payload.type || 'text',
           status: 'sending',
           created_at: new Date().toISOString(),
-          session_id: selectedInstance.session_id, // Vincula à instância atual
+          session_id: selectedInstance.session_id,
           company_id: user.company_id,
           media_url: payload.url 
       } as any;
@@ -152,7 +151,7 @@ export default function ChatPage() {
 
       try {
           await api.post('/message/send', {
-              sessionId: selectedInstance.session_id, // Envia pela instância selecionada
+              sessionId: selectedInstance.session_id,
               companyId: user.company_id,
               to: activeContact.remote_jid,
               type: payload.type || 'text',
@@ -306,7 +305,7 @@ export default function ChatPage() {
       {/* Sidebar */}
       <div className={cn("w-full md:w-80 border-r border-zinc-800 flex-col bg-zinc-900/30 backdrop-blur-sm", activeContact ? "hidden md:flex" : "flex")}>
         
-        {/* SELETOR DE INSTÂNCIA (HEADER) */}
+        {/* SELETOR DE INSTÂNCIA */}
         <div className="p-4 border-b border-zinc-800 bg-zinc-900/80 space-y-3">
             <div className="flex items-center gap-2 px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-lg shadow-sm">
                 <Wifi className={cn("w-4 h-4", selectedInstance ? "text-green-500" : "text-zinc-500")} />
@@ -316,7 +315,7 @@ export default function ChatPage() {
                     onChange={(e) => {
                         const inst = instances.find(i => i.session_id === e.target.value);
                         setSelectedInstance(inst || null);
-                        setActiveContact(null); // Reseta chat ativo ao mudar instância
+                        setActiveContact(null);
                     }}
                     disabled={instances.length === 0}
                 >
@@ -352,18 +351,21 @@ export default function ChatPage() {
                 >
                     <div className="flex justify-between items-start mb-1">
                         <div className="flex items-center gap-3 overflow-hidden">
+                             {/* AVATAR DO CONTATO LISTA */}
                              <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center shrink-0 border border-zinc-700 overflow-hidden relative">
                                 {contact.profile_pic_url ? (
                                     <img src={contact.profile_pic_url} alt={contact.name} className="w-full h-full object-cover" />
                                 ) : (
-                                    <User className="w-5 h-5 text-zinc-500" />
+                                    <span className="text-zinc-500 font-bold">{contact.name?.charAt(0) || 'U'}</span>
                                 )}
                              </div>
                              <div className="min-w-0">
                                 <span className={`font-medium truncate block ${activeContact?.id === contact.id ? 'text-primary' : 'text-zinc-200'}`}>
                                     {contact.name}
                                 </span>
-                                <p className="text-xs text-zinc-500 truncate">{contact.last_message || 'Inicie a conversa'}</p>
+                                <p className="text-xs text-zinc-500 truncate flex items-center gap-1">
+                                    {contact.last_message}
+                                </p>
                              </div>
                         </div>
                         <span className="text-[10px] text-zinc-500 whitespace-nowrap pt-1">
@@ -379,10 +381,7 @@ export default function ChatPage() {
                             <p className="text-sm">Nenhuma conexão ativa. Vá em "Conexões" para escanear o QR Code.</p>
                         </>
                     ) : selectedInstance ? (
-                        <>
-                            <MessageBubble message={{content: "...", from_me: false, id: "1", remote_jid: "", session_id: "", company_id: "", created_at: "", status: "read", message_type: "text"} as any} />
-                            <p className="text-sm">Nenhuma conversa encontrada nesta instância.</p>
-                        </>
+                        <p className="text-sm">Nenhuma conversa encontrada nesta instância.</p>
                     ) : (
                         <>
                             <Wifi className="w-8 h-8 opacity-20" />
@@ -398,12 +397,13 @@ export default function ChatPage() {
       <div className={cn("flex-1 flex-col bg-[#09090b] relative", activeContact ? "flex" : "hidden md:flex")}>
         {activeContact && selectedInstance ? (
             <>
+                {/* HEADER DO CHAT ATIVO */}
                 <div className="h-16 border-b border-zinc-800 flex items-center justify-between px-4 md:px-6 bg-zinc-900/50 backdrop-blur-md z-10">
                     <div className="flex items-center gap-3">
                         <Button variant="ghost" size="icon" className="md:hidden text-zinc-400" onClick={() => setActiveContact(null)}>
                             <ArrowLeft className="h-5 w-5" />
                         </Button>
-                        <div className="h-10 w-10 rounded-full bg-zinc-800 flex items-center justify-center border border-zinc-700 overflow-hidden">
+                        <div className="h-10 w-10 rounded-full bg-zinc-800 flex items-center justify-center border border-zinc-700 overflow-hidden cursor-pointer hover:opacity-80 transition-opacity" onClick={() => window.open(activeContact.profile_pic_url, '_blank')}>
                              {activeContact.profile_pic_url ? (
                                 <img src={activeContact.profile_pic_url} alt={activeContact.name} className="w-full h-full object-cover" />
                              ) : (
@@ -427,26 +427,34 @@ export default function ChatPage() {
                         <div className="flex h-full items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-primary/50" /></div>
                     ) : messages.map((msg, idx) => (
                         <div key={msg.id || idx} className={`flex ${msg.from_me ? 'justify-end' : 'justify-start'} animate-in slide-in-from-bottom-2 duration-300`}>
-                            <div className={`max-w-[85%] md:max-w-[75%] px-3 py-2 shadow-sm text-sm relative group ${
+                            {/* AVATAR NA MENSAGEM (SE FOR GRUPO OU LEAD) */}
+                            {!msg.from_me && (
+                                <div className="mr-2 self-end mb-1">
+                                    <div className="w-6 h-6 rounded-full bg-zinc-800 overflow-hidden border border-zinc-700">
+                                        {activeContact.profile_pic_url ? (
+                                            <img src={activeContact.profile_pic_url} className="w-full h-full object-cover" />
+                                        ) : (
+                                            <div className="flex items-center justify-center h-full text-[10px] text-zinc-500 font-bold">
+                                                {activeContact.name[0]}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className={`max-w-[85%] md:max-w-[70%] px-3 py-2 shadow-sm text-sm relative group ${
                                 msg.from_me 
                                     ? 'bg-primary/10 text-primary-foreground border border-primary/20 rounded-2xl rounded-tr-sm' 
                                     : 'bg-zinc-800/80 text-zinc-200 border border-zinc-700/50 rounded-2xl rounded-tl-sm'
                             }`}>
                                 <MessageBubble message={msg} />
-                                <div className={`flex justify-end mt-1 text-[9px] items-center gap-1 ${msg.from_me ? 'text-primary/60' : 'text-zinc-500'}`}>
-                                    {new Date(msg.created_at).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}
-                                    {msg.from_me && (
-                                        <span>
-                                            {msg.status === 'read' ? '✓✓' : msg.status === 'delivered' ? '✓✓' : '✓'}
-                                        </span>
-                                    )}
-                                </div>
                             </div>
                         </div>
                     ))}
                     <div ref={messagesEndRef} />
                 </div>
 
+                {/* INPUT AREA */}
                 <div className="p-3 md:p-4 border-t border-zinc-800 bg-zinc-900/30 backdrop-blur relative">
                     <div className="flex items-center gap-2 mb-3 overflow-x-auto no-scrollbar">
                         <Button 
