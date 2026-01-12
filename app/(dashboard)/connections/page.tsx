@@ -76,6 +76,9 @@ export default function ConnectionsPage() {
             if (intervalRef.current) clearInterval(intervalRef.current);
         } else if ((status.status === 'qr_ready' || status.status === 'qrcode') && status.qrcode_url && status.qrcode_url.length > 10) {
             setStep('qr_scan');
+        } else if (status.status === 'disconnected' && step === 'qr_scan') {
+            // Se cair para disconnected enquanto esperava QR, volta para initializing
+            setStep('initializing');
         }
     };
 
