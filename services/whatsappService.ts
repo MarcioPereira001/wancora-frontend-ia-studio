@@ -3,7 +3,7 @@ import { createClient } from '@/utils/supabase/client';
 import { Instance } from '../types';
 
 export const whatsappService = {
-  // Busca status da instância mais recente
+  // Busca status da instância mais recente (para widgets de status rápido)
   getInstanceStatus: async (): Promise<Instance | null> => {
     try {
       const supabase = createClient();
