@@ -9,9 +9,10 @@ import { useToast } from '@/hooks/useToast';
 import { useKanban } from '@/hooks/useKanban';
 import { useLeadData } from '@/hooks/useLeadData';
 import { useTeam } from '@/hooks/useTeam';
-import { Trash2, Save, CheckSquare, Layout, Clock, Plus, User } from 'lucide-react';
+import { Trash2, Save, CheckSquare, Layout, Clock, Plus, User, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Checkbox } from '@/components/ui/checkbox';
+import { createClient } from '@/utils/supabase/client';
 
 interface LeadDetailsModalProps {
   lead: Lead | null;
@@ -24,11 +25,15 @@ export function LeadDetailsModal({ lead, isOpen, onClose }: LeadDetailsModalProp
   const { checklist, addCheckitem, toggleCheckitem } = useLeadData(lead?.id, lead?.phone);
   const { members } = useTeam(); 
   const { addToast } = useToast();
+  const supabase = createClient();
   
   const [activeTab, setActiveTab] = useState<'details' | 'checklist' | 'history'>('details');
   const [data, setData] = useState<Lead>(lead || {} as Lead);
   const [loading, setLoading] = useState(false);
   const [newItemText, setNewItemText] = useState('');
+  
+  // Delete Options
+  const [ignoreContact, setIgnoreContact] = useState(false);
 
   useEffect(() => {
     if (lead) setData(lead);
@@ -62,7 +67,22 @@ export function LeadDetailsModal({ lead, isOpen, onClose }: LeadDetailsModalProp
       if(!confirm('Excluir este lead permanentemente?')) return;
       setLoading(true);
       try {
+        // Se a opção de ignorar estiver marcada, atualiza o contato
+        if (ignoreContact) {
+            // Busca o contato pelo telefone (assumindo formatação limpa)
+            const cleanPhone = data.phone.replace(/\D/g, '');
+            // Atualiza tabela contacts onde remote_jid contém o número
+            // Nota: Isso pode ser impreciso se houver múltiplos contatos com mesmo número, mas no WhatsApp é único.
+            // Ideal seria ter o jid exato no lead, mas usamos phone como chave de negócio.
+            // Para garantir, fazemos um update com ILIKE
+            await supabase.from('contacts')
+                .update({ is_ignored: true })
+                .ilike('jid', `%${cleanPhone}%`)
+                .eq('company_id', data.company_id);
+        }
+
         await deleteLead(data.id);
+        if (ignoreContact) addToast({ type: 'info', title: 'Banido', message: 'Contato adicionado à lista de ignorados.' });
         onClose();
       } catch (error: any) {
         addToast({ type: 'error', title: 'Erro', message: error.message });
@@ -150,13 +170,32 @@ export function LeadDetailsModal({ lead, isOpen, onClose }: LeadDetailsModalProp
                     <Textarea value={data.notes || ''} onChange={e => setData({...data, notes: e.target.value})} className="mt-1 h-32" />
                 </div>
                 
-                <div className="flex justify-between pt-4 border-t border-zinc-800 mt-4">
-                    <Button variant="destructive" onClick={handleDelete} isLoading={loading} className="bg-red-500/10 text-red-500 hover:bg-red-500/20 border-none">
-                        <Trash2 className="w-4 h-4 mr-2" /> Excluir
-                    </Button>
-                    <Button onClick={handleSave} isLoading={loading}>
-                        <Save className="w-4 h-4 mr-2" /> Salvar Alterações
-                    </Button>
+                <div className="pt-4 border-t border-zinc-800 mt-4 space-y-4">
+                    <div className="bg-red-500/10 border border-red-500/20 p-3 rounded-lg">
+                        <div className="flex items-center gap-2 mb-2">
+                            <Checkbox 
+                                id="ignoreContact" 
+                                checked={ignoreContact} 
+                                onCheckedChange={(c) => setIgnoreContact(!!c)} 
+                                className="border-red-500 data-[state=checked]:bg-red-500 data-[state=checked]:border-red-500"
+                            />
+                            <label htmlFor="ignoreContact" className="text-xs font-bold text-red-400 cursor-pointer">
+                                Banir Contato (Ignorar Futuras Mensagens)
+                            </label>
+                        </div>
+                        <p className="text-[10px] text-red-300/70 pl-6">
+                            Se marcado, o Backend ignorará mensagens deste número e não criará leads automaticamente.
+                        </p>
+                    </div>
+
+                    <div className="flex justify-between">
+                        <Button variant="destructive" onClick={handleDelete} isLoading={loading} className="bg-zinc-800 text-zinc-400 hover:bg-red-600 hover:text-white border border-zinc-700">
+                            <Trash2 className="w-4 h-4 mr-2" /> Confirmar Exclusão
+                        </Button>
+                        <Button onClick={handleSave} isLoading={loading}>
+                            <Save className="w-4 h-4 mr-2" /> Salvar Alterações
+                        </Button>
+                    </div>
                 </div>
             </div>
         )}

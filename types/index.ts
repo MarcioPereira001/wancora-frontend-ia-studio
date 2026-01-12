@@ -55,6 +55,7 @@ export interface Lead {
   next_appointment_at?: string;
   owner_id?: string;
   position?: number;
+  bot_status?: 'active' | 'paused' | 'off';
 }
 
 export interface PipelineStage {
@@ -136,6 +137,7 @@ export interface Contact {
   company_id: string;
   email?: string;
   phone?: string;
+  is_ignored?: boolean;
 }
 
 export interface WhatsAppInstance {
@@ -195,4 +197,14 @@ export interface Agent {
   knowledge_base?: string;
   is_active: boolean;
   model: string;
+}
+
+export interface ScheduledMessage {
+  id: string;
+  company_id: string;
+  lead_id?: string;
+  contact_jid: string;
+  content: string;
+  scheduled_at: string;
+  status: 'pending' | 'sent' | 'failed' | 'cancelled';
 }
