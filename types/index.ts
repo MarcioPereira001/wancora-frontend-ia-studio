@@ -51,6 +51,7 @@ export interface Lead {
 export interface PipelineStage {
   id: string;
   pipeline_id: string;
+  company_id: string; // Adicionado para consistência com DB e RLS
   name: string;
   position: number;
   color: string;
