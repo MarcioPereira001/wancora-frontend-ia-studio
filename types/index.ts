@@ -13,7 +13,7 @@ export interface User {
   id: string;
   email: string;
   name: string;
-  role: 'owner' | 'admin' | 'agent';
+  role: 'owner' | 'admin' | 'agent' | string;
   company_id: string;
   avatar_url?: string;
 }
@@ -32,6 +32,7 @@ export interface Lead {
   id: string;
   company_id: string;
   stage_id: string;
+  pipeline_stage_id?: string; // Novo
   name: string;
   phone: string;
   email?: string;
@@ -39,6 +40,7 @@ export interface Lead {
   value_potential?: number;
   lead_score?: number;
   temperature: 'cold' | 'warm' | 'hot';
+  status?: string; // Novo
   tags: string[];
   notes?: string;
   created_at: string;
@@ -82,6 +84,18 @@ export interface ChecklistItem {
 }
 
 // --- WHATSAPP & CHAT ---
+
+// Interface Nova Solicitada
+export interface Contact {
+  jid: string;
+  name?: string;       // Nome da Agenda / Grupo
+  push_name?: string;  // Nome do Perfil (Novo)
+  profile_pic_url?: string; // Novo
+  company_id: string;
+  email?: string;
+  phone?: string;
+}
+
 export interface WhatsAppInstance {
   id: string;
   company_id: string;
@@ -89,7 +103,7 @@ export interface WhatsAppInstance {
   name: string;
   // 'qr_ready' é o status exato que o backend envia quando tem QR
   status: 'connected' | 'disconnected' | 'qr_ready' | 'qrcode' | 'connecting';
-  qrcode_url?: string;
+  qrcode_url?: string | null;
   battery_level?: number;
   profile_pic_url?: string;
   created_at?: string;
@@ -112,6 +126,11 @@ export interface Message {
   media_url?: string; // URL pública do arquivo
   fileName?: string;
   caption?: string;
+  
+  // Campos de Join (Novos)
+  lead_id?: string;
+  lead?: Lead;
+  contact?: Contact;
 }
 
 export interface ChatContact {
