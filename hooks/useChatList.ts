@@ -26,7 +26,6 @@ export function useChatList() {
             if (contactsError) throw contactsError;
 
             // 2. Buscar últimas mensagens (para montar a lista de conversas ativas)
-            // Traz mensagens ordenadas para pegar a mais recente
             const { data: messagesData } = await supabase
                 .from('messages')
                 .select('remote_jid, content, created_at, message_type, from_me, status')
@@ -37,14 +36,18 @@ export function useChatList() {
             // 3. Processamento e Merge
             const chatMap = new Map<string, ChatContact>();
             
+            // Cria mapa de detalhes de contato usando a chave LIMPA (sem sufixos de dispositivo)
             const contactDetailsMap = new Map();
             contactsData?.forEach((c: any) => {
-                contactDetailsMap.set(cleanJid(c.jid), c);
+                const jid = cleanJid(c.jid);
+                if (jid) contactDetailsMap.set(jid, c);
             });
 
             if (messagesData) {
                 messagesData.forEach((msg) => {
+                    // Limpa o JID da mensagem também para garantir o match
                     const cleanRemoteJid = cleanJid(msg.remote_jid);
+                    if (!cleanRemoteJid) return;
                     
                     if (chatMap.has(cleanRemoteJid)) return;
 
@@ -52,7 +55,7 @@ export function useChatList() {
                     
                     // Formata preview da mensagem baseado no message_type
                     let preview = msg.content;
-                    const type = msg.message_type || (msg as any).type; // Fallback
+                    const type = msg.message_type || (msg as any).type;
 
                     if (type === 'image') preview = '📷 Imagem';
                     else if (type === 'audio') preview = '🎵 Áudio';
@@ -63,7 +66,7 @@ export function useChatList() {
                     else if (type === 'location') preview = '📍 Localização';
 
                     chatMap.set(cleanRemoteJid, {
-                        jid: msg.remote_jid,
+                        jid: msg.remote_jid, // Mantém o JID original da mensagem para reply
                         remote_jid: msg.remote_jid,
                         phone_number: cleanRemoteJid,
                         company_id: user.company_id,
