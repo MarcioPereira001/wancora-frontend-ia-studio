@@ -1,11 +1,19 @@
 import { BACKEND_URL } from '../config';
 import { createClient } from '@/utils/supabase/client';
 
-// Helper para limpar URLs duplas (ex: /api/v1//instance)
-const cleanUrl = (base: string | undefined, path: string) => {
-    if (!base) return path;
+// Se estiver no browser, prefira usar o proxy relativo (/api/v1) para evitar CORS
+// Se estiver no server side, use a URL completa
+const getBaseUrl = () => {
+    if (typeof window !== 'undefined') {
+        return '/api/v1'; // Usa o Rewrite do Next.js
+    }
+    return BACKEND_URL || 'http://localhost:3001/api/v1';
+};
+
+const cleanUrl = (endpoint: string) => {
+    const base = getBaseUrl();
     const cleanBase = base.endsWith('/') ? base.slice(0, -1) : base;
-    const cleanPath = path.startsWith('/') ? path : `/${path}`;
+    const cleanPath = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
     return `${cleanBase}${cleanPath}`;
 };
 
@@ -22,6 +30,7 @@ const getHeaders = async () => {
         headers['Authorization'] = `Bearer ${session.access_token}`;
         
         const companyId = session.user.user_metadata?.company_id;
+        // Tenta pegar company_id do user_metadata ou profile se disponível no store
         if (companyId) {
             headers['x-company-id'] = companyId;
         }
@@ -33,7 +42,7 @@ export const api = {
   get: async (endpoint: string) => {
     try {
       const headers = await getHeaders();
-      const url = cleanUrl(BACKEND_URL, endpoint);
+      const url = cleanUrl(endpoint);
       
       const response = await fetch(url, {
         method: 'GET',
@@ -42,6 +51,7 @@ export const api = {
       
       if (!response.ok) {
         const errorBody = await response.text();
+        console.error(`API Error ${response.status} on ${url}:`, errorBody);
         throw new Error(`API Error ${response.status}: ${errorBody}`);
       }
       
@@ -55,7 +65,7 @@ export const api = {
   post: async (endpoint: string, body: any) => {
     try {
       const headers = await getHeaders();
-      const url = cleanUrl(BACKEND_URL, endpoint);
+      const url = cleanUrl(endpoint);
 
       const response = await fetch(url, {
         method: 'POST',
@@ -65,6 +75,7 @@ export const api = {
 
       if (!response.ok) {
         const errorBody = await response.text();
+        console.error(`API Error ${response.status} on ${url}:`, errorBody);
         throw new Error(`API Error ${response.status}: ${errorBody}`);
       }
 
@@ -79,7 +90,7 @@ export const api = {
   delete: async (endpoint: string) => {
     try {
         const headers = await getHeaders();
-        const url = cleanUrl(BACKEND_URL, endpoint);
+        const url = cleanUrl(endpoint);
         
         const response = await fetch(url, {
             method: 'DELETE',

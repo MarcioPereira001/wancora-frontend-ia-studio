@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Smartphone, RefreshCw, Power, Trash2, Wifi, Terminal, MessageCircle, CheckCircle2, Loader2, Plus, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { whatsappService } from '@/services/whatsappService';
@@ -59,10 +59,19 @@ export default function ConnectionsPage() {
   }, [company?.id, supabase]);
 
   // --- MONITORAMENTO CRÍTICO DO MODAL (QR CODE) ---
+  // Ref corrigido para evitar loop de dependência
+  const currentInstanceIdRef = useRef<string | null>(null);
+  
   useEffect(() => {
-    if (!isModalOpen || !currentInstance?.session_id) return;
+    if (currentInstance) {
+        currentInstanceIdRef.current = currentInstance.session_id;
+    }
+  }, [currentInstance]);
 
-    const sessionId = currentInstance.session_id;
+  useEffect(() => {
+    if (!isModalOpen || !currentInstanceIdRef.current) return;
+
+    const sessionId = currentInstanceIdRef.current;
     let intervalId: ReturnType<typeof setInterval>;
 
     const checkStatus = async () => {
@@ -75,30 +84,38 @@ export default function ConnectionsPage() {
         
         if (error || !freshData) return;
 
-        setCurrentInstance(freshData as Instance);
+        // Só atualiza estado se algo mudou visualmente
+        const instanceData = freshData as Instance;
 
         // 1. SUCESSO: Conectado
-        if (freshData.status === 'connected') {
-            if (step !== 'success') {
-                setStep('success');
-                addToast({ type: 'success', title: 'Conectado!', message: 'Instância sincronizada.' });
-                setTimeout(() => {
-                    setIsModalOpen(false);
-                    resetModal();
-                    fetchInstances();
-                }, 2000);
-            }
+        if (instanceData.status === 'connected') {
+            setStep((prev) => {
+                if (prev !== 'success') {
+                    addToast({ type: 'success', title: 'Conectado!', message: 'Instância sincronizada.' });
+                    setTimeout(() => {
+                        setIsModalOpen(false);
+                        resetModal();
+                        fetchInstances();
+                    }, 2000);
+                    return 'success';
+                }
+                return prev;
+            });
+            setCurrentInstance(instanceData);
         } 
-        // 2. QR CODE: Se houver URL, exibe imediatamente
-        else if (freshData.qrcode_url && freshData.qrcode_url.length > 20) {
-            if (step !== 'qr_scan') {
-                setStep('qr_scan');
-            }
+        // 2. QR CODE: Se houver URL
+        else if (instanceData.qrcode_url && instanceData.qrcode_url.length > 20) {
+            setStep((prev) => {
+                if (prev !== 'qr_scan') return 'qr_scan';
+                return prev;
+            });
+            setCurrentInstance(instanceData);
         }
     };
 
+    // Polling menos agressivo (2s)
     checkStatus();
-    intervalId = setInterval(checkStatus, 1500);
+    intervalId = setInterval(checkStatus, 2000);
 
     const modalChannel = supabase
       .channel(`instance-modal-${sessionId}`)
@@ -109,8 +126,14 @@ export default function ConnectionsPage() {
           filter: `session_id=eq.${sessionId}` 
       }, (payload) => {
           const newRow = payload.new as Instance;
-          if (newRow.qrcode_url && newRow.status !== 'connected') setStep('qr_scan');
-          if (newRow.status === 'connected') setStep('success');
+          if (newRow.qrcode_url && newRow.status !== 'connected') {
+              setStep('qr_scan');
+              setCurrentInstance(newRow);
+          }
+          if (newRow.status === 'connected') {
+              setStep('success');
+              setCurrentInstance(newRow);
+          }
       })
       .subscribe();
 
@@ -118,12 +141,14 @@ export default function ConnectionsPage() {
         supabase.removeChannel(modalChannel);
         clearInterval(intervalId);
     };
-  }, [isModalOpen, currentInstance?.session_id, step, supabase, addToast]); 
+  // Removemos 'step' e 'currentInstance' das dependências para evitar loop. Usamos apenas isModalOpen.
+  }, [isModalOpen, supabase, addToast]); 
 
   const resetModal = () => {
       setStep('input');
       setNewSessionName('');
       setCurrentInstance(null);
+      currentInstanceIdRef.current = null;
   }
 
   const handleStartProtocol = async (sessionNameOverride?: string, sessionIdOverride?: string) => {

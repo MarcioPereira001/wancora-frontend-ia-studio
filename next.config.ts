@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  reactStrictMode: false, // Desativa para evitar chamadas duplas em dev que causam loops
   images: {
     remotePatterns: [
       {
@@ -10,17 +11,22 @@ const nextConfig: NextConfig = {
     ],
   },
   typescript: {
-    // !! WARN !!
-    // Dangerously allow production builds to successfully complete even if
-    // your project has type errors.
     ignoreBuildErrors: true,
   },
   eslint: {
-    // Warning: This allows production builds to successfully complete even if
-    // your project has ESLint errors.
     ignoreDuringBuilds: true,
   },
-  // A configuração experimental não é mais necessária no Next 15+ para server actions
+  // Proxy para o Backend evitar CORS/403
+  async rewrites() {
+    return [
+      {
+        source: '/api/v1/:path*',
+        destination: process.env.NEXT_PUBLIC_BACKEND_URL 
+          ? `${process.env.NEXT_PUBLIC_BACKEND_URL}/:path*` 
+          : 'http://localhost:3001/api/v1/:path*',
+      },
+    ];
+  },
 };
 
 export default nextConfig;

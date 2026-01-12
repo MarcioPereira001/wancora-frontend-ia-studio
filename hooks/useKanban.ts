@@ -16,74 +16,81 @@ export function useKanban() {
     queryFn: async () => {
       if (!user?.company_id) return [];
 
-      // 1. Buscar Pipeline Padrão
-      let { data: pipeline } = await supabase
-        .from('pipelines')
-        .select('*')
-        .eq('company_id', user.company_id)
-        .eq('is_default', true)
-        .maybeSingle();
-
-      // AUTO-HEALING: Se não existir pipeline, criar um padrão
-      if (!pipeline) {
-          console.log("Criando pipeline padrão para nova empresa...");
-          const { data: newPipe, error: createError } = await supabase
+      try {
+        // 1. Buscar Pipeline Padrão
+        let { data: pipeline, error: pipeError } = await supabase
             .from('pipelines')
-            .insert({ company_id: user.company_id, name: 'Funil de Vendas', is_default: true })
-            .select()
-            .single();
-          
-          if (newPipe) {
-              pipeline = newPipe;
-              // Criar estágios padrão
-              const defaultStages = [
-                  { pipeline_id: newPipe.id, name: 'Novos', position: 0, color: '#3b82f6', company_id: user.company_id },
-                  { pipeline_id: newPipe.id, name: 'Qualificação', position: 1, color: '#eab308', company_id: user.company_id },
-                  { pipeline_id: newPipe.id, name: 'Negociação', position: 2, color: '#f97316', company_id: user.company_id },
-                  { pipeline_id: newPipe.id, name: 'Ganho', position: 3, color: '#22c55e', company_id: user.company_id }
-              ];
-              await supabase.from('pipeline_stages').insert(defaultStages);
-          } else if (createError) {
-              console.error("Erro ao criar pipeline:", createError);
-              return [];
-          }
-      }
+            .select('*')
+            .eq('company_id', user.company_id)
+            .eq('is_default', true)
+            .maybeSingle();
 
-      if (!pipeline) return [];
+        if (pipeError && pipeError.code !== 'PGRST116') {
+             console.error("Erro ao buscar pipeline:", pipeError);
+             return [];
+        }
 
-      // 2. Buscar Estágios do Pipeline
-      const { data: stages, error: stagesError } = await supabase
-        .from('pipeline_stages')
-        .select('*')
-        .eq('pipeline_id', pipeline.id)
-        .order('position');
-      
-      if (stagesError) {
-          console.error('Error fetching stages:', stagesError);
+        // AUTO-HEALING: Se não existir pipeline, criar um padrão
+        if (!pipeline) {
+            console.log("Tentando criar pipeline padrão...");
+            const { data: newPipe, error: createError } = await supabase
+                .from('pipelines')
+                .insert({ company_id: user.company_id, name: 'Funil de Vendas', is_default: true })
+                .select()
+                .single();
+            
+            if (createError) {
+                // SE DER ERRO (ex: 403 RLS), NÃO LANCE EXCEÇÃO, APENAS RETORNE VAZIO PARA PARAR O LOOP
+                console.error("FALHA CRÍTICA: Não foi possível criar pipeline (Provável RLS):", createError);
+                return []; 
+            }
+            
+            pipeline = newPipe;
+            
+            if (pipeline) {
+                const defaultStages = [
+                    { pipeline_id: pipeline.id, name: 'Novos', position: 0, color: '#3b82f6', company_id: user.company_id },
+                    { pipeline_id: pipeline.id, name: 'Qualificação', position: 1, color: '#eab308', company_id: user.company_id },
+                    { pipeline_id: pipeline.id, name: 'Negociação', position: 2, color: '#f97316', company_id: user.company_id },
+                    { pipeline_id: pipeline.id, name: 'Ganho', position: 3, color: '#22c55e', company_id: user.company_id }
+                ];
+                await supabase.from('pipeline_stages').insert(defaultStages);
+            }
+        }
+
+        if (!pipeline) return [];
+
+        // 2. Buscar Estágios do Pipeline
+        const { data: stages } = await supabase
+            .from('pipeline_stages')
+            .select('*')
+            .eq('pipeline_id', pipeline.id)
+            .order('position');
+        
+        if (!stages) return [];
+
+        // 3. Buscar Leads da Empresa
+        const { data: leads } = await supabase
+            .from('leads')
+            .select('*')
+            .eq('company_id', user.company_id);
+
+        return stages.map((stage: PipelineStage) => ({
+            id: stage.id,
+            title: stage.name,
+            color: stage.color,
+            order: stage.position,
+            items: leads?.filter((l: Lead) => l.stage_id === stage.id) || []
+        })) as KanbanColumn[];
+
+      } catch (error) {
+          console.error("Erro fatal no Kanban:", error);
           return [];
       }
-
-      // 3. Buscar Leads da Empresa
-      const { data: leads, error: leadsError } = await supabase
-        .from('leads')
-        .select('*')
-        .eq('company_id', user.company_id);
-
-      if (leadsError) {
-          console.error('Error fetching leads:', leadsError);
-          return [];
-      }
-
-      return stages.map((stage: PipelineStage) => ({
-        id: stage.id,
-        title: stage.name,
-        color: stage.color,
-        order: stage.position,
-        items: leads?.filter((l: Lead) => l.stage_id === stage.id) || []
-      })) as KanbanColumn[];
     },
     enabled: !!user?.company_id,
-    staleTime: 1000 * 60 * 2, // Cache por 2 minutos
+    staleTime: 1000 * 60 * 5, // Aumentado para 5 minutos para evitar loops agressivos
+    retry: 1 // Tenta apenas 1 vez em caso de erro
   });
 
   // Mover Lead (Drag & Drop)
@@ -93,13 +100,12 @@ export function useKanban() {
         .from('leads')
         .update({ stage_id: toStageId, updated_at: new Date().toISOString() })
         .eq('id', leadId)
-        .eq('company_id', user?.company_id); // Segurança extra
+        .eq('company_id', user?.company_id); 
       
       if (error) throw error;
       return { leadId, toStageId };
     },
     onMutate: async ({ leadId, toStageId }) => {
-      // Optimistic Update
       await queryClient.cancelQueries({ queryKey: ['kanban', user?.company_id] });
       const previousBoard = queryClient.getQueryData<KanbanColumn[]>(['kanban', user?.company_id]);
 
@@ -108,7 +114,6 @@ export function useKanban() {
         const newCols = old.map(col => ({ ...col, items: col.items ? [...col.items] : [] }));
         
         let movedLead: Lead | undefined;
-        // Remover da coluna antiga
         for (const col of newCols) {
           if (!col.items) continue;
           const idx = col.items.findIndex(l => l.id === leadId);
@@ -117,7 +122,6 @@ export function useKanban() {
             break;
           }
         }
-        // Adicionar na nova
         if (movedLead) {
           movedLead.stage_id = toStageId;
           const targetCol = newCols.find(c => c.id === toStageId);
@@ -142,7 +146,6 @@ export function useKanban() {
     },
   });
 
-  // Criar Lead via Hook (opcional, pode ser via componente)
   const createLeadMutation = useMutation({
       mutationFn: async (leadData: any) => {
           if (!user?.company_id) throw new Error("Sem empresa");
