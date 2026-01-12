@@ -3,11 +3,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { useAuthStore } from '@/store/useAuthStore';
-import { ChatContact, Message } from '@/types';
+import { ChatContact, Message, Instance } from '@/types';
 import { cleanJid, cn } from '@/lib/utils';
 import { 
     Loader2, Search, Send, Paperclip, Sparkles, Mic, Bot, 
-    Image as IconImage, FileText, BarChart2, X, Trash2, ArrowLeft, User
+    Image as IconImage, FileText, BarChart2, X, Trash2, ArrowLeft, User, Smartphone
 } from 'lucide-react';
 import { MessageBubble } from '@/components/chat/MessageBubble';
 import { Button } from '@/components/ui/button';
@@ -25,8 +25,25 @@ export default function ChatPage() {
   const supabase = createClient();
   const { addToast } = useToast();
   
-  // Hook otimizado que já traz a lista ordenada e com nomes resolvidos
-  const { contacts, loading: loadingContacts } = useChatList();
+  // --- ESTADOS DE INSTÂNCIA ---
+  const [instances, setInstances] = useState<Instance[]>([]);
+  const [selectedInstance, setSelectedInstance] = useState<Instance | null>(null);
+
+  // Busca instâncias disponíveis
+  useEffect(() => {
+      const fetchInstances = async () => {
+          const { data } = await supabase.from('instances').select('*').eq('status', 'connected');
+          if (data && data.length > 0) {
+              setInstances(data);
+              // Seleciona a primeira automaticamente se não tiver selecionado
+              if (!selectedInstance) setSelectedInstance(data[0]);
+          }
+      };
+      if (user?.company_id) fetchInstances();
+  }, [user?.company_id]);
+
+  // --- HOOK DE CHAT (VINCULADO À INSTÂNCIA SELECIONADA) ---
+  const { contacts, loading: loadingContacts } = useChatList(selectedInstance?.session_id || null);
   
   const [activeContact, setActiveContact] = useState<ChatContact | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -35,7 +52,7 @@ export default function ChatPage() {
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [isDisconnected, setIsDisconnected] = useState(false);
 
-  // States de Mídia
+  // States de Mídia e Utilitários
   const [isRecording, setIsRecording] = useState(false);
   const [mediaMenuOpen, setMediaMenuOpen] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
@@ -43,12 +60,9 @@ export default function ChatPage() {
   const audioChunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Poll Modal
   const [pollModalOpen, setPollModalOpen] = useState(false);
   const [pollQuestion, setPollQuestion] = useState("");
   const [pollOptions, setPollOptions] = useState(["", ""]);
-
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -56,16 +70,19 @@ export default function ChatPage() {
   };
 
   useEffect(() => {
-    const check = async () => {
-        const status = await whatsappService.getInstanceStatus();
-        setIsDisconnected(status?.status !== 'connected');
-    };
-    check();
-  }, []);
+    // Verifica status da instância selecionada
+    if (selectedInstance) {
+        const check = async () => {
+            const status = await whatsappService.getInstanceStatus(selectedInstance.session_id);
+            setIsDisconnected(status?.status !== 'connected');
+        };
+        check();
+    }
+  }, [selectedInstance]);
 
-  // Fetch e Realtime de Mensagens
+  // Carregar Mensagens ao clicar no contato
   useEffect(() => {
-      if(!activeContact) return;
+      if(!activeContact || !selectedInstance) return;
       
       const fetchMsgs = async () => {
           setLoadingMessages(true);
@@ -73,6 +90,7 @@ export default function ChatPage() {
             .from('messages')
             .select('*')
             .eq('remote_jid', activeContact.remote_jid) 
+            .eq('session_id', selectedInstance.session_id) // <--- FILTRO DE INSTÂNCIA AQUI TAMBÉM
             .order('created_at', { ascending: true });
           
           setMessages(data || []);
@@ -82,7 +100,6 @@ export default function ChatPage() {
 
       fetchMsgs();
 
-      // Escuta INSERT (novas) e UPDATE (status: delivered/read)
       const subscription = supabase
         .channel(`chat:${activeContact.remote_jid}`)
         .on('postgres_changes', { 
@@ -91,34 +108,35 @@ export default function ChatPage() {
             table: 'messages',
             filter: `remote_jid=eq.${activeContact.remote_jid}`
         }, (payload) => {
-            if (payload.eventType === 'INSERT') {
-                // Evita duplicar se já tivermos o ID (optimistic UI)
-                setMessages(prev => {
-                    if (prev.some(m => m.id === payload.new.id)) return prev;
-                    return [...prev, payload.new as Message];
-                });
-                setTimeout(scrollToBottom, 100);
-            } else if (payload.eventType === 'UPDATE') {
-                setMessages(prev => prev.map(m => m.id === payload.new.id ? payload.new as Message : m));
+            // Verifica se a mensagem nova pertence a esta sessão
+            if (payload.new && (payload.new as any).session_id === selectedInstance.session_id) {
+                if (payload.eventType === 'INSERT') {
+                    setMessages(prev => {
+                        if (prev.some(m => m.id === payload.new.id)) return prev;
+                        return [...prev, payload.new as Message];
+                    });
+                    setTimeout(scrollToBottom, 100);
+                } else if (payload.eventType === 'UPDATE') {
+                    setMessages(prev => prev.map(m => m.id === payload.new.id ? payload.new as Message : m));
+                }
             }
         })
         .subscribe();
 
       return () => { subscription.unsubscribe(); };
-  }, [activeContact, supabase]);
+  }, [activeContact, selectedInstance, supabase]);
 
-  // --- ENVIO UNIFICADO (Seguindo Contrato do Backend) ---
+  // Função de Envio
   const dispatchMessage = async (payload: any) => {
-      if(!activeContact || !user?.company_id) return;
+      if(!activeContact || !user?.company_id || !selectedInstance) return;
 
       const optimisticId = Date.now().toString();
-
-      // Preview para UI Otimista
       let contentPreview = payload.text || payload.caption || "";
-      if(payload.type === 'poll') contentPreview = JSON.stringify({ name: payload.name, options: payload.options });
+      if(payload.type === 'poll') contentPreview = "📊 Enquete";
       if(payload.type === 'audio') contentPreview = payload.url;
       if(payload.type === 'image' || payload.type === 'video') contentPreview = payload.url;
-
+      
+      // UI Otimista
       const tempMsg: Message = {
           id: optimisticId,
           remote_jid: activeContact.remote_jid,
@@ -128,7 +146,7 @@ export default function ChatPage() {
           message_type: payload.type || 'text',
           status: 'sending',
           created_at: new Date().toISOString(),
-          session_id: 'default',
+          session_id: selectedInstance.session_id, // Vincula à instância atual
           company_id: user.company_id,
           media_url: payload.url 
       } as any;
@@ -138,7 +156,7 @@ export default function ChatPage() {
 
       try {
           await api.post('/message/send', {
-              sessionId: 'default',
+              sessionId: selectedInstance.session_id, // Envia pela instância selecionada
               companyId: user.company_id,
               to: activeContact.remote_jid,
               type: payload.type || 'text',
@@ -150,8 +168,8 @@ export default function ChatPage() {
           });
       } catch (error) {
           addToast({ type: 'error', title: 'Erro', message: 'Falha ao enviar mensagem.' });
-          console.error(error);
           setMessages(prev => prev.filter(m => m.id !== optimisticId));
+          console.error(error);
       }
   };
 
@@ -289,25 +307,44 @@ export default function ChatPage() {
   return (
     <div className="flex h-[calc(100vh-6rem)] md:h-[calc(100vh-4rem)] rounded-xl border border-zinc-800 bg-zinc-950/50 overflow-hidden shadow-2xl animate-in fade-in duration-500">
       
-      {/* Sidebar Listagem */}
-      <div className={cn(
-          "w-full md:w-80 border-r border-zinc-800 flex-col bg-zinc-900/30 backdrop-blur-sm",
-          activeContact ? "hidden md:flex" : "flex"
-      )}>
-        <div className="p-4 border-b border-zinc-800">
-            <h2 className="text-sm font-semibold text-zinc-400 mb-3 uppercase tracking-wider">Inbox</h2>
+      {/* Sidebar */}
+      <div className={cn("w-full md:w-80 border-r border-zinc-800 flex-col bg-zinc-900/30 backdrop-blur-sm", activeContact ? "hidden md:flex" : "flex")}>
+        
+        {/* SELETOR DE INSTÂNCIA (NOVO) */}
+        <div className="p-4 border-b border-zinc-800 bg-zinc-900/80">
+            <div className="flex items-center gap-2 mb-4">
+                <Smartphone className="w-4 h-4 text-primary" />
+                <select 
+                    className="w-full bg-zinc-950 border border-zinc-700 text-zinc-200 text-sm rounded-md p-2 focus:ring-primary focus:border-primary outline-none"
+                    value={selectedInstance?.session_id || ''}
+                    onChange={(e) => {
+                        const inst = instances.find(i => i.session_id === e.target.value);
+                        setSelectedInstance(inst || null);
+                        setActiveContact(null); // Reseta chat ativo ao mudar instância
+                    }}
+                >
+                    <option value="" disabled>Selecione uma Conexão</option>
+                    {instances.map(inst => (
+                        <option key={inst.session_id} value={inst.session_id}>
+                            {inst.name || `WhatsApp ${inst.session_id.slice(0,4)}`}
+                        </option>
+                    ))}
+                </select>
+            </div>
+
             <div className="relative group">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500 group-focus-within:text-primary transition-colors" />
                 <input 
                     className="w-full bg-zinc-950/50 border border-zinc-800 rounded-lg py-2.5 pl-9 pr-4 text-sm focus:outline-none focus:ring-1 focus:ring-primary text-white placeholder-zinc-600 transition-all"
-                    placeholder="Buscar conversa..."
+                    placeholder="Buscar na instância..."
                 />
             </div>
         </div>
+
         <div className="flex-1 overflow-y-auto custom-scrollbar">
             {loadingContacts ? (
                 <div className="flex justify-center p-8"><Loader2 className="animate-spin text-primary" /></div>
-            ) : contacts.map(contact => (
+            ) : contacts.length > 0 ? contacts.map(contact => (
                 <div 
                     key={contact.id}
                     onClick={() => setActiveContact(contact)}
@@ -315,7 +352,6 @@ export default function ChatPage() {
                 >
                     <div className="flex justify-between items-start mb-1">
                         <div className="flex items-center gap-3 overflow-hidden">
-                             {/* Avatar ou Placeholder */}
                              <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center shrink-0 border border-zinc-700 overflow-hidden">
                                 {contact.profile_pic_url ? (
                                     <img src={contact.profile_pic_url} alt={contact.name} className="w-full h-full object-cover" />
@@ -335,32 +371,23 @@ export default function ChatPage() {
                         </span>
                     </div>
                 </div>
-             ))}
-             {contacts.length === 0 && !loadingContacts && (
-                 <div className="p-8 text-center text-zinc-500 text-sm">Nenhuma conversa encontrada.</div>
+             )) : (
+                 <div className="p-8 text-center text-zinc-500 text-sm">
+                    {selectedInstance ? "Nenhuma conversa nesta instância." : "Selecione uma conexão acima."}
+                 </div>
              )}
         </div>
       </div>
 
       {/* Área do Chat */}
-      <div className={cn(
-          "flex-1 flex-col bg-[#09090b] relative",
-          activeContact ? "flex" : "hidden md:flex"
-      )}>
+      <div className={cn("flex-1 flex-col bg-[#09090b] relative", activeContact ? "flex" : "hidden md:flex")}>
         {activeContact ? (
             <>
-                {/* Header do Chat */}
                 <div className="h-16 border-b border-zinc-800 flex items-center justify-between px-4 md:px-6 bg-zinc-900/50 backdrop-blur-md z-10">
                     <div className="flex items-center gap-3">
-                        <Button 
-                            variant="ghost" 
-                            size="icon" 
-                            className="md:hidden text-zinc-400"
-                            onClick={() => setActiveContact(null)}
-                        >
+                        <Button variant="ghost" size="icon" className="md:hidden text-zinc-400" onClick={() => setActiveContact(null)}>
                             <ArrowLeft className="h-5 w-5" />
                         </Button>
-
                         <div className="h-10 w-10 rounded-full bg-zinc-800 flex items-center justify-center border border-zinc-700 overflow-hidden">
                              {activeContact.profile_pic_url ? (
                                 <img src={activeContact.profile_pic_url} alt={activeContact.name} className="w-full h-full object-cover" />
@@ -378,11 +405,7 @@ export default function ChatPage() {
                     </div>
                 </div>
 
-                {/* Corpo do Chat */}
-                <div 
-                    className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4"
-                    style={{ backgroundImage: 'radial-gradient(circle at center, rgba(34, 197, 94, 0.03) 0%, transparent 70%)' }}
-                >
+                <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4" style={{ backgroundImage: 'radial-gradient(circle at center, rgba(34, 197, 94, 0.03) 0%, transparent 70%)' }}>
                     {loadingMessages ? (
                         <div className="flex h-full items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-primary/50" /></div>
                     ) : messages.map((msg, idx) => (
@@ -407,7 +430,6 @@ export default function ChatPage() {
                     <div ref={messagesEndRef} />
                 </div>
 
-                {/* Input Area */}
                 <div className="p-3 md:p-4 border-t border-zinc-800 bg-zinc-900/30 backdrop-blur relative">
                     <div className="flex items-center gap-2 mb-3 overflow-x-auto no-scrollbar">
                         <Button 
@@ -512,11 +534,9 @@ export default function ChatPage() {
             </>
         ) : (
             <div className="flex h-full items-center justify-center flex-col text-zinc-500 bg-zinc-950/20 p-4 text-center">
-                <div className="w-20 h-20 rounded-full bg-zinc-900/50 border border-zinc-800 flex items-center justify-center mb-6 animate-pulse">
-                    <Bot className="h-8 w-8 text-primary opacity-50" />
-                </div>
-                <h3 className="text-lg font-medium text-zinc-300">Wancora CRM Chat 2.0</h3>
-                <p className="text-sm opacity-60 mt-1">Selecione uma conversa para começar</p>
+                <Smartphone className="h-12 w-12 text-zinc-700 mb-4 animate-bounce" />
+                <h3 className="text-lg font-medium text-zinc-300">Wancora CRM</h3>
+                <p className="text-sm opacity-60 mt-1">Selecione uma instância e um contato para conversar.</p>
             </div>
         )}
       </div>

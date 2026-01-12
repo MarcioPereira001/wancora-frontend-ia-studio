@@ -3,23 +3,25 @@ import { createClient } from '@/utils/supabase/client';
 import { useAuthStore } from '@/store/useAuthStore';
 import { ChatContact } from '@/types';
 
-export function useChatList() {
+// Agora aceita selectedSessionId como parâmetro
+export function useChatList(selectedSessionId: string | null) {
   const { user } = useAuthStore();
   const supabase = createClient();
   const [contacts, setContacts] = useState<ChatContact[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!user?.company_id) return;
+    if (!user?.company_id || !selectedSessionId) {
+        setContacts([]); // Se não tiver instância selecionada, limpa a lista
+        setLoading(false);
+        return;
+    }
 
     const fetchChats = async () => {
       try {
         setLoading(true);
         
-        // 1. Busca mensagens recentes com Joins para Leads e Contatos
-        // Nota: Isso assume que existem Foreign Keys configuradas no Supabase entre:
-        // messages.lead_id -> leads.id
-        // messages.remote_jid -> contacts.jid (Se não houver FK estrita, os campos virão null, o que tratamos abaixo)
+        // 1. Busca mensagens FILTRANDO PELA SESSÃO (session_id)
         const { data: messages, error } = await supabase
           .from('messages')
           .select(`
@@ -33,31 +35,22 @@ export function useChatList() {
             contacts (name, push_name, profile_pic_url)
           `)
           .eq('company_id', user.company_id)
+          .eq('session_id', selectedSessionId) // <--- O PULO DO GATO 🐱
           .order('created_at', { ascending: false });
 
         if (error) throw error;
 
-        // 2. Agrupa por conversa (remote_jid) usando um Map para garantir unicidade
+        // 2. Agrupa por conversa
         const chatMap = new Map<string, ChatContact>();
 
         messages?.forEach((msg: any) => {
           if (!chatMap.has(msg.remote_jid)) {
-            
-            // Lógica de Prioridade de Nome:
-            // 1. Nome Salvo na Agenda/Grupo (contact.name)
-            // 2. Nome Público do WhatsApp (contact.push_name)
-            // 3. Nome no CRM (lead.name)
-            // 4. Número formatado
             const contactName = msg.contacts?.name || msg.contacts?.push_name;
             const leadName = msg.leads?.name;
             const phoneName = msg.remote_jid.split('@')[0];
-            
             const displayName = contactName || leadName || phoneName;
-
-            // Prioridade de Foto:
             const displayPic = msg.contacts?.profile_pic_url || msg.leads?.profile_pic_url;
 
-            // Formatação do Preview da Mensagem
             let preview = msg.content;
             const type = msg.message_type || (msg as any).type;
             
@@ -66,12 +59,9 @@ export function useChatList() {
                 else if (type === 'audio') preview = '🎵 Áudio';
                 else if (type === 'video') preview = '🎥 Vídeo';
                 else if (type === 'document') preview = '📄 Documento';
-                else if (type === 'sticker') preview = '👾 Figurinha';
                 else if (type === 'poll') preview = '📊 Enquete';
-                else if (type === 'location') preview = '📍 Localização';
             }
 
-            // Tratamento especial para enquetes (JSON)
             if (type === 'poll' && typeof preview === 'string' && preview.startsWith('{')) {
                 try {
                     const pollData = JSON.parse(preview);
@@ -87,10 +77,11 @@ export function useChatList() {
               name: displayName,
               push_name: msg.contacts?.push_name,
               profile_pic_url: displayPic,
-              unread_count: 0, // Implementar lógica de count se necessário
+              unread_count: 0,
               last_message: preview,
               last_message_time: msg.created_at,
-              phone_number: phoneName
+              phone_number: phoneName,
+              // session_id: selectedSessionId // Útil se precisar debugar
             });
           }
         });
@@ -106,17 +97,15 @@ export function useChatList() {
 
     fetchChats();
 
-    // 3. Realtime Updates
+    // 3. Realtime com Filtro de Sessão
     const channel = supabase
-      .channel(`chat-list-realtime:${user.company_id}`)
+      .channel(`chat-list:${selectedSessionId}`)
       .on('postgres_changes', { 
         event: 'INSERT', 
         schema: 'public', 
         table: 'messages',
-        filter: `company_id=eq.${user.company_id}`
-      }, (payload) => {
-        // Atualização simples: recarrega para reordenar
-        // Poderia ser otimizado para inserir no topo do estado local
+        filter: `session_id=eq.${selectedSessionId}` // Só atualiza se for desta instância
+      }, () => {
         fetchChats(); 
       })
       .subscribe();
@@ -125,7 +114,7 @@ export function useChatList() {
       supabase.removeChannel(channel);
     };
 
-  }, [user?.company_id, supabase]);
+  }, [user?.company_id, selectedSessionId, supabase]);
 
   return { contacts, loading };
 }
