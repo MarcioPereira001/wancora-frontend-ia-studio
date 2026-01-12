@@ -26,13 +26,11 @@ export default function ConnectionsPage() {
   const [loading, setLoading] = useState(true);
   const supabase = createClient();
   
-  // Modal State Logic
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [step, setStep] = useState<'input' | 'initializing' | 'qr_scan' | 'success'>('input');
   const [newSessionName, setNewSessionName] = useState('');
   const [currentInstance, setCurrentInstance] = useState<Instance | null>(null);
 
-  // Busca inicial
   const fetchInstances = async () => {
       try {
           const data = await whatsappService.getAllInstances();
@@ -47,7 +45,6 @@ export default function ConnectionsPage() {
     fetchInstances();
     if (!company?.id) return;
 
-    // Monitoramento Global da Lista
     const channel = supabase
       .channel('instances-global')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'instances', filter: `company_id=eq.${company.id}` }, 
@@ -58,97 +55,43 @@ export default function ConnectionsPage() {
     return () => { supabase.removeChannel(channel); };
   }, [company?.id, supabase]);
 
-  // --- MONITORAMENTO CRÍTICO DO MODAL (QR CODE) ---
-  // Ref corrigido para evitar loop de dependência
-  const currentInstanceIdRef = useRef<string | null>(null);
-  
+  // --- LÓGICA DE POLLING E QR CODE ---
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   useEffect(() => {
-    if (currentInstance) {
-        currentInstanceIdRef.current = currentInstance.session_id;
+    if (!isModalOpen || !currentInstance?.session_id) {
+        if (intervalRef.current) clearInterval(intervalRef.current);
+        return;
     }
-  }, [currentInstance]);
-
-  useEffect(() => {
-    if (!isModalOpen || !currentInstanceIdRef.current) return;
-
-    const sessionId = currentInstanceIdRef.current;
-    let intervalId: ReturnType<typeof setInterval>;
 
     const checkStatus = async () => {
-        // Busca direta no banco para evitar delay de estado
-        const { data: freshData, error } = await supabase
-            .from('instances')
-            .select('*')
-            .eq('session_id', sessionId)
-            .maybeSingle();
-        
-        if (error || !freshData) return;
+        const status = await whatsappService.getInstanceStatus(currentInstance.session_id);
+        if (!status) return;
 
-        // Só atualiza estado se algo mudou visualmente
-        const instanceData = freshData as Instance;
+        // Atualiza estado local
+        setCurrentInstance(status);
 
-        // 1. SUCESSO: Conectado
-        if (instanceData.status === 'connected') {
-            setStep((prev) => {
-                if (prev !== 'success') {
-                    addToast({ type: 'success', title: 'Conectado!', message: 'Instância sincronizada.' });
-                    setTimeout(() => {
-                        setIsModalOpen(false);
-                        resetModal();
-                        fetchInstances();
-                    }, 2000);
-                    return 'success';
-                }
-                return prev;
-            });
-            setCurrentInstance(instanceData);
-        } 
-        // 2. QR CODE: Se houver URL
-        else if (instanceData.qrcode_url && instanceData.qrcode_url.length > 20) {
-            setStep((prev) => {
-                if (prev !== 'qr_scan') return 'qr_scan';
-                return prev;
-            });
-            setCurrentInstance(instanceData);
+        if (status.status === 'connected') {
+            setStep('success');
+            if (intervalRef.current) clearInterval(intervalRef.current);
+        } else if (status.qrcode_url && status.qrcode_url.length > 10) {
+            setStep('qr_scan');
         }
     };
 
-    // Polling menos agressivo (2s)
+    // Check imediato e depois a cada 2s
     checkStatus();
-    intervalId = setInterval(checkStatus, 2000);
+    intervalRef.current = setInterval(checkStatus, 2000);
 
-    const modalChannel = supabase
-      .channel(`instance-modal-${sessionId}`)
-      .on('postgres_changes', { 
-          event: 'UPDATE', 
-          schema: 'public', 
-          table: 'instances', 
-          filter: `session_id=eq.${sessionId}` 
-      }, (payload) => {
-          const newRow = payload.new as Instance;
-          if (newRow.qrcode_url && newRow.status !== 'connected') {
-              setStep('qr_scan');
-              setCurrentInstance(newRow);
-          }
-          if (newRow.status === 'connected') {
-              setStep('success');
-              setCurrentInstance(newRow);
-          }
-      })
-      .subscribe();
-
-    return () => { 
-        supabase.removeChannel(modalChannel);
-        clearInterval(intervalId);
+    return () => {
+        if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  // Removemos 'step' e 'currentInstance' das dependências para evitar loop. Usamos apenas isModalOpen.
-  }, [isModalOpen, supabase, addToast]); 
+  }, [isModalOpen, currentInstance?.session_id]);
 
   const resetModal = () => {
       setStep('input');
       setNewSessionName('');
       setCurrentInstance(null);
-      currentInstanceIdRef.current = null;
   }
 
   const handleStartProtocol = async (sessionNameOverride?: string, sessionIdOverride?: string) => {
@@ -166,11 +109,11 @@ export default function ConnectionsPage() {
           }
           
           const newInstance = await whatsappService.connectInstance(sessionId, nameToUse);
-          setCurrentInstance(newInstance);
+          setCurrentInstance(newInstance); // Isso dispara o useEffect de polling
           
       } catch (error: any) {
           console.error(error);
-          addToast({ type: 'error', title: 'Falha no Protocolo', message: error.message });
+          addToast({ type: 'error', title: 'Falha', message: error.message });
           setStep('input');
       }
   };
@@ -182,19 +125,14 @@ export default function ConnectionsPage() {
       setCurrentInstance(instance);
       
       try {
+          // Tenta limpar sessão antiga antes de iniciar nova
           await whatsappService.logoutInstance(instance.session_id);
-      } catch (e) {
-          console.log("Erro ao limpar sessão antiga, continuando...", e);
-      }
+      } catch (e) {}
 
-      await new Promise(r => setTimeout(r, 1000));
-
-      try {
-          await handleStartProtocol(instance.name, instance.session_id);
-      } catch (error: any) {
-          addToast({ type: 'error', title: 'Erro ao reiniciar', message: error.message });
-          setIsModalOpen(false);
-      }
+      // Pequeno delay para garantir que o backend limpou a sessão
+      setTimeout(() => {
+          handleStartProtocol(instance.name, instance.session_id);
+      }, 1000);
   };
 
   const limit = PLAN_LIMITS[(company?.plan as keyof typeof PLAN_LIMITS) || 'starter'] || 1;
@@ -302,9 +240,6 @@ export default function ConnectionsPage() {
                           <h3 className="text-lg font-bold text-white">Iniciando Servidor...</h3>
                           <p className="text-zinc-500 text-sm mt-2 max-w-xs mx-auto">
                               O sistema está preparando a instância segura do WhatsApp. O QR Code aparecerá em instantes.
-                          </p>
-                          <p className="text-zinc-600 text-xs mt-4 font-mono">
-                              Aguardando resposta do backend (qrcode_url)...
                           </p>
                       </div>
                       <div className="w-full bg-zinc-900/50 rounded-full h-1.5 overflow-hidden max-w-[200px]">

@@ -85,14 +85,13 @@ export function useLeadData(leadId?: string, leadPhone?: string) {
 
       try {
           // 2. Chamada ao Backend (Baileys) via wrapper API seguro
-          // CORREÇÃO: Endpoint correto /message/send e payload com sessionId/companyId
+          // Payload rigorosamente alinhado com o contrato
           await api.post('/message/send', {
               sessionId: 'default',
               companyId: user.company_id,
-              jid: `${leadPhone.replace(/\D/g, '')}@s.whatsapp.net`, 
-              to: `${leadPhone.replace(/\D/g, '')}@s.whatsapp.net`, // Backends podem variar entre 'jid' e 'to', enviamos ambos por segurança
+              to: `${leadPhone.replace(/\D/g, '')}@s.whatsapp.net`, 
               text: text,
-              message: text // Fallback
+              type: 'text' 
           });
           // Não precisamos atualizar 'tempMsg' aqui, pois o Realtime do Supabase irá inserir a mensagem real "Sent" em breve
       } catch (error: any) {

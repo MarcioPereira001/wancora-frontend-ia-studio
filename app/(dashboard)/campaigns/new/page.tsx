@@ -66,10 +66,11 @@ export default function NewCampaignPage() {
         if (dbError) throw dbError;
 
         // Depois, chamamos a API de envio do Backend
+        // Payload corrigido para usar 'selectedTags' conforme contrato
         const payload = {
             companyId: user.company_id,
             name,
-            targetTags,
+            selectedTags: targetTags, 
             message,
             scheduledAt: null // Envio Imediato
         };

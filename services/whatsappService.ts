@@ -3,28 +3,38 @@ import { createClient } from '@/utils/supabase/client';
 import { Instance } from '../types';
 
 export const whatsappService = {
-  // Busca status da instância mais recente (para widgets de status rápido)
-  getInstanceStatus: async (): Promise<Instance | null> => {
+  // Busca status via API se sessionId fornecido (Auditoria), senão busca do Supabase (Lista)
+  getInstanceStatus: async (sessionId?: string): Promise<Instance | null> => {
     try {
       const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
       
-      if (!session?.user?.id) return null;
+      if (sessionId) {
+          try {
+             // Prioridade para a API se tivermos o ID, conforme especificação de auditoria
+             const apiData = await api.get(`/session/status/${sessionId}`);
+             return apiData as Instance;
+          } catch (e) {
+             console.warn("API de status falhou, tentando Supabase fallback...", e);
+          }
+      }
 
-      const { data: profile } = await supabase.from('profiles').select('company_id').eq('id', session.user.id).single();
+      // Fallback ou busca geral
+      const { data: { session: authSession } } = await supabase.auth.getSession();
+      if (!authSession?.user?.id) return null;
+      
+      const { data: profile } = await supabase.from('profiles').select('company_id').eq('id', authSession.user.id).single();
       const companyId = profile?.company_id;
-
       if (!companyId) return null;
 
-      const { data, error } = await supabase
-        .from('instances')
-        .select('*')
-        .eq('company_id', companyId)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      let query = supabase.from('instances').select('*').eq('company_id', companyId);
+      
+      if (sessionId) {
+          query = query.eq('session_id', sessionId);
+      } else {
+          query = query.order('created_at', { ascending: false }).limit(1);
+      }
 
-      if (error) return null;
+      const { data } = await query.maybeSingle();
       return data as Instance;
     } catch (error) {
       console.error('Erro ao buscar status da instância:', error);
@@ -53,20 +63,6 @@ export const whatsappService = {
     }
   },
 
-  getOneInstance: async (sessionId: string): Promise<Instance | null> => {
-    try {
-        const supabase = createClient();
-        const { data } = await supabase
-            .from('instances')
-            .select('*')
-            .eq('session_id', sessionId)
-            .maybeSingle();
-        return data as Instance;
-    } catch (error) {
-        return null;
-    }
-  },
-
   connectInstance: async (sessionId: string = 'default', instanceName?: string): Promise<Instance> => {
     try {
       const supabase = createClient();
@@ -74,15 +70,13 @@ export const whatsappService = {
       
       if (!session?.user?.id) throw new Error("Sessão expirada.");
 
-      // 1. Obter Company ID do Usuário Logado
       const { data: profile } = await supabase.from('profiles').select('company_id').eq('id', session.user.id).single();
       
       if (!profile?.company_id) throw new Error("Usuário sem empresa vinculada.");
 
       const displayName = instanceName || (sessionId === 'default' ? 'Principal' : sessionId);
 
-      // 2. Limpar estado anterior no banco (Resetar QR Code antigo)
-      // É crucial setar qrcode_url como null para o frontend saber que deve esperar um novo
+      // Limpa QR Code antigo
       const { data: instanceData, error: dbError } = await supabase
         .from('instances')
         .upsert({ 
@@ -90,15 +84,14 @@ export const whatsappService = {
             session_id: sessionId, 
             status: 'connecting', 
             name: displayName,
-            qrcode_url: null // Limpa QR Code antigo da coluna correta
+            qrcode_url: null 
         }, { onConflict: 'session_id' })
         .select()
         .single();
 
-      if (dbError) throw new Error("Falha ao preparar conexão no banco de dados.");
+      if (dbError) throw new Error("Falha ao preparar conexão no banco.");
 
-      // 3. Disparar Backend (Endpoint Correto: /session/start)
-      // Envia sessionId E companyId conforme exigido pelo backend
+      // Dispara Backend (Endpoint: /session/start)
       await api.post('/session/start', {
         sessionId: sessionId,
         companyId: profile.company_id
@@ -121,14 +114,13 @@ export const whatsappService = {
       const { data: profile } = await supabase.from('profiles').select('company_id').eq('id', session.user.id).single();
       if (!profile?.company_id) return;
 
-      // Chama backend para logout limpo (Endpoint Correto: /session/logout)
-      // Envia o payload completo
+      // Chama backend (Endpoint: /session/logout)
       await api.post('/session/logout', {
           sessionId: sessionId,
           companyId: profile.company_id
       });
       
-      // Força atualização visual no banco caso o backend demore a responder o evento de desconexão
+      // Update otimista
       await supabase
         .from('instances')
         .update({ status: 'disconnected', qrcode_url: null })
@@ -150,17 +142,15 @@ export const whatsappService = {
         const { data: profile } = await supabase.from('profiles').select('company_id').eq('id', session.user.id).single();
         if (!profile?.company_id) return;
   
-        // Tenta desconectar backend primeiro via API
         try {
             await api.post('/session/logout', {
                 sessionId: sessionId,
                 companyId: profile.company_id
             });
         } catch (e) {
-            console.log("Backend offline ou já desconectado, deletando registro apenas.");
+            // Backend pode já estar off
         }
   
-        // Remove do banco de dados
         await supabase
             .from('instances')
             .delete()
