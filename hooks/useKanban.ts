@@ -40,10 +40,10 @@ export function useKanban() {
   }, [pipelines, selectedPipelineId]);
 
   // --- QUERY KANBAN ---
-  const { data: columns = [], isLoading: loadingBoard, refetch } = useQuery({
+  const { data: kanbanData, isLoading: loadingBoard, refetch } = useQuery({
     queryKey,
     queryFn: async () => {
-      if (!user?.company_id || !selectedPipelineId) return [];
+      if (!user?.company_id || !selectedPipelineId) return { columns: [], stages: [], allLeads: [] };
 
       try {
         const { data: stages } = await supabase
@@ -52,7 +52,7 @@ export function useKanban() {
             .eq('pipeline_id', selectedPipelineId)
             .order('position');
         
-        if (!stages || stages.length === 0) return [];
+        if (!stages || stages.length === 0) return { columns: [], stages: [], allLeads: [] };
 
         const stageIds = stages.map(s => s.id);
         const { data: leads } = await supabase
@@ -60,12 +60,17 @@ export function useKanban() {
             .select('*')
             .eq('company_id', user.company_id)
             .in('stage_id', stageIds)
-            .order('position', { ascending: true }); // ORDENAÇÃO POR POSIÇÃO
+            .order('created_at', { ascending: false }); // Ordem cronológica para lista geral
 
         const allLeads = leads || [];
 
+        // Monta colunas para o Kanban
         const board: KanbanColumn[] = stages.map((stage: PipelineStage) => {
-            const stageLeads = allLeads.filter((l: Lead) => l.stage_id === stage.id);
+            // Filtra e reordena por posição para o Kanban
+            const stageLeads = allLeads
+                .filter((l: Lead) => l.stage_id === stage.id)
+                .sort((a, b) => (a.position || 0) - (b.position || 0));
+
             const totalValue = stageLeads.reduce((acc, lead) => acc + (Number(lead.value_potential) || 0), 0);
             
             return {
@@ -78,6 +83,7 @@ export function useKanban() {
             };
         });
 
+        // Lógica de Leads Órfãos (Para Admins)
         const isDefault = pipelines.find(p => p.id === selectedPipelineId)?.is_default;
         if (isDefault && (user.role === 'owner' || user.role === 'admin')) {
              const { data: orphans } = await supabase
@@ -88,14 +94,15 @@ export function useKanban() {
              
              if (orphans && orphans.length > 0 && board.length > 0) {
                  board[0].items.unshift(...orphans);
+                 allLeads.push(...orphans);
              }
         }
 
-        return board;
+        return { columns: board, stages, allLeads };
 
       } catch (error) {
           console.error("Erro fatal no Kanban:", error);
-          return [];
+          return { columns: [], stages: [], allLeads: [] };
       }
     },
     enabled: !!user?.company_id && !!selectedPipelineId,
@@ -108,7 +115,7 @@ export function useKanban() {
         .from('leads')
         .update({ 
             stage_id: toStageId, 
-            position: newPosition, // Salva a posição calculada
+            position: newPosition,
             updated_at: new Date().toISOString() 
         })
         .eq('id', leadId); 
@@ -116,16 +123,15 @@ export function useKanban() {
     },
     onMutate: async ({ leadId, toStageId, newPosition }) => {
       await queryClient.cancelQueries({ queryKey });
-      const previousBoard = queryClient.getQueryData<KanbanColumn[]>(queryKey);
+      const previousData = queryClient.getQueryData<any>(queryKey);
 
-      queryClient.setQueryData(queryKey, (old: KanbanColumn[] | undefined) => {
-        if (!old) return [];
-        // Deep clone simples para evitar mutação direta
-        const newBoard = JSON.parse(JSON.stringify(old)); 
+      queryClient.setQueryData(queryKey, (old: any | undefined) => {
+        if (!old || !old.columns) return old;
+        const newColumns = JSON.parse(JSON.stringify(old.columns));
         let movedLead: Lead | undefined;
 
-        // 1. Remove da coluna antiga
-        for (const col of newBoard) {
+        // Remove da antiga
+        for (const col of newColumns) {
           const idx = col.items.findIndex((l: Lead) => l.id === leadId);
           if (idx !== -1) {
             [movedLead] = col.items.splice(idx, 1);
@@ -134,31 +140,30 @@ export function useKanban() {
           }
         }
 
-        // 2. Insere na nova coluna e reordena visualmente
+        // Insere na nova
         if (movedLead) {
           movedLead.stage_id = toStageId;
           movedLead.position = newPosition;
           
-          const targetCol = newBoard.find((c: KanbanColumn) => c.id === toStageId);
+          const targetCol = newColumns.find((c: KanbanColumn) => c.id === toStageId);
           if (targetCol) {
             targetCol.items.push(movedLead);
-            // Ordena localmente para feedback visual instantâneo
             targetCol.items.sort((a: Lead, b: Lead) => (a.position || 0) - (b.position || 0));
             targetCol.totalValue += (Number(movedLead.value_potential) || 0);
           }
         }
-        return newBoard;
+        return { ...old, columns: newColumns };
       });
-      return { previousBoard };
+      return { previousData };
     },
     onError: (err, _, context) => {
-      if (context?.previousBoard) queryClient.setQueryData(queryKey, context.previousBoard);
+      if (context?.previousData) queryClient.setQueryData(queryKey, context.previousData);
       addToast({ type: 'error', title: 'Erro', message: 'Falha ao mover card.' });
     },
     onSettled: () => queryClient.invalidateQueries({ queryKey }),
   });
 
-  // Demais mutations mantidas (reorderStages, createPipeline, etc...)
+  // Demais mutations mantidas...
   const reorderStagesMutation = useMutation({
       mutationFn: async (newOrder: { id: string, position: number }[]) => {
           const { error } = await supabase.rpc('reorder_pipeline_stages', { p_updates: newOrder });
@@ -228,7 +233,6 @@ export function useKanban() {
   });
 
   const createLead = async (data: any) => {
-      // Define posição inicial alta para ir pro final ou 0 se vazia
       const position = Date.now(); 
       const { error } = await supabase.from('leads').insert({ ...data, company_id: user?.company_id, position });
       if(error) throw error;
@@ -251,7 +255,9 @@ export function useKanban() {
     pipelines,
     selectedPipelineId,
     setSelectedPipelineId,
-    columns, 
+    columns: kanbanData?.columns || [], 
+    allLeads: kanbanData?.allLeads || [], // Nova propriedade exposta
+    stages: kanbanData?.stages || [],     // Nova propriedade exposta
     loading: loadingBoard || loadingPipelines, 
     moveLead: (leadId: string, toColId: string, newPosition: number) => moveLeadMutation.mutate({ leadId, toStageId: toColId, newPosition }),
     reorderStages: reorderStagesMutation.mutate,
