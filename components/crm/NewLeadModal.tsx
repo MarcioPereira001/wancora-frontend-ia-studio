@@ -1,5 +1,3 @@
-'use client';
-
 import React, { useState } from 'react';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/button';
@@ -8,9 +6,10 @@ import { Textarea } from '@/components/ui/textarea';
 import { TagSelector } from './TagSelector';
 import { createClient } from '@/utils/supabase/client';
 import { useToast } from '@/hooks/useToast';
-import { Save, Flame, Sun, Snowflake } from 'lucide-react';
+import { Save, Flame, Sun, Snowflake, User } from 'lucide-react';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useKanban } from '@/hooks/useKanban';
+import { useTeam } from '@/hooks/useTeam';
 
 interface NewLeadModalProps {
   isOpen: boolean;
@@ -24,6 +23,7 @@ export function NewLeadModal({ isOpen, onClose, onSuccess, defaultStageId }: New
   const supabase = createClient();
   const { addToast } = useToast();
   const { createLead } = useKanban();
+  const { members } = useTeam();
   const [loading, setLoading] = useState(false);
 
   const [formData, setFormData] = useState({
@@ -33,7 +33,8 @@ export function NewLeadModal({ isOpen, onClose, onSuccess, defaultStageId }: New
     value_potential: 0,
     temperature: 'warm' as 'hot' | 'warm' | 'cold',
     notes: '',
-    tags: [] as string[]
+    tags: [] as string[],
+    owner_id: user?.id || '' // Default para o usuário atual
   });
 
   const handleSubmit = async () => {
@@ -84,12 +85,13 @@ export function NewLeadModal({ isOpen, onClose, onSuccess, defaultStageId }: New
             temperature: formData.temperature,
             notes: formData.notes,
             tags: formData.tags,
-            lead_score: 0
+            lead_score: 0,
+            owner_id: formData.owner_id
         });
 
         addToast({ type: 'success', title: 'Sucesso', message: 'Lead criado com sucesso!' });
         setFormData({
-            name: '', phone: '', email: '', value_potential: 0, temperature: 'warm', notes: '', tags: []
+            name: '', phone: '', email: '', value_potential: 0, temperature: 'warm', notes: '', tags: [], owner_id: user.id
         });
         if (onSuccess) onSuccess();
         onClose();
@@ -150,14 +152,19 @@ export function NewLeadModal({ isOpen, onClose, onSuccess, defaultStageId }: New
         </div>
 
         <div>
-            <label className="text-xs font-bold text-zinc-500 uppercase">Email</label>
-            <Input 
-                type="email"
-                value={formData.email} 
-                onChange={e => setFormData({...formData, email: e.target.value})} 
-                placeholder="cliente@email.com"
-                className="mt-1"
-            />
+            <label className="text-xs font-bold text-zinc-500 uppercase">Responsável (Dono)</label>
+            <div className="relative mt-1">
+                <User className="absolute left-3 top-2.5 w-4 h-4 text-zinc-500" />
+                <select 
+                    value={formData.owner_id}
+                    onChange={e => setFormData({...formData, owner_id: e.target.value})}
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-md py-2 pl-9 pr-3 text-sm text-zinc-200 outline-none focus:ring-1 focus:ring-primary appearance-none"
+                >
+                    {members.map(m => (
+                        <option key={m.id} value={m.id}>{m.name} ({m.role === 'owner' ? 'Dono' : 'Agente'})</option>
+                    ))}
+                </select>
+            </div>
         </div>
 
         <div>

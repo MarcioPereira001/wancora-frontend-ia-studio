@@ -2,16 +2,17 @@ import React from 'react';
 import { Calendar, MessageCircle, Flame, MoreHorizontal, User, Tag } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Lead } from '@/types';
+import { Lead, TeamMember } from '@/types';
 import { cn, formatCurrency } from '@/lib/utils';
 
 interface KanbanCardProps {
   lead: Lead;
+  owner?: TeamMember; // Recebe o objeto do membro responsável
   onDragStart: (e: React.DragEvent, leadId: string) => void;
   onClick: (lead: Lead) => void;
 }
 
-export function KanbanCard({ lead, onDragStart, onClick }: KanbanCardProps) {
+export function KanbanCard({ lead, owner, onDragStart, onClick }: KanbanCardProps) {
   
   const getTempConfig = (temp?: string) => {
     switch(temp) {
@@ -42,8 +43,17 @@ export function KanbanCard({ lead, onDragStart, onClick }: KanbanCardProps) {
             ) : (
               <span className="text-xs font-bold text-zinc-400">{lead.name.charAt(0).toUpperCase()}</span>
             )}
-            {/* Online Indicator Mock (could be real later) */}
-            <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-green-500 border-2 border-zinc-900 rounded-full"></div>
+            
+            {/* Responsável Mini Avatar */}
+            {owner && (
+                <div className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-zinc-950 border border-zinc-700 flex items-center justify-center overflow-hidden" title={`Responsável: ${owner.name}`}>
+                    {owner.avatar_url ? (
+                        <img src={owner.avatar_url} alt={owner.name} className="w-full h-full object-cover" />
+                    ) : (
+                        <span className="text-[8px] font-bold text-zinc-400">{owner.name.charAt(0)}</span>
+                    )}
+                </div>
+            )}
           </div>
           <div className="min-w-0">
             <h4 className="text-sm font-semibold text-zinc-100 truncate leading-tight">{lead.name}</h4>

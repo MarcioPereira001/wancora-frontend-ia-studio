@@ -27,6 +27,15 @@ export interface Profile {
   profile_pic_url?: string;
 }
 
+// Interface simplificada para selects de usuários
+export interface TeamMember {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  avatar_url?: string;
+}
+
 // --- CRM (KANBAN & LEADS) ---
 export interface Lead {
   id: string;
@@ -45,7 +54,7 @@ export interface Lead {
   created_at: string;
   updated_at?: string;
   next_appointment_at?: string;
-  owner_id?: string;
+  owner_id?: string; // ID do usuário responsável
 }
 
 export interface PipelineStage {
@@ -64,6 +73,7 @@ export interface Pipeline {
   name: string;
   is_default: boolean;
   stages?: PipelineStage[];
+  assignments?: string[]; // IDs dos usuários atribuídos (usado no frontend)
 }
 
 export interface KanbanColumn {

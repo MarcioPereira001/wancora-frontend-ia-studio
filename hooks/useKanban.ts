@@ -18,6 +18,8 @@ export function useKanban() {
   const pipelinesKey = ['pipelines', user?.company_id];
 
   // --- QUERY: Listar Todos os Pipelines ---
+  // IMPORTANTE: O RLS no banco já filtra o que o usuário pode ver.
+  // Colaboradores só verão pipelines atribuídos a eles ou públicos.
   const { data: pipelines = [], isLoading: loadingPipelines } = useQuery({
     queryKey: pipelinesKey,
     queryFn: async () => {
@@ -37,6 +39,7 @@ export function useKanban() {
   // Define o pipeline padrão automaticamente ao carregar
   useEffect(() => {
     if (pipelines.length > 0 && !selectedPipelineId) {
+        // Tenta achar o default, senão pega o primeiro que o user tem acesso
         const defaultPipe = pipelines.find(p => p.is_default) || pipelines[0];
         setSelectedPipelineId(defaultPipe.id);
     }
@@ -84,9 +87,10 @@ export function useKanban() {
             };
         });
 
-        // 4. Tratamento de Leads Órfãos (Apenas se for o pipeline padrão)
+        // 4. Tratamento de Leads Órfãos (Apenas se for o pipeline padrão e user for admin/owner)
+        // Colaboradores não devem ver leads órfãos a menos que atribuídos explicitamente (regra futura)
         const isDefault = pipelines.find(p => p.id === selectedPipelineId)?.is_default;
-        if (isDefault) {
+        if (isDefault && (user.role === 'owner' || user.role === 'admin')) {
              const { data: orphans } = await supabase
                 .from('leads')
                 .select('*')
@@ -185,9 +189,9 @@ export function useKanban() {
       onSettled: () => queryClient.invalidateQueries({ queryKey })
   });
 
-  // --- MUTATION: Criar Pipeline ---
+  // --- MUTATION: Criar Pipeline (Com Assignments) ---
   const createPipelineMutation = useMutation({
-      mutationFn: async ({ name, stages }: { name: string, stages: string[] }) => {
+      mutationFn: async ({ name, stages, assignedUserIds }: { name: string, stages: string[], assignedUserIds: string[] }) => {
           if(!user?.company_id) throw new Error("Sem empresa");
           
           // 1. Criar Pipeline
@@ -205,18 +209,28 @@ export function useKanban() {
               company_id: user.company_id,
               name: sName,
               position: idx,
-              color: '#27272a' // Default color (zinc-800)
+              color: '#27272a' // Default color
           }));
 
           const { error: stagesError } = await supabase.from('pipeline_stages').insert(stagesPayload);
           if(stagesError) throw stagesError;
 
+          // 3. Criar Assignments (Se houver)
+          if (assignedUserIds && assignedUserIds.length > 0) {
+              const assignmentsPayload = assignedUserIds.map(userId => ({
+                  pipeline_id: pipe.id,
+                  user_id: userId
+              }));
+              const { error: assignError } = await supabase.from('pipeline_assignments').insert(assignmentsPayload);
+              if(assignError) console.error("Erro ao atribuir usuários:", assignError);
+          }
+
           return pipe;
       },
       onSuccess: (newPipe) => {
           queryClient.invalidateQueries({ queryKey: pipelinesKey });
-          setSelectedPipelineId(newPipe.id); // Troca para o novo automaticamente
-          addToast({ type: 'success', title: 'Criado', message: `Funil "${newPipe.name}" criado.` });
+          setSelectedPipelineId(newPipe.id); 
+          addToast({ type: 'success', title: 'Criado', message: `Funil "${newPipe.name}" criado com sucesso.` });
       }
   });
 

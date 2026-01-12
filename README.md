@@ -73,6 +73,18 @@ lead_id (FK -> leads.id): Relacionamento lógico (pode ser nulo).
 
 session_id: Rastreabilidade de qual instância baixou a mensagem.
 
+C. Segurança & RBAC (Role-Based Access Control)
+
+Owner/Admin:** Acesso total a todos os dados da `company_id`.
+
+Agent (Colaborador):**
+
+Pipelines: Vê apenas pipelines onde está listado na tabela `pipeline_assignments`.
+
+Leads: Vê apenas leads que ele é dono (`owner_id`) OU leads que estão em pipelines que ele tem acesso.
+
+Database: A segurança é garantida via RLS Policies (PostgreSQL), não apenas no frontend. O banco bloqueia queries não autorizadas.
+
 3. Módulos do Sistema (Especificação Funcional)
 📱 Módulo 1: Gerenciador de Instâncias (Multi-Device)
 Visual: Cards mostrando status (QR Code, Conectado, Desconectado).
