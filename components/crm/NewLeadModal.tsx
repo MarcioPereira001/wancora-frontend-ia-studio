@@ -77,7 +77,7 @@ export function NewLeadModal({ isOpen, onClose, onSuccess, defaultStageId }: New
 
         // 3. Criação via Hook (garante cache update)
         await createLead({
-            stage_id: stageId,
+            pipeline_stage_id: stageId,
             name: formData.name,
             phone: formData.phone,
             email: formData.email,

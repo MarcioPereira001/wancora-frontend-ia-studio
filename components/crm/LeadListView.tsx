@@ -65,7 +65,7 @@ export function LeadListView({ leads, stages }: LeadListViewProps) {
                 </thead>
                 <tbody className="divide-y divide-zinc-800/50">
                     {filteredLeads.map((lead) => {
-                        const stageInfo = getStageName(lead.stage_id);
+                        const stageInfo = getStageName(lead.pipeline_stage_id);
                         const ownerName = getOwnerName(lead.owner_id);
                         
                         return (

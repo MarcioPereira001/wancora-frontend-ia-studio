@@ -59,7 +59,7 @@ export function useKanban() {
             .from('leads')
             .select('*')
             .eq('company_id', user.company_id)
-            .in('stage_id', stageIds)
+            .in('pipeline_stage_id', stageIds)
             .order('created_at', { ascending: false }); // Ordem cronológica para lista geral
 
         const allLeads = leads || [];
@@ -68,7 +68,7 @@ export function useKanban() {
         const board: KanbanColumn[] = stages.map((stage: PipelineStage) => {
             // Filtra e reordena por posição para o Kanban
             const stageLeads = allLeads
-                .filter((l: Lead) => l.stage_id === stage.id)
+                .filter((l: Lead) => l.pipeline_stage_id === stage.id)
                 .sort((a, b) => (a.position || 0) - (b.position || 0));
 
             const totalValue = stageLeads.reduce((acc, lead) => acc + (Number(lead.value_potential) || 0), 0);
@@ -90,7 +90,7 @@ export function useKanban() {
                 .from('leads')
                 .select('*')
                 .eq('company_id', user.company_id)
-                .is('stage_id', null);
+                .is('pipeline_stage_id', null);
              
              if (orphans && orphans.length > 0 && board.length > 0) {
                  board[0].items.unshift(...orphans);
@@ -114,7 +114,7 @@ export function useKanban() {
       const { error } = await supabase
         .from('leads')
         .update({ 
-            stage_id: toStageId, 
+            pipeline_stage_id: toStageId,
             position: newPosition,
             updated_at: new Date().toISOString() 
         })
@@ -142,7 +142,7 @@ export function useKanban() {
 
         // Insere na nova
         if (movedLead) {
-          movedLead.stage_id = toStageId;
+          movedLead.pipeline_stage_id = toStageId;
           movedLead.position = newPosition;
           
           const targetCol = newColumns.find((c: KanbanColumn) => c.id === toStageId);

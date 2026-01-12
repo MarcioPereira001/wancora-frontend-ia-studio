@@ -27,7 +27,6 @@ export interface Profile {
   profile_pic_url?: string;
 }
 
-// Interface simplificada para selects de usuários
 export interface TeamMember {
   id: string;
   name: string;
@@ -40,12 +39,12 @@ export interface TeamMember {
 export interface Lead {
   id: string;
   company_id: string;
-  stage_id: string; // FK para pipeline_stages
+  pipeline_stage_id: string; // CORRIGIDO: Nome oficial do banco
   name: string;
   phone: string;
   email?: string;
   profile_pic_url?: string;
-  value_potential?: number; // Valor monetário (ex: 1500.00)
+  value_potential?: number;
   lead_score?: number;
   temperature: 'cold' | 'warm' | 'hot';
   status?: string;
@@ -54,8 +53,8 @@ export interface Lead {
   created_at: string;
   updated_at?: string;
   next_appointment_at?: string;
-  owner_id?: string; // ID do usuário responsável
-  position?: number; // ADICIONADO: Ordenação manual
+  owner_id?: string;
+  position?: number;
 }
 
 export interface PipelineStage {
@@ -78,7 +77,7 @@ export interface Pipeline {
 }
 
 export interface KanbanColumn {
-  id: string; // stage_id
+  id: string; // pipeline_stage_id
   title: string;
   color: string;
   order: number;
@@ -119,6 +118,13 @@ export interface FunnelStat {
   lead_count: number;
   total_value: number;
   color: string;
+}
+
+export interface DashboardKPI {
+  totalLeads: number;
+  potentialRevenue: number;
+  conversionRate: number;
+  avgTicket: number;
 }
 
 // --- WHATSAPP & CHAT ---
