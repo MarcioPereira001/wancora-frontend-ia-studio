@@ -35,6 +35,8 @@ Chunking: Processamos mensagens em lotes seguros (ex: últimas 50) para evitar O
 
 Deduplicação: Uso rigoroso de whatsapp_id como chave única.
 
+Master View: Owners e Admins possuem permissão especial (Admins and Owners can view all company leads) para auditar todos os leads via Lista ou Kanban.
+
 B. O Banco de Dados (Supabase / PostgreSQL)
 A Fonte da Verdade. Se não está no banco, não existe.
 
@@ -62,6 +64,10 @@ Vinculado a um contato via lógica de negócio (telefone).
 pipeline_stage_id: Define onde ele está no Kanban.
 
 status: Status macro ('new', 'open', 'won', 'lost').
+
+owner_id (FK -> auth.users): O responsável pelo lead (para filtros e segurança).
+
+position (Float8): Indexador numérico para ordenação manual dos cards (Smart Drop).
 
 messages (O Histórico)
 
@@ -134,26 +140,33 @@ Anexo (Menu Popover para Tipos de Mídia).
 
 Botão "IA Sugerir" (Chama a API do Gemini/Sentinela).
 
-📊 Módulo 3: Kanban & Pipeline
-Visual: Colunas horizontais baseadas na tabela pipeline_stages.
+📊 Módulo 3: Kanban & Pipeline (Híbrido)
+Modos de Visualização:
+Kanban Board: Visualização padrão por colunas.
 
-Filtros Avançados (Enterprise):
+Master List View (Tabela): Visualização em lista linear para Admins/Owners verem todos os leads da empresa, independente de atribuição.
 
-Seletor de Responsável: Dropdown no topo para filtrar leads pelo owner_id.
+Interações Avançadas (UX):
 
-Visão Hierárquica: Admins veem "Todos"; Agentes veem apenas os seus (ou "Todos" se tiverem permissão RBAC).
+Pan Navigation: Clicar e arrastar no fundo do board move a rolagem horizontal (estilo Trello/Figma).
 
-Card do Lead:
+Smart Drop & Sort:
 
-Mostra: Nome, Empresa, Valor ($), Tags e Temperatura.
+Lógica: Ordenação manual persistente baseada na coluna `position`.
 
-Avatar do Dono: Pequena foto no canto inferior indicando visualmente quem é o responsável pelo lead.
+Cálculo: Ao soltar um card, a nova posição é a média matemática entre o card anterior e o posterior ((A + B) / 2).
 
-Drag & Drop:
+Filtros & Atribuição:
 
-Ao soltar um card: Atualiza leads.pipeline_stage_id.
+Seletor de Responsável: Dropdown para filtrar por `owner_id`.
 
-Atualização Otimista (Optimistic UI).
+Filtro de Funil: Seletor para trocar de Pipeline sem colisão de UI.
+
+Visual do Card:
+
+Avatar do Dono no rodapé.
+
+Tags, Valor Monetário e Empresa.
 
 🤖 Módulo 4: IA Sentinela (Intelligence Layer)
 Conceito: Uma camada de inteligência que observa as mensagens.

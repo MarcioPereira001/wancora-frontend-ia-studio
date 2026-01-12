@@ -94,6 +94,33 @@ export interface ChecklistItem {
   created_at: string;
 }
 
+// --- DASHBOARD & GAMIFICATION ---
+export interface GamificationProfile {
+  user_id: string;
+  user_name: string;
+  avatar_url?: string;
+  total_sales: number;
+  leads_won: number;
+  xp: number;
+  rank: number;
+}
+
+export interface ActivityItem {
+  id: string;
+  type: 'new_lead' | 'won_deal' | 'message';
+  title: string;
+  description: string;
+  created_at: string;
+  meta_id?: string;
+}
+
+export interface FunnelStat {
+  stage_name: string;
+  lead_count: number;
+  total_value: number;
+  color: string;
+}
+
 // --- WHATSAPP & CHAT ---
 export interface Contact {
   jid: string;
