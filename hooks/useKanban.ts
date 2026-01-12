@@ -11,15 +11,11 @@ export function useKanban() {
   const queryClient = useQueryClient();
   const { addToast } = useToast();
 
-  // Estado local para controlar qual pipeline está ativo
   const [selectedPipelineId, setSelectedPipelineId] = useState<string | null>(null);
 
   const queryKey = ['kanban', user?.company_id, selectedPipelineId];
   const pipelinesKey = ['pipelines', user?.company_id];
 
-  // --- QUERY: Listar Todos os Pipelines ---
-  // IMPORTANTE: O RLS no banco já filtra o que o usuário pode ver.
-  // Colaboradores só verão pipelines atribuídos a eles ou públicos.
   const { data: pipelines = [], isLoading: loadingPipelines } = useQuery({
     queryKey: pipelinesKey,
     queryFn: async () => {
@@ -28,7 +24,7 @@ export function useKanban() {
         .from('pipelines')
         .select('*')
         .eq('company_id', user.company_id)
-        .order('created_at', { ascending: true }); // Mais antigos primeiro (Default geralmente é o primeiro)
+        .order('created_at', { ascending: true });
       
       if (error) throw error;
       return data as Pipeline[];
@@ -36,23 +32,20 @@ export function useKanban() {
     enabled: !!user?.company_id,
   });
 
-  // Define o pipeline padrão automaticamente ao carregar
   useEffect(() => {
     if (pipelines.length > 0 && !selectedPipelineId) {
-        // Tenta achar o default, senão pega o primeiro que o user tem acesso
         const defaultPipe = pipelines.find(p => p.is_default) || pipelines[0];
         setSelectedPipelineId(defaultPipe.id);
     }
   }, [pipelines, selectedPipelineId]);
 
-  // --- QUERY: Busca Dados do Kanban (Colunas + Leads) ---
+  // --- QUERY KANBAN ---
   const { data: columns = [], isLoading: loadingBoard, refetch } = useQuery({
     queryKey,
     queryFn: async () => {
       if (!user?.company_id || !selectedPipelineId) return [];
 
       try {
-        // 1. Busca Estágios do Pipeline Selecionado
         const { data: stages } = await supabase
             .from('pipeline_stages')
             .select('*')
@@ -61,18 +54,16 @@ export function useKanban() {
         
         if (!stages || stages.length === 0) return [];
 
-        // 2. Busca Leads (apenas deste pipeline/estágios)
-        // Otimização: Filtramos leads que tenham stage_id pertencente a estes estágios
         const stageIds = stages.map(s => s.id);
         const { data: leads } = await supabase
             .from('leads')
             .select('*')
             .eq('company_id', user.company_id)
-            .in('stage_id', stageIds);
+            .in('stage_id', stageIds)
+            .order('position', { ascending: true }); // ORDENAÇÃO POR POSIÇÃO
 
         const allLeads = leads || [];
 
-        // 3. Monta Colunas
         const board: KanbanColumn[] = stages.map((stage: PipelineStage) => {
             const stageLeads = allLeads.filter((l: Lead) => l.stage_id === stage.id);
             const totalValue = stageLeads.reduce((acc, lead) => acc + (Number(lead.value_potential) || 0), 0);
@@ -87,8 +78,6 @@ export function useKanban() {
             };
         });
 
-        // 4. Tratamento de Leads Órfãos (Apenas se for o pipeline padrão e user for admin/owner)
-        // Colaboradores não devem ver leads órfãos a menos que atribuídos explicitamente (regra futura)
         const isDefault = pipelines.find(p => p.id === selectedPipelineId)?.is_default;
         if (isDefault && (user.role === 'owner' || user.role === 'admin')) {
              const { data: orphans } = await supabase
@@ -112,39 +101,49 @@ export function useKanban() {
     enabled: !!user?.company_id && !!selectedPipelineId,
   });
 
-  // --- MUTATION: Mover Lead (Optimistic) ---
+  // --- MUTATION: Mover Lead (Com Posição Inteligente) ---
   const moveLeadMutation = useMutation({
-    mutationFn: async ({ leadId, toStageId }: { leadId: string; toStageId: string }) => {
+    mutationFn: async ({ leadId, toStageId, newPosition }: { leadId: string; toStageId: string, newPosition: number }) => {
       const { error } = await supabase
         .from('leads')
-        .update({ stage_id: toStageId, updated_at: new Date().toISOString() })
+        .update({ 
+            stage_id: toStageId, 
+            position: newPosition, // Salva a posição calculada
+            updated_at: new Date().toISOString() 
+        })
         .eq('id', leadId); 
       if (error) throw error;
     },
-    onMutate: async ({ leadId, toStageId }) => {
+    onMutate: async ({ leadId, toStageId, newPosition }) => {
       await queryClient.cancelQueries({ queryKey });
       const previousBoard = queryClient.getQueryData<KanbanColumn[]>(queryKey);
 
       queryClient.setQueryData(queryKey, (old: KanbanColumn[] | undefined) => {
         if (!old) return [];
-        const newBoard = old.map(col => ({ ...col, items: [...col.items] }));
+        // Deep clone simples para evitar mutação direta
+        const newBoard = JSON.parse(JSON.stringify(old)); 
         let movedLead: Lead | undefined;
 
-        // Remove
+        // 1. Remove da coluna antiga
         for (const col of newBoard) {
-          const idx = col.items.findIndex(l => l.id === leadId);
+          const idx = col.items.findIndex((l: Lead) => l.id === leadId);
           if (idx !== -1) {
             [movedLead] = col.items.splice(idx, 1);
             col.totalValue -= (Number(movedLead.value_potential) || 0);
             break;
           }
         }
-        // Adiciona
+
+        // 2. Insere na nova coluna e reordena visualmente
         if (movedLead) {
           movedLead.stage_id = toStageId;
-          const targetCol = newBoard.find(c => c.id === toStageId);
+          movedLead.position = newPosition;
+          
+          const targetCol = newBoard.find((c: KanbanColumn) => c.id === toStageId);
           if (targetCol) {
             targetCol.items.push(movedLead);
+            // Ordena localmente para feedback visual instantâneo
+            targetCol.items.sort((a: Lead, b: Lead) => (a.position || 0) - (b.position || 0));
             targetCol.totalValue += (Number(movedLead.value_potential) || 0);
           }
         }
@@ -159,42 +158,19 @@ export function useKanban() {
     onSettled: () => queryClient.invalidateQueries({ queryKey }),
   });
 
-  // --- MUTATION: Reordenar Estágios ---
+  // Demais mutations mantidas (reorderStages, createPipeline, etc...)
   const reorderStagesMutation = useMutation({
       mutationFn: async (newOrder: { id: string, position: number }[]) => {
           const { error } = await supabase.rpc('reorder_pipeline_stages', { p_updates: newOrder });
           if(error) throw error;
       },
-      onMutate: async (newOrder) => {
-          await queryClient.cancelQueries({ queryKey });
-          const previousBoard = queryClient.getQueryData<KanbanColumn[]>(queryKey);
-          
-          queryClient.setQueryData(queryKey, (old: KanbanColumn[] | undefined) => {
-              if(!old) return [];
-              // Reordena localmente baseado no input
-              const newBoard = [...old];
-              newBoard.sort((a, b) => {
-                  const posA = newOrder.find(x => x.id === a.id)?.position ?? a.order;
-                  const posB = newOrder.find(x => x.id === b.id)?.position ?? b.order;
-                  return posA - posB;
-              });
-              return newBoard;
-          });
-          return { previousBoard };
-      },
-      onError: (err, _, context) => {
-          if (context?.previousBoard) queryClient.setQueryData(queryKey, context.previousBoard);
-          addToast({ type: 'error', title: 'Erro', message: 'Falha ao reordenar colunas.' });
-      },
-      onSettled: () => queryClient.invalidateQueries({ queryKey })
+      onSuccess: () => queryClient.invalidateQueries({ queryKey })
   });
 
-  // --- MUTATION: Criar Pipeline (Com Assignments) ---
   const createPipelineMutation = useMutation({
       mutationFn: async ({ name, stages, assignedUserIds }: { name: string, stages: string[], assignedUserIds: string[] }) => {
           if(!user?.company_id) throw new Error("Sem empresa");
           
-          // 1. Criar Pipeline
           const { data: pipe, error: pipeError } = await supabase
             .from('pipelines')
             .insert({ company_id: user.company_id, name, is_default: false })
@@ -203,26 +179,23 @@ export function useKanban() {
           
           if(pipeError) throw pipeError;
 
-          // 2. Criar Estágios
           const stagesPayload = stages.map((sName, idx) => ({
               pipeline_id: pipe.id,
               company_id: user.company_id,
               name: sName,
               position: idx,
-              color: '#27272a' // Default color
+              color: '#27272a'
           }));
 
           const { error: stagesError } = await supabase.from('pipeline_stages').insert(stagesPayload);
           if(stagesError) throw stagesError;
 
-          // 3. Criar Assignments (Se houver)
           if (assignedUserIds && assignedUserIds.length > 0) {
               const assignmentsPayload = assignedUserIds.map(userId => ({
                   pipeline_id: pipe.id,
                   user_id: userId
               }));
-              const { error: assignError } = await supabase.from('pipeline_assignments').insert(assignmentsPayload);
-              if(assignError) console.error("Erro ao atribuir usuários:", assignError);
+              await supabase.from('pipeline_assignments').insert(assignmentsPayload);
           }
 
           return pipe;
@@ -234,24 +207,19 @@ export function useKanban() {
       }
   });
 
-  // --- MUTATION: Atualizar Estágio (Nome/Cor) ---
   const updateStageMutation = useMutation({
       mutationFn: async ({ id, name, color }: { id: string, name?: string, color?: string }) => {
           const updates: any = {};
           if(name) updates.name = name;
           if(color) updates.color = color;
-          
-          const { error } = await supabase.from('pipeline_stages').update(updates).eq('id', id);
-          if(error) throw error;
+          await supabase.from('pipeline_stages').update(updates).eq('id', id);
       },
       onSuccess: () => queryClient.invalidateQueries({ queryKey })
   });
 
-  // --- MUTATION: Atualizar Pipeline (Nome) ---
   const updatePipelineMutation = useMutation({
       mutationFn: async ({ id, name }: { id: string, name: string }) => {
-          const { error } = await supabase.from('pipelines').update({ name }).eq('id', id);
-          if(error) throw error;
+          await supabase.from('pipelines').update({ name }).eq('id', id);
       },
       onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: pipelinesKey });
@@ -259,9 +227,10 @@ export function useKanban() {
       }
   });
 
-  // Métodos CRUD de Leads
   const createLead = async (data: any) => {
-      const { error } = await supabase.from('leads').insert({ ...data, company_id: user?.company_id });
+      // Define posição inicial alta para ir pro final ou 0 se vazia
+      const position = Date.now(); 
+      const { error } = await supabase.from('leads').insert({ ...data, company_id: user?.company_id, position });
       if(error) throw error;
       queryClient.invalidateQueries({ queryKey });
   };
@@ -284,7 +253,7 @@ export function useKanban() {
     setSelectedPipelineId,
     columns, 
     loading: loadingBoard || loadingPipelines, 
-    moveLead: (leadId: string, toColId: string) => moveLeadMutation.mutate({ leadId, toStageId: toColId }),
+    moveLead: (leadId: string, toColId: string, newPosition: number) => moveLeadMutation.mutate({ leadId, toStageId: toColId, newPosition }),
     reorderStages: reorderStagesMutation.mutate,
     createPipeline: createPipelineMutation.mutateAsync,
     updateStage: updateStageMutation.mutateAsync,

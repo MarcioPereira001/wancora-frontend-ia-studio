@@ -55,16 +55,17 @@ export interface Lead {
   updated_at?: string;
   next_appointment_at?: string;
   owner_id?: string; // ID do usuário responsável
+  position?: number; // ADICIONADO: Ordenação manual
 }
 
 export interface PipelineStage {
   id: string;
   pipeline_id: string;
-  company_id: string; // Adicionado para consistência com DB e RLS
+  company_id: string;
   name: string;
   position: number;
   color: string;
-  items?: Lead[]; // Populado no frontend
+  items?: Lead[];
 }
 
 export interface Pipeline {
@@ -73,7 +74,7 @@ export interface Pipeline {
   name: string;
   is_default: boolean;
   stages?: PipelineStage[];
-  assignments?: string[]; // IDs dos usuários atribuídos (usado no frontend)
+  assignments?: string[];
 }
 
 export interface KanbanColumn {
@@ -81,7 +82,7 @@ export interface KanbanColumn {
   title: string;
   color: string;
   order: number;
-  totalValue: number; // Novo: Soma dos valores
+  totalValue: number;
   items: Lead[];
 }
 

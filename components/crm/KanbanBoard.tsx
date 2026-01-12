@@ -19,17 +19,13 @@ export function KanbanBoard() {
   const [selectedUserId, setSelectedUserId] = useState<string>('all');
   
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
-  
-  // States para Edição de Estágio
   const [editingStage, setEditingStage] = useState<KanbanColumn | null>(null);
 
-  // Drag & Drop State (Cards & Columns)
   const [draggingType, setDraggingType] = useState<'CARD' | 'COLUMN' | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
-  const [draggingFromCol, setDraggingFromCol] = useState<string | null>(null); // Apenas para cards
+  const [draggingFromCol, setDraggingFromCol] = useState<string | null>(null); 
   
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  // Scroll Drag vars
   const isDown = useRef(false);
   const startX = useRef(0);
   const scrollLeft = useRef(0);
@@ -37,8 +33,6 @@ export function KanbanBoard() {
   // Filtering
   const getFilteredItems = (items: Lead[] = []) => {
       let filtered = items;
-
-      // 1. Filtro de Texto
       if (searchTerm) {
           const lower = searchTerm.toLowerCase();
           filtered = filtered.filter(item => 
@@ -47,48 +41,119 @@ export function KanbanBoard() {
               item.tags?.some(t => t.toLowerCase().includes(lower))
           );
       }
-
-      // 2. Filtro de Responsável
       if (selectedUserId !== 'all') {
           filtered = filtered.filter(item => item.owner_id === selectedUserId);
       }
-
-      return filtered;
+      return filtered; // Items já vêm ordenados por posição da API
   };
 
   // --- DND HANDLERS ---
 
   const handleDragStart = (e: React.DragEvent, type: 'CARD' | 'COLUMN', id: string, colId?: string) => {
-    e.stopPropagation(); // Impede que o Pan Drag ative
+    e.stopPropagation(); 
     setDraggingType(type);
     setDraggingId(id);
     if (type === 'CARD' && colId) setDraggingFromCol(colId);
-    
-    // Configura imagem fantasma e efeito
     e.dataTransfer.effectAllowed = "move";
   };
 
   const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault(); // Necessário para permitir drop
+    e.preventDefault(); 
   };
 
   const handleDrop = (e: React.DragEvent, targetId: string, type: 'CARD' | 'COLUMN') => {
     e.preventDefault();
     e.stopPropagation();
 
-    // CARD DROP - Lógica inteligente de "encaixe"
+    // CARD DROP - LÓGICA SMART (Posicionamento Matemático)
     if (draggingType === 'CARD' && type === 'COLUMN') {
-        if (draggingId && draggingFromCol && draggingFromCol !== targetId) {
-            // Nota: Sem coluna 'position' no banco, a ordem persistida é por updated_at.
-            // Movemos para a nova coluna.
-            moveLead(draggingId, targetId); 
+        const column = columns.find(c => c.id === targetId);
+        if (!column) return;
+
+        // 1. Identificar cards na coluna alvo (filtrados ou todos)
+        const cardsInColumn = getFilteredItems(column.items);
+        
+        // 2. Calcular onde soltou (baseado no Y do mouse)
+        // Precisamos encontrar o card que está LOGO ABAIXO do mouse
+        let cardBelowId: string | null = null;
+        let minDistance = Number.POSITIVE_INFINITY;
+
+        // Itera sobre os elementos visuais da coluna para achar o mais próximo
+        // Nota: Isso assume que os IDs dos elementos DOM são os IDs dos leads (configurado no KanbanCard wrapper)
+        const dropY = e.clientY;
+        
+        cardsInColumn.forEach(card => {
+            // Se for o próprio card arrastado, ignora
+            if (card.id === draggingId) return;
+
+            const element = document.getElementById(`card-${card.id}`);
+            if (element) {
+                const rect = element.getBoundingClientRect();
+                const center = rect.top + rect.height / 2;
+                const distance = dropY - center;
+
+                // Se dropY está acima do centro do card, distance é negativa. 
+                // Queremos o primeiro positivo pequeno (logo abaixo) ou o menor negativo se no fim?
+                // Simplificação: Se dropY < center, estamos soltando ACIMA deste card.
+                
+                // Vamos simplificar: Achar o elemento cujo topo está logo abaixo do mouse
+                if (dropY < rect.top + rect.height && dropY > rect.top - 20) {
+                     // Aproximação do alvo
+                     // Mas matematicamente, a melhor forma em lista é achar o primeiro elemento cujo "meio" está abaixo do cursor
+                     if (dropY < center) {
+                         if (!cardBelowId) cardBelowId = card.id; 
+                     }
+                }
+            }
+        });
+
+        // Fallback: Se não achou por bounding box, usa lógica de lista simples
+        // Pega todos os cards e vê onde inserir
+        if (draggingId) {
+            let newPosition = 0;
+            
+            // Re-analisa posição exata via Array DOM para precisão
+            const elements = Array.from(document.querySelectorAll(`[data-column-id="${targetId}"] .kanban-card-wrapper`));
+            let indexToInsert = elements.length; // Default: final
+
+            for (let i = 0; i < elements.length; i++) {
+                const rect = elements[i].getBoundingClientRect();
+                const middleY = rect.top + rect.height / 2;
+                if (e.clientY < middleY) {
+                    indexToInsert = i;
+                    break;
+                }
+            }
+
+            // Cards visuais nesta ordem
+            const targetCards = [...cardsInColumn];
+            // Remove o card se ele já estiver nesta lista (mesma coluna)
+            const existingIdx = targetCards.findIndex(c => c.id === draggingId);
+            if (existingIdx !== -1) targetCards.splice(existingIdx, 1);
+
+            if (targetCards.length === 0) {
+                // Coluna vazia ou único item
+                newPosition = Date.now();
+            } else if (indexToInsert === 0) {
+                // Topo: Pega posição do primeiro e diminui
+                newPosition = (targetCards[0].position || 0) - 1000;
+            } else if (indexToInsert >= targetCards.length) {
+                // Fundo: Pega último e soma
+                newPosition = (targetCards[targetCards.length - 1].position || 0) + 1000;
+            } else {
+                // Meio: Média entre anterior e próximo
+                const posAbove = targetCards[indexToInsert - 1].position || 0;
+                const posBelow = targetCards[indexToInsert].position || 0;
+                newPosition = (posAbove + posBelow) / 2;
+            }
+
+            moveLead(draggingId, targetId, newPosition);
         }
     }
 
     // COLUMN DROP (Reorder)
     if (draggingType === 'COLUMN' && type === 'COLUMN') {
         if (draggingId && draggingId !== targetId) {
-            // targetId é o ID da coluna sobre a qual soltamos
             const oldIndex = columns.findIndex(c => c.id === draggingId);
             const newIndex = columns.findIndex(c => c.id === targetId);
             
@@ -96,27 +161,29 @@ export function KanbanBoard() {
                 const newOrder = [...columns];
                 const [moved] = newOrder.splice(oldIndex, 1);
                 newOrder.splice(newIndex, 0, moved);
-                
                 const payload = newOrder.map((col, idx) => ({ id: col.id, position: idx }));
                 reorderStages(payload);
             }
         }
     }
 
-    // Reset
     setDraggingType(null);
     setDraggingId(null);
     setDraggingFromCol(null);
   };
 
-  // --- SCROLL PAN HANDLERS (Arrastar para navegar) ---
+  // --- SCROLL PAN HANDLERS (CORRIGIDO) ---
   const onMouseDown = (e: React.MouseEvent) => {
-     // Previne scroll drag se clicar em itens interativos ou se estiver arrastando um card
+     // Só ativa se clicar no fundo ou header da coluna (não em elementos interativos)
      if ((e.target as HTMLElement).closest('.interactive') || draggingType) return;
      
+     // PREVINE SELEÇÃO DE TEXTO - CRUCIAL PARA O SCROLL FUNCIONAR
+     e.preventDefault(); 
+
      isDown.current = true;
      if(scrollContainerRef.current) {
          scrollContainerRef.current.classList.add('cursor-grabbing');
+         // Usa pageX para consistência global
          startX.current = e.pageX - scrollContainerRef.current.offsetLeft;
          scrollLeft.current = scrollContainerRef.current.scrollLeft;
      }
@@ -137,7 +204,8 @@ export function KanbanBoard() {
       e.preventDefault();
       if(scrollContainerRef.current) {
           const x = e.pageX - scrollContainerRef.current.offsetLeft;
-          const walk = (x - startX.current) * 1.5; // Velocidade do scroll
+          // Multiplicador ajustado para sensação de peso
+          const walk = (x - startX.current) * 1.5; 
           scrollContainerRef.current.scrollLeft = scrollLeft.current - walk;
       }
   };
@@ -154,22 +222,21 @@ export function KanbanBoard() {
   const totalPipelineValue = columns.reduce((acc, col) => acc + col.totalValue, 0);
 
   return (
-    <div className="flex flex-col h-full space-y-4 animate-in fade-in duration-500">
+    <div className="flex flex-col h-full space-y-4 animate-in fade-in duration-500 select-none">
       
       {/* Filters Bar */}
-      <div className="flex flex-col md:flex-row justify-between items-center gap-4 px-1 bg-zinc-900/30 p-2 rounded-xl border border-zinc-800">
+      <div className="flex flex-col md:flex-row justify-between items-center gap-4 px-1 bg-zinc-900/30 p-2 rounded-xl border border-zinc-800 interactive">
         <div className="relative w-full md:w-auto flex items-center gap-4 flex-1">
             <div className="relative flex-1 md:max-w-xs">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
                 <Input 
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    placeholder="Buscar lead, telefone ou tag..." 
+                    placeholder="Buscar lead..." 
                     className="pl-9 bg-zinc-950 border-zinc-800 focus:border-primary/50 text-sm h-10"
                 />
             </div>
             
-            {/* User Filter Dropdown */}
             <div className="relative hidden md:block">
                 <Users className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
                 <select 
@@ -185,12 +252,11 @@ export function KanbanBoard() {
             </div>
 
             <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 bg-zinc-950 rounded border border-zinc-800 ml-auto">
-                <span className="text-xs text-zinc-500 font-bold uppercase">Total em Mesa:</span>
+                <span className="text-xs text-zinc-500 font-bold uppercase">Total:</span>
                 <span className="text-sm font-mono text-green-400 font-bold">{formatCurrency(totalPipelineValue)}</span>
             </div>
         </div>
         <div className="flex gap-2 w-full md:w-auto">
-           {/* Botão Novo Lead foi removido daqui para evitar duplicação */}
            <Button variant="ghost" size="icon" onClick={() => refresh()} title="Atualizar"><RefreshCw size={18} /></Button>
         </div>
       </div>
@@ -202,7 +268,8 @@ export function KanbanBoard() {
         onMouseLeave={onMouseLeave}
         onMouseUp={onMouseUp}
         onMouseMove={onMouseMove}
-        className="flex-1 flex gap-4 overflow-x-auto pb-4 px-1 cursor-grab select-none custom-scrollbar"
+        className="flex-1 flex gap-4 overflow-x-auto pb-4 px-1 cursor-grab active:cursor-grabbing custom-scrollbar"
+        style={{ scrollBehavior: 'auto' }} // Remove smooth scroll para o drag funcionar bem
       >
         {columns.map((col) => {
           const filteredItems = getFilteredItems(col.items);
@@ -217,7 +284,7 @@ export function KanbanBoard() {
                     draggingType === 'COLUMN' && draggingId === col.id ? "opacity-50 border-dashed border-primary" : "border-zinc-800/50 hover:border-zinc-700/50"
                 )}
             >
-                {/* Column Header - Apenas aqui é Draggable para reordenar coluna */}
+                {/* Column Header */}
                 <div 
                     draggable
                     onDragStart={(e) => handleDragStart(e, 'COLUMN', col.id)}
@@ -245,14 +312,13 @@ export function KanbanBoard() {
                         </div>
                     </div>
                     
-                    {/* Totalizer */}
                     <div className="flex items-center gap-1 text-xs text-zinc-500 pl-8">
                         <DollarSign size={10} />
                         <span className="font-mono">{formatCurrency(col.totalValue)}</span>
                     </div>
                 </div>
                 
-                {/* Column Body (Drop Zone for Cards) */}
+                {/* Column Body */}
                 <div 
                     className={cn(
                         "flex-1 p-2 overflow-y-auto custom-scrollbar space-y-3 relative interactive",
@@ -260,14 +326,19 @@ export function KanbanBoard() {
                     )}
                     onDragOver={handleDragOver}
                     onDrop={(e) => handleDrop(e, col.id, 'COLUMN')} 
+                    data-column-id={col.id} // Identificador para o DOM Query
                 >
-                {/* Visual Placeholder for Card Drop */}
+                {/* Placeholder para Drop */}
                 {draggingType === 'CARD' && draggingFromCol && draggingFromCol !== col.id && (
                     <div className="absolute inset-0 pointer-events-none border-2 border-dashed border-primary/20 rounded-b-xl z-0" />
                 )}
 
                 {filteredItems.map(lead => (
-                    <div key={lead.id} className={draggingId === lead.id ? "opacity-30 grayscale scale-95 transition-all" : "z-10 relative"}>
+                    <div 
+                        key={lead.id} 
+                        id={`card-${lead.id}`} 
+                        className={cn("kanban-card-wrapper transition-all duration-200", draggingId === lead.id ? "opacity-30 grayscale scale-95" : "z-10 relative")}
+                    >
                         <KanbanCard 
                             lead={lead} 
                             owner={members.find(m => m.id === lead.owner_id)}
@@ -279,7 +350,7 @@ export function KanbanBoard() {
                 
                 {filteredItems.length === 0 && (
                     <div className="h-32 flex flex-col items-center justify-center text-zinc-600 border-2 border-dashed border-zinc-800/30 rounded-xl m-1">
-                        <p className="text-xs font-medium opacity-50">Arraste aqui</p>
+                        <p className="text-xs font-medium opacity-50">Solte aqui</p>
                     </div>
                 )}
                 </div>
