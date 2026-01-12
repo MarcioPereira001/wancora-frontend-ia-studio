@@ -1,75 +1,30 @@
-'use client';
-
 import React, { useState, useRef } from 'react';
+import { Search, RefreshCw, Settings2, Plus, Filter, Loader2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { useKanban } from '@/hooks/useKanban';
 import { KanbanCard } from './KanbanCard';
 import { Lead } from '@/types';
-import { Loader2, Plus, Settings2, RefreshCw, Filter, Search } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { LeadDetailsModal } from './LeadDetailsModal';
 import { NewLeadModal } from './NewLeadModal';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
 
 export function KanbanBoard() {
-  const { columns, loading, moveLead, refresh } = useKanban();
+  const { columns, loading, refresh, moveLead, initializeBoard } = useKanban();
+  const [searchTerm, setSearchTerm] = useState('');
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [isNewLeadOpen, setIsNewLeadOpen] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
   
-  // Drag to Scroll Logic
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const [isDraggingBoard, setIsDraggingBoard] = useState(false);
-  const [startX, setStartX] = useState(0);
-  const [scrollLeft, setScrollLeft] = useState(0);
-
-  // Native DnD State
+  // Drag & Drop State
   const [draggingCardId, setDraggingCardId] = useState<string | null>(null);
   const [draggingFromCol, setDraggingFromCol] = useState<string | null>(null);
+  const [isDraggingBoard, setIsDraggingBoard] = useState(false);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  // --- Scroll Logic ---
-  const onMouseDown = (e: React.MouseEvent) => {
-    if ((e.target as HTMLElement).closest('.cursor-grab')) return; // Ignore clicks on cards
-    if (!scrollContainerRef.current) return;
-    setIsDraggingBoard(true);
-    setStartX(e.pageX - scrollContainerRef.current.offsetLeft);
-    setScrollLeft(scrollContainerRef.current.scrollLeft);
-  };
-  const onMouseLeave = () => setIsDraggingBoard(false);
-  const onMouseUp = () => setIsDraggingBoard(false);
-  const onMouseMove = (e: React.MouseEvent) => {
-    if (!isDraggingBoard || !scrollContainerRef.current) return;
-    e.preventDefault();
-    const x = e.pageX - scrollContainerRef.current.offsetLeft;
-    const walk = (x - startX) * 1.5;
-    scrollContainerRef.current.scrollLeft = scrollLeft - walk;
-  };
-
-  // --- DnD Logic ---
-  const handleDragStart = (e: React.DragEvent, leadId: string, colId: string) => {
-    e.dataTransfer.setData('leadId', leadId);
-    e.dataTransfer.setData('fromColId', colId);
-    e.dataTransfer.effectAllowed = 'move';
-    setDraggingCardId(leadId);
-    setDraggingFromCol(colId);
-  };
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-  };
-
-  const handleDrop = (e: React.DragEvent, toColId: string) => {
-    e.preventDefault();
-    const leadId = e.dataTransfer.getData('leadId');
-    const fromColId = e.dataTransfer.getData('fromColId');
-    
-    if (leadId && fromColId && fromColId !== toColId) {
-        moveLead(leadId, fromColId, toColId);
-    }
-    setDraggingCardId(null);
-    setDraggingFromCol(null);
-  };
+  // Scroll Drag Logic variables (refs to avoid re-renders)
+  const isDown = useRef(false);
+  const startX = useRef(0);
+  const scrollLeft = useRef(0);
 
   // Filtering
   const getFilteredItems = (items: Lead[] = []) => {
@@ -77,6 +32,56 @@ export function KanbanBoard() {
           item.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
           item.phone.includes(searchTerm)
       );
+  };
+
+  // DnD Handlers
+  const handleDragStart = (e: React.DragEvent, leadId: string, colId: string) => {
+    setDraggingCardId(leadId);
+    setDraggingFromCol(colId);
+    e.dataTransfer.effectAllowed = "move";
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault(); // Necessary to allow dropping
+  };
+
+  const handleDrop = (e: React.DragEvent, toColId: string) => {
+    e.preventDefault();
+    if (draggingCardId && draggingFromCol && draggingFromCol !== toColId) {
+        moveLead(draggingCardId, draggingFromCol, toColId);
+    }
+    setDraggingCardId(null);
+    setDraggingFromCol(null);
+  };
+
+  // Mouse Drag Scroll Handlers
+  const onMouseDown = (e: React.MouseEvent) => {
+     isDown.current = true;
+     if(scrollContainerRef.current) {
+         startX.current = e.pageX - scrollContainerRef.current.offsetLeft;
+         scrollLeft.current = scrollContainerRef.current.scrollLeft;
+     }
+  };
+  
+  const onMouseLeave = () => {
+      isDown.current = false;
+      setIsDraggingBoard(false);
+  };
+  
+  const onMouseUp = () => {
+      isDown.current = false;
+      setTimeout(() => setIsDraggingBoard(false), 50);
+  };
+  
+  const onMouseMove = (e: React.MouseEvent) => {
+      if (!isDown.current) return;
+      e.preventDefault();
+      setIsDraggingBoard(true);
+      if(scrollContainerRef.current) {
+          const x = e.pageX - scrollContainerRef.current.offsetLeft;
+          const walk = (x - startX.current) * 2; // Speed
+          scrollContainerRef.current.scrollLeft = scrollLeft.current - walk;
+      }
   };
 
   if (loading && columns.length === 0) {
@@ -159,28 +164,27 @@ export function KanbanBoard() {
           </div>
         ))}
         {columns.length === 0 && (
-            <div className="w-full flex items-center justify-center text-zinc-500">
-                <div className="text-center">
+            <div className="w-full flex items-center justify-center text-zinc-500 h-full">
+                <div className="text-center bg-zinc-900/50 p-8 rounded-2xl border border-zinc-800">
                     <Filter className="w-12 h-12 mx-auto mb-3 opacity-20" />
-                    <p>Nenhum estágio configurado.</p>
+                    <p className="mb-4">Nenhum estágio de funil configurado.</p>
+                    <Button onClick={() => initializeBoard()} variant="outline" className="border-primary/50 text-primary hover:bg-primary/10">
+                        Inicializar Funil Padrão
+                    </Button>
                 </div>
             </div>
         )}
       </div>
 
-      {/* Conditionally render the modal only if selectedLead exists */}
-      {selectedLead && (
-        <LeadDetailsModal 
-          lead={selectedLead} 
-          isOpen={!!selectedLead} 
-          onClose={() => { setSelectedLead(null); refresh(); }} 
-        />
-      )}
-
+      <LeadDetailsModal 
+        lead={selectedLead} 
+        isOpen={!!selectedLead} 
+        onClose={() => setSelectedLead(null)} 
+      />
       <NewLeadModal 
-        isOpen={isNewLeadOpen}
-        onClose={() => setIsNewLeadOpen(false)}
-        onSuccess={() => refresh()}
+        isOpen={isNewLeadOpen} 
+        onClose={() => setIsNewLeadOpen(false)} 
+        onSuccess={refresh}
         defaultStageId={columns[0]?.id}
       />
     </div>

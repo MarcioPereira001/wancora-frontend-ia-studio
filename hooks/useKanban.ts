@@ -30,34 +30,7 @@ export function useKanban() {
              return [];
         }
 
-        // AUTO-HEALING: Se não existir pipeline, criar um padrão
-        if (!pipeline) {
-            console.log("Tentando criar pipeline padrão...");
-            const { data: newPipe, error: createError } = await supabase
-                .from('pipelines')
-                .insert({ company_id: user.company_id, name: 'Funil de Vendas', is_default: true })
-                .select()
-                .single();
-            
-            if (createError) {
-                // SE DER ERRO (ex: 403 RLS), NÃO LANCE EXCEÇÃO, APENAS RETORNE VAZIO PARA PARAR O LOOP
-                console.error("FALHA CRÍTICA: Não foi possível criar pipeline (Provável RLS):", createError);
-                return []; 
-            }
-            
-            pipeline = newPipe;
-            
-            if (pipeline) {
-                const defaultStages = [
-                    { pipeline_id: pipeline.id, name: 'Novos', position: 0, color: '#3b82f6', company_id: user.company_id },
-                    { pipeline_id: pipeline.id, name: 'Qualificação', position: 1, color: '#eab308', company_id: user.company_id },
-                    { pipeline_id: pipeline.id, name: 'Negociação', position: 2, color: '#f97316', company_id: user.company_id },
-                    { pipeline_id: pipeline.id, name: 'Ganho', position: 3, color: '#22c55e', company_id: user.company_id }
-                ];
-                await supabase.from('pipeline_stages').insert(defaultStages);
-            }
-        }
-
+        // REMOVIDO: Auto-Healing perigoso. Se não tem pipeline, retorna vazio e a UI avisa.
         if (!pipeline) return [];
 
         // 2. Buscar Estágios do Pipeline
@@ -89,8 +62,8 @@ export function useKanban() {
       }
     },
     enabled: !!user?.company_id,
-    staleTime: 1000 * 60 * 5, // Aumentado para 5 minutos para evitar loops agressivos
-    retry: 1 // Tenta apenas 1 vez em caso de erro
+    staleTime: 1000 * 60 * 5, 
+    retry: 1 
   });
 
   // Mover Lead (Drag & Drop)
@@ -146,6 +119,38 @@ export function useKanban() {
     },
   });
 
+  // Action Manual para criar Pipeline (Substitui o Auto-Healing)
+  const createDefaultBoardMutation = useMutation({
+      mutationFn: async () => {
+          if (!user?.company_id) throw new Error("Sem empresa");
+          
+          const { data: pipeline, error: pErr } = await supabase
+              .from('pipelines')
+              .insert({ company_id: user.company_id, name: 'Funil de Vendas', is_default: true })
+              .select()
+              .single();
+          
+          if(pErr) throw pErr;
+
+          const defaultStages = [
+            { pipeline_id: pipeline.id, name: 'Novos', position: 0, color: '#3b82f6', company_id: user.company_id },
+            { pipeline_id: pipeline.id, name: 'Qualificação', position: 1, color: '#eab308', company_id: user.company_id },
+            { pipeline_id: pipeline.id, name: 'Negociação', position: 2, color: '#f97316', company_id: user.company_id },
+            { pipeline_id: pipeline.id, name: 'Ganho', position: 3, color: '#22c55e', company_id: user.company_id }
+          ];
+          
+          const { error: sErr } = await supabase.from('pipeline_stages').insert(defaultStages);
+          if(sErr) throw sErr;
+      },
+      onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: ['kanban', user?.company_id] });
+          addToast({ type: 'success', title: 'Pronto!', message: 'Funil padrão criado com sucesso.' });
+      },
+      onError: (e: any) => {
+          addToast({ type: 'error', title: 'Erro', message: e.message || 'Falha ao criar funil.' });
+      }
+  });
+
   const createLeadMutation = useMutation({
       mutationFn: async (leadData: any) => {
           if (!user?.company_id) throw new Error("Sem empresa");
@@ -165,6 +170,7 @@ export function useKanban() {
     loading: isLoading, 
     moveLead: (leadId: string, fromColId: string, toColId: string) => moveLeadMutation.mutate({ leadId, toStageId: toColId }),
     createLead: createLeadMutation.mutateAsync,
-    refresh: () => queryClient.invalidateQueries({ queryKey: ['kanban', user?.company_id] })
+    refresh: () => queryClient.invalidateQueries({ queryKey: ['kanban', user?.company_id] }),
+    initializeBoard: createDefaultBoardMutation.mutate
   };
 }
