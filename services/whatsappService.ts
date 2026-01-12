@@ -83,8 +83,7 @@ export const whatsappService = {
             company_id: profile.company_id, 
             session_id: sessionId, 
             status: 'connecting', 
-            name: displayName,
-            qrcode_url: null 
+            name: displayName
         }, { onConflict: 'session_id' })
         .select()
         .single();
