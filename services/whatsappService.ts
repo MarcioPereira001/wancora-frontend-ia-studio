@@ -3,7 +3,7 @@ import { createClient } from '@/utils/supabase/client';
 import { Instance } from '../types';
 
 export const whatsappService = {
-  // Busca status da instância
+  // Busca status da instância mais recente
   getInstanceStatus: async (): Promise<Instance | null> => {
     try {
       const supabase = createClient();
@@ -82,15 +82,15 @@ export const whatsappService = {
       const displayName = instanceName || (sessionId === 'default' ? 'Principal' : sessionId);
 
       // 2. Limpar estado anterior no banco (Resetar QR Code antigo)
-      // Isso evita que o frontend mostre um QR Code expirado enquanto o novo não chega
+      // É crucial setar qrcode_url como null para o frontend saber que deve esperar um novo
       const { data: instanceData, error: dbError } = await supabase
         .from('instances')
         .upsert({ 
             company_id: profile.company_id, 
             session_id: sessionId, 
-            status: 'connecting', // Define status inicial
+            status: 'connecting', 
             name: displayName,
-            qrcode_url: null // Limpa QR Code antigo
+            qrcode_url: null // Limpa QR Code antigo da coluna correta
         }, { onConflict: 'session_id' })
         .select()
         .single();
@@ -122,12 +122,13 @@ export const whatsappService = {
       if (!profile?.company_id) return;
 
       // Chama backend para logout limpo (Endpoint Correto: /session/logout)
+      // Envia o payload completo
       await api.post('/session/logout', {
           sessionId: sessionId,
           companyId: profile.company_id
       });
       
-      // Força atualização visual no banco caso o backend demore
+      // Força atualização visual no banco caso o backend demore a responder o evento de desconexão
       await supabase
         .from('instances')
         .update({ status: 'disconnected', qrcode_url: null })
@@ -149,7 +150,7 @@ export const whatsappService = {
         const { data: profile } = await supabase.from('profiles').select('company_id').eq('id', session.user.id).single();
         if (!profile?.company_id) return;
   
-        // Tenta desconectar backend primeiro
+        // Tenta desconectar backend primeiro via API
         try {
             await api.post('/session/logout', {
                 sessionId: sessionId,
@@ -159,7 +160,7 @@ export const whatsappService = {
             console.log("Backend offline ou já desconectado, deletando registro apenas.");
         }
   
-        // Remove do banco
+        // Remove do banco de dados
         await supabase
             .from('instances')
             .delete()
