@@ -10,6 +10,7 @@ import { createClient } from '@/utils/supabase/client';
 import { useToast } from '@/hooks/useToast';
 import { Save, Flame, Sun, Snowflake } from 'lucide-react';
 import { useAuthStore } from '@/store/useAuthStore';
+import { useKanban } from '@/hooks/useKanban';
 
 interface NewLeadModalProps {
   isOpen: boolean;
@@ -22,6 +23,7 @@ export function NewLeadModal({ isOpen, onClose, onSuccess, defaultStageId }: New
   const { user } = useAuthStore();
   const supabase = createClient();
   const { addToast } = useToast();
+  const { createLead } = useKanban();
   const [loading, setLoading] = useState(false);
 
   const [formData, setFormData] = useState({
@@ -35,39 +37,63 @@ export function NewLeadModal({ isOpen, onClose, onSuccess, defaultStageId }: New
   });
 
   const handleSubmit = async () => {
-    if (!formData.name || !formData.phone) {
+    if (!formData.name.trim() || !formData.phone.trim()) {
       addToast({ type: 'warning', title: 'Atenção', message: 'Nome e Telefone são obrigatórios.' });
       return;
     }
 
-    if (!defaultStageId) {
-        addToast({ type: 'error', title: 'Erro', message: 'Nenhum estágio de funil definido.' });
-        return;
-    }
+    if (!user?.company_id) return;
 
     setLoading(true);
     try {
-      const { error } = await supabase.from('leads').insert({
-        company_id: user?.company_id,
-        stage_id: defaultStageId,
-        name: formData.name,
-        phone: formData.phone,
-        email: formData.email,
-        value_potential: formData.value_potential,
-        temperature: formData.temperature,
-        notes: formData.notes,
-        tags: formData.tags,
-        lead_score: 0
-      });
+        // 1. Verifica Duplicidade (Telefone)
+        const cleanPhone = formData.phone.replace(/\D/g, '');
+        const { data: existing } = await supabase
+            .from('leads')
+            .select('id, name')
+            .eq('company_id', user.company_id)
+            .ilike('phone', `%${cleanPhone}%`) // Like para evitar problemas com 9 digito
+            .limit(1)
+            .maybeSingle();
 
-      if (error) throw error;
+        if (existing) {
+            addToast({ type: 'warning', title: 'Duplicidade', message: `Lead já existe: ${existing.name}` });
+            setLoading(false);
+            return;
+        }
 
-      addToast({ type: 'success', title: 'Sucesso', message: 'Lead criado com sucesso!' });
-      setFormData({
-        name: '', phone: '', email: '', value_potential: 0, temperature: 'warm', notes: '', tags: []
-      });
-      if (onSuccess) onSuccess();
-      onClose();
+        // 2. Define Stage ID (Fetch se não passado)
+        let stageId = defaultStageId;
+        if (!stageId) {
+            const { data: pipe } = await supabase.from('pipelines').select('id').eq('company_id', user.company_id).eq('is_default', true).limit(1).maybeSingle();
+            if (pipe) {
+                const { data: stage } = await supabase.from('pipeline_stages').select('id').eq('pipeline_id', pipe.id).eq('position', 0).limit(1).maybeSingle();
+                stageId = stage?.id;
+            }
+        }
+
+        if (!stageId) throw new Error("Não foi possível identificar a etapa do funil.");
+
+        // 3. Criação via Hook (garante cache update)
+        await createLead({
+            stage_id: stageId,
+            name: formData.name,
+            phone: formData.phone,
+            email: formData.email,
+            value_potential: formData.value_potential,
+            temperature: formData.temperature,
+            notes: formData.notes,
+            tags: formData.tags,
+            lead_score: 0
+        });
+
+        addToast({ type: 'success', title: 'Sucesso', message: 'Lead criado com sucesso!' });
+        setFormData({
+            name: '', phone: '', email: '', value_potential: 0, temperature: 'warm', notes: '', tags: []
+        });
+        if (onSuccess) onSuccess();
+        onClose();
+
     } catch (error: any) {
       addToast({ type: 'error', title: 'Erro', message: error.message });
     } finally {
@@ -97,6 +123,7 @@ export function NewLeadModal({ isOpen, onClose, onSuccess, defaultStageId }: New
                 onChange={e => setFormData({...formData, name: e.target.value})} 
                 placeholder="Ex: João Silva"
                 className="mt-1"
+                autoFocus
             />
         </div>
 
@@ -114,8 +141,9 @@ export function NewLeadModal({ isOpen, onClose, onSuccess, defaultStageId }: New
                 <label className="text-xs font-bold text-zinc-500 uppercase">Valor (R$)</label>
                 <Input 
                     type="number"
-                    value={formData.value_potential} 
+                    value={formData.value_potential || ''} 
                     onChange={e => setFormData({...formData, value_potential: Number(e.target.value)})} 
+                    placeholder="0.00"
                     className="mt-1"
                 />
             </div>

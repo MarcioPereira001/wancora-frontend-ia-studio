@@ -1,27 +1,31 @@
 import React, { useState, useRef } from 'react';
-import { Search, RefreshCw, Plus, Filter, Loader2, DollarSign } from 'lucide-react';
+import { Search, RefreshCw, Plus, Filter, Loader2, DollarSign, GripVertical, Settings2, Edit3, PaintBucket } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useKanban } from '@/hooks/useKanban';
 import { KanbanCard } from './KanbanCard';
-import { Lead } from '@/types';
+import { Lead, KanbanColumn } from '@/types';
 import { cn, formatCurrency } from '@/lib/utils';
 import { LeadDetailsModal } from './LeadDetailsModal';
 import { NewLeadModal } from './NewLeadModal';
+import { EditStageModal } from './EditStageModal';
 
 export function KanbanBoard() {
-  const { columns, loading, refresh, moveLead } = useKanban();
+  const { columns, loading, refresh, moveLead, reorderStages } = useKanban();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [isNewLeadOpen, setIsNewLeadOpen] = useState(false);
   
-  // Drag & Drop State
-  const [draggingCardId, setDraggingCardId] = useState<string | null>(null);
-  const [draggingFromCol, setDraggingFromCol] = useState<string | null>(null);
-  const [isDraggingBoard, setIsDraggingBoard] = useState(false);
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  // States para Edição de Estágio
+  const [editingStage, setEditingStage] = useState<KanbanColumn | null>(null);
 
-  // Scroll Drag Logic variables
+  // Drag & Drop State (Cards & Columns)
+  const [draggingType, setDraggingType] = useState<'CARD' | 'COLUMN' | null>(null);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [draggingFromCol, setDraggingFromCol] = useState<string | null>(null); // Apenas para cards
+  
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  // Scroll Drag vars
   const isDown = useRef(false);
   const startX = useRef(0);
   const scrollLeft = useRef(0);
@@ -37,57 +41,76 @@ export function KanbanBoard() {
       );
   };
 
-  // DnD Handlers
-  const handleDragStart = (e: React.DragEvent, leadId: string, colId: string) => {
-    setDraggingCardId(leadId);
-    setDraggingFromCol(colId);
+  // --- DND HANDLERS ---
+
+  const handleDragStart = (e: React.DragEvent, type: 'CARD' | 'COLUMN', id: string, colId?: string) => {
+    e.stopPropagation();
+    setDraggingType(type);
+    setDraggingId(id);
+    if (type === 'CARD' && colId) setDraggingFromCol(colId);
+    
+    // Ghost image setup (opcional, o navegador faz default)
     e.dataTransfer.effectAllowed = "move";
-    e.dataTransfer.setData("text/plain", leadId); // Compatibilidade Firefox
-    // Imagem fantasma transparente (opcional)
   };
 
   const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault(); // Necessário para permitir o drop
+    e.preventDefault(); // Necessário para permitir drop
   };
 
-  const handleDrop = (e: React.DragEvent, toColId: string) => {
+  const handleDrop = (e: React.DragEvent, targetId: string, type: 'CARD' | 'COLUMN') => {
     e.preventDefault();
-    if (draggingCardId && draggingFromCol && draggingFromCol !== toColId) {
-        moveLead(draggingCardId, toColId);
+    e.stopPropagation();
+
+    // CARD DROP
+    if (draggingType === 'CARD' && type === 'COLUMN') {
+        if (draggingId && draggingFromCol && draggingFromCol !== targetId) {
+            moveLead(draggingId, targetId); // targetId é o ID da coluna destino
+        }
     }
-    setDraggingCardId(null);
+
+    // COLUMN DROP (Reorder)
+    if (draggingType === 'COLUMN' && type === 'COLUMN') {
+        if (draggingId && draggingId !== targetId) {
+            // targetId é o ID da coluna sobre a qual soltamos
+            const oldIndex = columns.findIndex(c => c.id === draggingId);
+            const newIndex = columns.findIndex(c => c.id === targetId);
+            
+            if (oldIndex !== -1 && newIndex !== -1) {
+                // Cria novo array reordenado
+                const newOrder = [...columns];
+                const [moved] = newOrder.splice(oldIndex, 1);
+                newOrder.splice(newIndex, 0, moved);
+                
+                // Mapeia para formato { id, position }
+                const payload = newOrder.map((col, idx) => ({ id: col.id, position: idx }));
+                reorderStages(payload);
+            }
+        }
+    }
+
+    // Reset
+    setDraggingType(null);
+    setDraggingId(null);
     setDraggingFromCol(null);
   };
 
-  // Mouse Drag Scroll Handlers (Desktop touch-like experience)
+  // --- SCROLL HANDLERS ---
   const onMouseDown = (e: React.MouseEvent) => {
-     // Só ativa drag do board se clicar no background, não no card
-     if ((e.target as HTMLElement).closest('.group')) return;
-     
+     if ((e.target as HTMLElement).closest('.draggable-item') || (e.target as HTMLElement).closest('.interactive')) return;
      isDown.current = true;
      if(scrollContainerRef.current) {
          startX.current = e.pageX - scrollContainerRef.current.offsetLeft;
          scrollLeft.current = scrollContainerRef.current.scrollLeft;
      }
   };
-  
-  const onMouseLeave = () => {
-      isDown.current = false;
-      setIsDraggingBoard(false);
-  };
-  
-  const onMouseUp = () => {
-      isDown.current = false;
-      setTimeout(() => setIsDraggingBoard(false), 50);
-  };
-  
+  const onMouseLeave = () => isDown.current = false;
+  const onMouseUp = () => isDown.current = false;
   const onMouseMove = (e: React.MouseEvent) => {
       if (!isDown.current) return;
       e.preventDefault();
-      setIsDraggingBoard(true);
       if(scrollContainerRef.current) {
           const x = e.pageX - scrollContainerRef.current.offsetLeft;
-          const walk = (x - startX.current) * 1.5; // Velocidade do scroll
+          const walk = (x - startX.current) * 1.5; 
           scrollContainerRef.current.scrollLeft = scrollLeft.current - walk;
       }
   };
@@ -101,12 +124,12 @@ export function KanbanBoard() {
     );
   }
 
-  // Cálculo Total Geral do Pipeline
   const totalPipelineValue = columns.reduce((acc, col) => acc + col.totalValue, 0);
 
   return (
     <div className="flex flex-col h-full space-y-4 animate-in fade-in duration-500">
-      {/* Header Toolbar */}
+      
+      {/* Filters Bar */}
       <div className="flex flex-col md:flex-row justify-between items-center gap-4 px-1 bg-zinc-900/30 p-2 rounded-xl border border-zinc-800">
         <div className="relative w-full md:w-auto flex items-center gap-4">
             <div className="relative flex-1 md:w-80">
@@ -129,7 +152,7 @@ export function KanbanBoard() {
         </div>
       </div>
 
-      {/* Board */}
+      {/* Board Container */}
       <div 
         ref={scrollContainerRef}
         onMouseDown={onMouseDown}
@@ -140,46 +163,69 @@ export function KanbanBoard() {
       >
         {columns.map((col) => (
           <div 
-            key={col.id} 
-            className="min-w-[340px] w-[340px] flex flex-col h-full shrink-0 bg-zinc-900/20 rounded-xl border border-zinc-800/50 transition-colors hover:border-zinc-700/50"
+            key={col.id}
+            draggable
+            onDragStart={(e) => handleDragStart(e, 'COLUMN', col.id)}
             onDragOver={handleDragOver}
-            onDrop={(e) => handleDrop(e, col.id)}
+            onDrop={(e) => handleDrop(e, col.id, 'COLUMN')}
+            className={cn(
+                "min-w-[340px] w-[340px] flex flex-col h-full shrink-0 bg-zinc-900/20 rounded-xl border transition-all duration-200 draggable-item",
+                draggingType === 'COLUMN' && draggingId === col.id ? "opacity-50 border-dashed border-primary" : "border-zinc-800/50 hover:border-zinc-700/50"
+            )}
           >
             {/* Column Header */}
-            <div className="p-3 border-b border-zinc-800/50 bg-zinc-900/50 rounded-t-xl backdrop-blur-sm group-hover:bg-zinc-900/80 transition-colors">
+            <div className="p-3 border-b border-zinc-800/50 bg-zinc-900/50 rounded-t-xl backdrop-blur-sm group/header relative hover:bg-zinc-900/80 transition-colors">
               <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-3 h-3 rounded-full shadow-[0_0_8px_currentColor] opacity-80" style={{ backgroundColor: col.color || '#52525b', color: col.color || '#52525b' }} />
-                    <span className="font-bold text-zinc-100 text-sm tracking-tight">{col.title}</span>
+                  <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                    <div 
+                        className="cursor-move p-1 rounded hover:bg-zinc-800 text-zinc-600 hover:text-zinc-300 transition-colors interactive"
+                        title="Segure para arrastar a coluna"
+                    >
+                        <GripVertical size={14} />
+                    </div>
+                    <div className="w-3 h-3 rounded-full shadow-[0_0_8px_currentColor] opacity-80 shrink-0" style={{ backgroundColor: col.color || '#52525b', color: col.color || '#52525b' }} />
+                    <span className="font-bold text-zinc-100 text-sm tracking-tight truncate">{col.title}</span>
                   </div>
-                  <span className="bg-zinc-950 text-zinc-500 text-[10px] px-2 py-0.5 rounded-full font-mono font-bold border border-zinc-800">
-                    {col.items ? getFilteredItems(col.items).length : 0}
-                  </span>
+                  
+                  <div className="flex items-center gap-2">
+                      <span className="bg-zinc-950 text-zinc-500 text-[10px] px-2 py-0.5 rounded-full font-mono font-bold border border-zinc-800">
+                        {col.items ? getFilteredItems(col.items).length : 0}
+                      </span>
+                      <button 
+                        onClick={() => setEditingStage(col)}
+                        className="p-1 text-zinc-600 hover:text-zinc-300 opacity-0 group-hover/header:opacity-100 transition-opacity interactive"
+                      >
+                          <Settings2 size={14} />
+                      </button>
+                  </div>
               </div>
               
-              {/* Totalizador da Coluna */}
-              <div className="flex items-center gap-1 text-xs text-zinc-500 pl-6">
+              {/* Totalizer */}
+              <div className="flex items-center gap-1 text-xs text-zinc-500 pl-8">
                   <DollarSign size={10} />
                   <span className="font-mono">{formatCurrency(col.totalValue)}</span>
               </div>
             </div>
             
-            {/* Column Body */}
-            <div className={cn(
-                "flex-1 p-2 overflow-y-auto custom-scrollbar space-y-3 relative",
-                draggingFromCol && draggingFromCol !== col.id ? "bg-zinc-950/20" : ""
-            )}>
-              {/* Highlight ao arrastar por cima */}
-              {draggingFromCol && draggingFromCol !== col.id && (
-                  <div className="absolute inset-0 pointer-events-none border-2 border-dashed border-zinc-700/50 rounded-b-xl z-0" />
+            {/* Column Body (Drop Zone for Cards) */}
+            <div 
+                className={cn(
+                    "flex-1 p-2 overflow-y-auto custom-scrollbar space-y-3 relative interactive",
+                    draggingType === 'CARD' && draggingFromCol && draggingFromCol !== col.id ? "bg-primary/5" : ""
+                )}
+                onDragOver={handleDragOver}
+                onDrop={(e) => handleDrop(e, col.id, 'COLUMN')} // Drop de card na coluna
+            >
+              {draggingType === 'CARD' && draggingFromCol && draggingFromCol !== col.id && (
+                  <div className="absolute inset-0 pointer-events-none border-2 border-dashed border-primary/20 rounded-b-xl z-0" />
               )}
 
               {col.items && getFilteredItems(col.items).map(lead => (
-                <div key={lead.id} className={draggingCardId === lead.id ? "opacity-30 grayscale scale-95 transition-all" : "z-10 relative"}>
+                <div key={lead.id} className={draggingId === lead.id ? "opacity-30 grayscale scale-95 transition-all" : "z-10 relative"}>
                     <KanbanCard 
                         lead={lead} 
-                        onDragStart={(e) => handleDragStart(e, lead.id, col.id)}
-                        onClick={(l) => { if(!isDraggingBoard) setSelectedLead(l); }}
+                        onDragStart={(e) => handleDragStart(e, 'CARD', lead.id, col.id)}
+                        onClick={(l) => { if(!isDown.current) setSelectedLead(l); }}
                     />
                 </div>
               ))}
@@ -193,18 +239,10 @@ export function KanbanBoard() {
           </div>
         ))}
 
-        {columns.length === 0 && (
-            <div className="w-full flex items-center justify-center text-zinc-500 h-full">
-                <div className="text-center bg-zinc-900/50 p-12 rounded-2xl border border-zinc-800 max-w-md">
-                    <Filter className="w-16 h-16 mx-auto mb-6 opacity-20" />
-                    <h3 className="text-xl font-bold text-white mb-2">Funil Vazio</h3>
-                    <p className="mb-6 text-zinc-400">Parece que sua empresa ainda não configurou as etapas de venda.</p>
-                    <Button onClick={() => refresh()} variant="outline" className="border-zinc-700 text-zinc-300 hover:text-white">
-                        <RefreshCw className="mr-2 h-4 w-4" /> Tentar Novamente
-                    </Button>
-                </div>
-            </div>
-        )}
+        {/* Add Column Button (Future) */}
+        {/* <div className="min-w-[50px] flex items-center justify-center opacity-50 hover:opacity-100 transition-opacity">
+            <Button variant="ghost" size="icon" className="h-12 w-12 rounded-full border border-dashed border-zinc-700"><Plus /></Button>
+        </div> */}
       </div>
 
       <LeadDetailsModal 
@@ -217,6 +255,11 @@ export function KanbanBoard() {
         onClose={() => setIsNewLeadOpen(false)} 
         onSuccess={refresh}
         defaultStageId={columns[0]?.id}
+      />
+      <EditStageModal
+        stage={editingStage}
+        isOpen={!!editingStage}
+        onClose={() => setEditingStage(null)}
       />
     </div>
   );

@@ -1,12 +1,16 @@
+import React, { useState, useEffect } from 'react';
 import { Modal } from '@/components/ui/Modal';
 import { Lead } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { useState } from 'react';
-import { createClient } from '@/utils/supabase/client';
+import { TagSelector } from './TagSelector';
 import { useToast } from '@/hooks/useToast';
-import { Trash2, Save } from 'lucide-react';
+import { useKanban } from '@/hooks/useKanban';
+import { useLeadData } from '@/hooks/useLeadData';
+import { Trash2, Save, CheckSquare, Layout, Clock, Plus, X } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { Checkbox } from '@/components/ui/checkbox';
 
 interface LeadDetailsModalProps {
   lead: Lead | null;
@@ -15,76 +19,174 @@ interface LeadDetailsModalProps {
 }
 
 export function LeadDetailsModal({ lead, isOpen, onClose }: LeadDetailsModalProps) {
-  // Inicialização defensiva: usa objeto vazio se lead for null para evitar crash no hook, mas retorna null logo após
+  const { updateLead, deleteLead } = useKanban();
+  const { checklist, addCheckitem, toggleCheckitem } = useLeadData(lead?.id, lead?.phone);
+  const { addToast } = useToast();
+  
+  const [activeTab, setActiveTab] = useState<'details' | 'checklist' | 'history'>('details');
   const [data, setData] = useState<Lead>(lead || {} as Lead);
   const [loading, setLoading] = useState(false);
-  const supabase = createClient();
-  const { addToast } = useToast();
+  const [newItemText, setNewItemText] = useState('');
+
+  // Sincroniza estado local quando o lead prop muda
+  useEffect(() => {
+    if (lead) setData(lead);
+  }, [lead]);
 
   if (!lead) return null;
 
   const handleSave = async () => {
       setLoading(true);
-      const { error } = await supabase.from('leads').update({
-          name: data.name,
-          phone: data.phone,
-          email: data.email,
-          value_potential: data.value_potential,
-          notes: data.notes
-      }).eq('id', data.id);
-
-      setLoading(false);
-      if(error) {
-          addToast({ type: 'error', title: 'Erro', message: error.message });
-      } else {
-          addToast({ type: 'success', title: 'Salvo', message: 'Lead atualizado.' });
-          onClose();
+      try {
+        await updateLead({ id: data.id, data: {
+            name: data.name,
+            phone: data.phone,
+            email: data.email,
+            value_potential: data.value_potential,
+            notes: data.notes,
+            tags: data.tags,
+            temperature: data.temperature
+        }});
+        addToast({ type: 'success', title: 'Salvo', message: 'Lead atualizado.' });
+        onClose();
+      } catch (error: any) {
+        addToast({ type: 'error', title: 'Erro', message: error.message });
+      } finally {
+        setLoading(false);
       }
   };
 
   const handleDelete = async () => {
       if(!confirm('Excluir este lead permanentemente?')) return;
       setLoading(true);
-      await supabase.from('leads').delete().eq('id', data.id);
-      setLoading(false);
-      onClose();
+      try {
+        await deleteLead(data.id);
+        onClose();
+      } catch (error: any) {
+        addToast({ type: 'error', title: 'Erro', message: error.message });
+      } finally {
+        setLoading(false);
+      }
+  };
+
+  const handleAddChecklist = (e: React.FormEvent) => {
+      e.preventDefault();
+      if(!newItemText.trim()) return;
+      addCheckitem(newItemText);
+      setNewItemText('');
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Detalhes do Lead">
-        <div className="space-y-4">
-            <div>
-                <label className="text-xs text-zinc-500 uppercase font-bold">Nome</label>
-                <Input value={data.name || ''} onChange={e => setData({...data, name: e.target.value})} className="mt-1" />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-                <div>
-                    <label className="text-xs text-zinc-500 uppercase font-bold">Telefone</label>
-                    <Input value={data.phone || ''} onChange={e => setData({...data, phone: e.target.value})} className="mt-1" />
-                </div>
-                <div>
-                    <label className="text-xs text-zinc-500 uppercase font-bold">Valor (R$)</label>
-                    <Input type="number" value={data.value_potential || 0} onChange={e => setData({...data, value_potential: Number(e.target.value)})} className="mt-1" />
-                </div>
-            </div>
-            <div>
-                <label className="text-xs text-zinc-500 uppercase font-bold">Email</label>
-                <Input value={data.email || ''} onChange={e => setData({...data, email: e.target.value})} className="mt-1" />
-            </div>
-            <div>
-                <label className="text-xs text-zinc-500 uppercase font-bold">Notas</label>
-                <Textarea value={data.notes || ''} onChange={e => setData({...data, notes: e.target.value})} className="mt-1 h-32" />
-            </div>
-            
-            <div className="flex justify-between pt-4 border-t border-zinc-800">
-                <Button variant="destructive" onClick={handleDelete} isLoading={loading}>
-                    <Trash2 className="w-4 h-4 mr-2" /> Excluir
-                </Button>
-                <Button onClick={handleSave} isLoading={loading}>
-                    <Save className="w-4 h-4 mr-2" /> Salvar
-                </Button>
-            </div>
+    <Modal isOpen={isOpen} onClose={onClose} title={`Detalhes: ${data.name}`} maxWidth="lg">
+        {/* Tabs Header */}
+        <div className="flex border-b border-zinc-800 mb-6">
+            <button 
+                onClick={() => setActiveTab('details')}
+                className={cn("px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-2", activeTab === 'details' ? "border-primary text-primary" : "border-transparent text-zinc-500 hover:text-zinc-300")}
+            >
+                <Layout className="w-4 h-4" /> Dados
+            </button>
+            <button 
+                onClick={() => setActiveTab('checklist')}
+                className={cn("px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-2", activeTab === 'checklist' ? "border-primary text-primary" : "border-transparent text-zinc-500 hover:text-zinc-300")}
+            >
+                <CheckSquare className="w-4 h-4" /> Tarefas <span className="text-xs bg-zinc-800 px-1.5 rounded-full">{checklist.length}</span>
+            </button>
+            <button 
+                onClick={() => setActiveTab('history')}
+                className={cn("px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-2", activeTab === 'history' ? "border-primary text-primary" : "border-transparent text-zinc-500 hover:text-zinc-300")}
+            >
+                <Clock className="w-4 h-4" /> Histórico
+            </button>
         </div>
+
+        {/* Tab: Dados */}
+        {activeTab === 'details' && (
+            <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2">
+                <div>
+                    <label className="text-xs text-zinc-500 uppercase font-bold">Nome</label>
+                    <Input value={data.name || ''} onChange={e => setData({...data, name: e.target.value})} className="mt-1" />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                    <div>
+                        <label className="text-xs text-zinc-500 uppercase font-bold">Telefone</label>
+                        <Input value={data.phone || ''} onChange={e => setData({...data, phone: e.target.value})} className="mt-1" />
+                    </div>
+                    <div>
+                        <label className="text-xs text-zinc-500 uppercase font-bold">Valor (R$)</label>
+                        <Input type="number" value={data.value_potential || 0} onChange={e => setData({...data, value_potential: Number(e.target.value)})} className="mt-1" />
+                    </div>
+                </div>
+                
+                <div>
+                    <label className="text-xs text-zinc-500 uppercase font-bold mb-1 block">Tags</label>
+                    <TagSelector tags={data.tags || []} onChange={tags => setData({...data, tags})} />
+                </div>
+
+                <div>
+                    <label className="text-xs text-zinc-500 uppercase font-bold">Notas</label>
+                    <Textarea value={data.notes || ''} onChange={e => setData({...data, notes: e.target.value})} className="mt-1 h-32" />
+                </div>
+                
+                <div className="flex justify-between pt-4 border-t border-zinc-800 mt-4">
+                    <Button variant="destructive" onClick={handleDelete} isLoading={loading} className="bg-red-500/10 text-red-500 hover:bg-red-500/20 border-none">
+                        <Trash2 className="w-4 h-4 mr-2" /> Excluir
+                    </Button>
+                    <Button onClick={handleSave} isLoading={loading}>
+                        <Save className="w-4 h-4 mr-2" /> Salvar Alterações
+                    </Button>
+                </div>
+            </div>
+        )}
+
+        {/* Tab: Checklist */}
+        {activeTab === 'checklist' && (
+            <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 min-h-[300px]">
+                <form onSubmit={handleAddChecklist} className="flex gap-2">
+                    <Input 
+                        value={newItemText}
+                        onChange={e => setNewItemText(e.target.value)}
+                        placeholder="Adicionar nova tarefa..."
+                        className="flex-1"
+                    />
+                    <Button type="submit" disabled={!newItemText.trim()} variant="secondary">
+                        <Plus className="w-4 h-4" />
+                    </Button>
+                </form>
+
+                <div className="space-y-2 mt-4">
+                    {checklist.length === 0 && (
+                        <p className="text-center text-zinc-500 py-8 text-sm italic">Nenhuma tarefa criada.</p>
+                    )}
+                    {checklist.map(item => (
+                        <div key={item.id} className="flex items-start gap-3 p-3 rounded-lg bg-zinc-900/50 border border-zinc-800 hover:border-zinc-700 transition-colors group">
+                             <Checkbox 
+                                id={item.id}
+                                checked={item.is_completed}
+                                onCheckedChange={() => toggleCheckitem(item.id, item.is_completed)}
+                                className="mt-0.5 border-zinc-600 data-[state=checked]:bg-primary data-[state=checked]:border-primary"
+                             />
+                             <label 
+                                htmlFor={item.id} 
+                                className={cn("text-sm flex-1 cursor-pointer leading-relaxed", item.is_completed ? "text-zinc-500 line-through decoration-zinc-600" : "text-zinc-200")}
+                             >
+                                {item.text}
+                             </label>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        )}
+
+        {/* Tab: Histórico */}
+        {activeTab === 'history' && (
+            <div className="min-h-[300px] flex items-center justify-center text-zinc-500 italic animate-in fade-in">
+                <div className="text-center">
+                    <Clock className="w-8 h-8 mx-auto mb-2 opacity-20" />
+                    <p>Logs de atividade em breve.</p>
+                </div>
+            </div>
+        )}
     </Modal>
   );
 }

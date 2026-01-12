@@ -20,9 +20,9 @@ export function useLeadData(leadId?: string, leadPhone?: string) {
     const fetchData = async () => {
       setLoading(true);
       try {
-        // 1. Fetch Checklist
+        // 1. Fetch Checklist (Tabela Correta: lead_checklists)
         const { data: list } = await supabase
-            .from('checklists') // Garantindo que a tabela seja 'checklists' conforme schema
+            .from('lead_checklists') 
             .select('*')
             .eq('lead_id', leadId)
             .order('created_at');
@@ -31,15 +31,13 @@ export function useLeadData(leadId?: string, leadPhone?: string) {
 
         // 2. Fetch Messages (se tiver telefone)
         if (leadPhone) {
-            // Normaliza telefone para busca (remove caracteres não numéricos)
             const cleanPhone = leadPhone.replace(/\D/g, '');
             if(cleanPhone.length > 5) {
                 const { data: msgs } = await supabase
                     .from('messages')
                     .select('*')
                     .eq('company_id', user.company_id)
-                    // Busca flexível: JID contendo o número
-                    .ilike('remote_jid', `%${cleanPhone}%`)
+                    .ilike('remote_jid', `%${cleanPhone}%`) // Busca aproximada para pegar @s.whatsapp.net
                     .order('created_at', { ascending: true });
                 
                 if (msgs) setMessages(msgs);
@@ -55,8 +53,8 @@ export function useLeadData(leadId?: string, leadPhone?: string) {
     fetchData();
 
     // Realtime Checklist
-    const subChecklist = supabase.channel(`checklist:${leadId}`)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'checklists', filter: `lead_id=eq.${leadId}` }, (payload) => {
+    const subChecklist = supabase.channel(`lead_checklists:${leadId}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'lead_checklists', filter: `lead_id=eq.${leadId}` }, (payload) => {
             if(payload.eventType === 'INSERT') setChecklist(prev => [...prev, payload.new as ChecklistItem]);
             if(payload.eventType === 'UPDATE') setChecklist(prev => prev.map(i => i.id === payload.new.id ? payload.new as ChecklistItem : i));
             if(payload.eventType === 'DELETE') setChecklist(prev => prev.filter(i => i.id !== payload.old.id));
@@ -70,7 +68,6 @@ export function useLeadData(leadId?: string, leadPhone?: string) {
   const sendMessage = async (text: string) => {
       if(!leadPhone || !user?.company_id) return;
       
-      // 1. Optimistic UI Update
       const tempId = Date.now().toString();
       const tempMsg: any = {
           id: tempId,
@@ -84,20 +81,17 @@ export function useLeadData(leadId?: string, leadPhone?: string) {
       setMessages(prev => [...prev, tempMsg]);
 
       try {
-          // 2. Chamada ao Backend (Baileys) via wrapper API seguro
-          // Payload rigorosamente alinhado com o contrato
           await api.post('/message/send', {
-              sessionId: 'default',
+              sessionId: 'default', // TODO: Idealmente pegar a sessão ativa do usuário
               companyId: user.company_id,
-              to: `${leadPhone.replace(/\D/g, '')}@s.whatsapp.net`, 
+              to: leadPhone.replace(/\D/g, ''), 
               text: text,
               type: 'text' 
           });
-          // Não precisamos atualizar 'tempMsg' aqui, pois o Realtime do Supabase irá inserir a mensagem real "Sent" em breve
       } catch (error: any) {
           console.error("Erro envio:", error);
           addToast({ type: 'error', title: 'Erro', message: 'Falha ao enviar mensagem.' });
-          setMessages(prev => prev.filter(m => m.id !== tempId)); // Reverte em caso de erro
+          setMessages(prev => prev.filter(m => m.id !== tempId));
       }
   };
 
@@ -109,7 +103,12 @@ export function useLeadData(leadId?: string, leadPhone?: string) {
       };
       setChecklist(prev => [...prev, tempItem]);
 
-      const { data, error } = await supabase.from('checklists').insert({ lead_id: leadId, text, is_completed: false }).select().single();
+      // Insert Correto
+      const { data, error } = await supabase
+        .from('lead_checklists')
+        .insert({ lead_id: leadId, text, is_completed: false })
+        .select()
+        .single();
       
       if(error) {
           setChecklist(prev => prev.filter(i => i.id !== tempItem.id));
@@ -123,9 +122,8 @@ export function useLeadData(leadId?: string, leadPhone?: string) {
       // Optimistic
       setChecklist(prev => prev.map(i => i.id === id ? { ...i, is_completed: !currentStatus } : i));
       
-      const { error } = await supabase.from('checklists').update({ is_completed: !currentStatus }).eq('id', id);
+      const { error } = await supabase.from('lead_checklists').update({ is_completed: !currentStatus }).eq('id', id);
       if(error) {
-          // Revert
           setChecklist(prev => prev.map(i => i.id === id ? { ...i, is_completed: currentStatus } : i));
       }
   };
