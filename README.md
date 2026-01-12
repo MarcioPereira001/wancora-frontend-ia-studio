@@ -137,13 +137,23 @@ Botão "IA Sugerir" (Chama a API do Gemini/Sentinela).
 📊 Módulo 3: Kanban & Pipeline
 Visual: Colunas horizontais baseadas na tabela pipeline_stages.
 
+Filtros Avançados (Enterprise):
+
+Seletor de Responsável: Dropdown no topo para filtrar leads pelo owner_id.
+
+Visão Hierárquica: Admins veem "Todos"; Agentes veem apenas os seus (ou "Todos" se tiverem permissão RBAC).
+
+Card do Lead:
+
+Mostra: Nome, Empresa, Valor ($), Tags e Temperatura.
+
+Avatar do Dono: Pequena foto no canto inferior indicando visualmente quem é o responsável pelo lead.
+
 Drag & Drop:
 
 Ao soltar um card: Atualiza leads.pipeline_stage_id.
 
-Gatilhos (Triggers): Se configurado, mover um card pode enviar uma mensagem automática (ex: "Bem vindo!").
-
-Card do Lead: Mostra Nome, Foto, Última Mensagem, Valor ($) e Tags.
+Atualização Otimista (Optimistic UI).
 
 🤖 Módulo 4: IA Sentinela (Intelligence Layer)
 Conceito: Uma camada de inteligência que observa as mensagens.
@@ -172,6 +182,16 @@ Selecionar Público (Tags ou Pipeline Stage).
 Disparo (Worker em Background com delay aleatório para evitar banimento).
 
 Tabelas: campaigns (Config) -> campaign_leads (Fila individual).
+
+👥 Módulo 6: Gestão de Equipe (Team Management)
+Local: /settings/team
+Funcionalidades:
+
+Listagem: Ver todos os membros e seus cargos (Owner, Admin, Agent).
+
+Convite: Geração de Link de Convite (/register?ref=COMPANY_UUID).
+
+Fluxo: O novo usuário acessa o link -> Cria conta -> O Backend intercepta o ref -> Vincula automaticamente à company_id do convite (sem criar nova empresa).
 
 4. Fluxos Críticos (Core Business Rules)
 A. O Fluxo "Anti-Ghost" (Lead Generation)

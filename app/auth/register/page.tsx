@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,7 @@ import { useToast } from "@/hooks/useToast";
 import Link from "next/link";
 import { Loader2, Building } from "lucide-react";
 
-export default function RegisterPage() {
+function RegisterForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const supabase = createClient();
@@ -119,12 +119,7 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-zinc-950 p-4 relative overflow-hidden">
-      {/* Background Effects */}
-      <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-primary/10 rounded-full blur-3xl"></div>
-      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-secondary/10 rounded-full blur-3xl"></div>
-
-      <Card className="w-full max-w-md bg-zinc-900/50 border-zinc-800 backdrop-blur-md z-10">
+    <Card className="w-full max-w-md bg-zinc-900/50 border-zinc-800 backdrop-blur-md z-10">
         <CardHeader>
           <CardTitle className="text-2xl text-white text-center font-bold">Criar Conta</CardTitle>
           {invitingCompany ? (
@@ -197,6 +192,24 @@ export default function RegisterPage() {
           </form>
         </CardContent>
       </Card>
+  );
+}
+
+// Wrapper Principal com Suspense
+export default function RegisterPage() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-zinc-950 p-4 relative overflow-hidden">
+      {/* Background Effects */}
+      <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-primary/10 rounded-full blur-3xl"></div>
+      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-secondary/10 rounded-full blur-3xl"></div>
+
+      <Suspense fallback={
+        <div className="w-full max-w-md h-[500px] flex items-center justify-center bg-zinc-900/50 border border-zinc-800 rounded-xl backdrop-blur-md z-10">
+            <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        </div>
+      }>
+        <RegisterForm />
+      </Suspense>
     </div>
   );
 }
