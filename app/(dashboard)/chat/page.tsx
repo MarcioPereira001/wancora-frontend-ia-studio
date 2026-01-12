@@ -7,7 +7,7 @@ import { ChatContact, Message } from '@/types';
 import { cleanJid, cn } from '@/lib/utils';
 import { 
     Loader2, Search, Send, Paperclip, Sparkles, Mic, Bot, 
-    Image as IconImage, FileText, BarChart2, X, Trash2, ArrowLeft
+    Image as IconImage, FileText, BarChart2, X, Trash2, ArrowLeft, User
 } from 'lucide-react';
 import { MessageBubble } from '@/components/chat/MessageBubble';
 import { Button } from '@/components/ui/button';
@@ -25,6 +25,7 @@ export default function ChatPage() {
   const supabase = createClient();
   const { addToast } = useToast();
   
+  // Hook otimizado que já traz a lista ordenada e com nomes resolvidos
   const { contacts, loading: loadingContacts } = useChatList();
   
   const [activeContact, setActiveContact] = useState<ChatContact | null>(null);
@@ -288,7 +289,7 @@ export default function ChatPage() {
   return (
     <div className="flex h-[calc(100vh-6rem)] md:h-[calc(100vh-4rem)] rounded-xl border border-zinc-800 bg-zinc-950/50 overflow-hidden shadow-2xl animate-in fade-in duration-500">
       
-      {/* Sidebar Listagem - Mobile: Esconde se tiver contato ativo. Desktop: Sempre mostra */}
+      {/* Sidebar Listagem */}
       <div className={cn(
           "w-full md:w-80 border-r border-zinc-800 flex-col bg-zinc-900/30 backdrop-blur-sm",
           activeContact ? "hidden md:flex" : "flex"
@@ -312,21 +313,36 @@ export default function ChatPage() {
                     onClick={() => setActiveContact(contact)}
                     className={`p-4 border-b border-zinc-800/30 cursor-pointer transition-all hover:bg-zinc-800/50 ${activeContact?.id === contact.id ? 'bg-primary/5 border-l-2 border-l-primary' : 'border-l-2 border-l-transparent'}`}
                 >
-                    <div className="flex justify-between items-center mb-1">
-                        <span className={`font-medium truncate max-w-[150px] ${activeContact?.id === contact.id ? 'text-primary' : 'text-zinc-200'}`}>
-                            {contact.name || cleanJid(contact.remote_jid)}
-                        </span>
-                        <span className="text-[10px] text-zinc-500 whitespace-nowrap">
+                    <div className="flex justify-between items-start mb-1">
+                        <div className="flex items-center gap-3 overflow-hidden">
+                             {/* Avatar ou Placeholder */}
+                             <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center shrink-0 border border-zinc-700 overflow-hidden">
+                                {contact.profile_pic_url ? (
+                                    <img src={contact.profile_pic_url} alt={contact.name} className="w-full h-full object-cover" />
+                                ) : (
+                                    <User className="w-5 h-5 text-zinc-500" />
+                                )}
+                             </div>
+                             <div className="min-w-0">
+                                <span className={`font-medium truncate block ${activeContact?.id === contact.id ? 'text-primary' : 'text-zinc-200'}`}>
+                                    {contact.name}
+                                </span>
+                                <p className="text-xs text-zinc-500 truncate">{contact.last_message || 'Inicie a conversa'}</p>
+                             </div>
+                        </div>
+                        <span className="text-[10px] text-zinc-500 whitespace-nowrap pt-1">
                             {contact.last_message_time ? new Date(contact.last_message_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : ''}
                         </span>
                     </div>
-                    <p className="text-xs text-zinc-500 truncate">{contact.last_message || '...'}</p>
                 </div>
              ))}
+             {contacts.length === 0 && !loadingContacts && (
+                 <div className="p-8 text-center text-zinc-500 text-sm">Nenhuma conversa encontrada.</div>
+             )}
         </div>
       </div>
 
-      {/* Área do Chat - Mobile: Mostra se tiver contato. Desktop: Flex */}
+      {/* Área do Chat */}
       <div className={cn(
           "flex-1 flex-col bg-[#09090b] relative",
           activeContact ? "flex" : "hidden md:flex"
@@ -336,7 +352,6 @@ export default function ChatPage() {
                 {/* Header do Chat */}
                 <div className="h-16 border-b border-zinc-800 flex items-center justify-between px-4 md:px-6 bg-zinc-900/50 backdrop-blur-md z-10">
                     <div className="flex items-center gap-3">
-                        {/* Botão Voltar Mobile */}
                         <Button 
                             variant="ghost" 
                             size="icon" 
@@ -346,8 +361,12 @@ export default function ChatPage() {
                             <ArrowLeft className="h-5 w-5" />
                         </Button>
 
-                        <div className="h-10 w-10 rounded-full bg-gradient-to-tr from-zinc-800 to-zinc-700 flex items-center justify-center text-sm font-bold border border-zinc-700">
-                            {activeContact.name?.[0]}
+                        <div className="h-10 w-10 rounded-full bg-zinc-800 flex items-center justify-center border border-zinc-700 overflow-hidden">
+                             {activeContact.profile_pic_url ? (
+                                <img src={activeContact.profile_pic_url} alt={activeContact.name} className="w-full h-full object-cover" />
+                             ) : (
+                                <User className="w-5 h-5 text-zinc-500" />
+                             )}
                         </div>
                         <div className="flex-1 min-w-0">
                             <h3 className="font-medium text-white flex items-center gap-2 truncate">

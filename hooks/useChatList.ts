@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { useAuthStore } from '@/store/useAuthStore';
 import { ChatContact } from '@/types';
-import { cleanJid } from '@/lib/utils';
 
 export function useChatList() {
   const { user } = useAuthStore();
@@ -12,104 +11,120 @@ export function useChatList() {
 
   useEffect(() => {
     if (!user?.company_id) return;
-    
-    const fetchChatData = async () => {
+
+    const fetchChats = async () => {
+      try {
         setLoading(true);
+        
+        // 1. Busca mensagens recentes com Joins para Leads e Contatos
+        // Nota: Isso assume que existem Foreign Keys configuradas no Supabase entre:
+        // messages.lead_id -> leads.id
+        // messages.remote_jid -> contacts.jid (Se não houver FK estrita, os campos virão null, o que tratamos abaixo)
+        const { data: messages, error } = await supabase
+          .from('messages')
+          .select(`
+            remote_jid,
+            content,
+            created_at,
+            message_type,
+            from_me,
+            status,
+            leads (name, profile_pic_url),
+            contacts (name, push_name, profile_pic_url)
+          `)
+          .eq('company_id', user.company_id)
+          .order('created_at', { ascending: false });
 
-        try {
-            // 1. Buscar Contatos (Source of Truth para Nomes e Fotos)
-            const { data: contactsData, error: contactsError } = await supabase
-                .from('contacts')
-                .select('*')
-                .eq('company_id', user.company_id);
+        if (error) throw error;
 
-            if (contactsError) throw contactsError;
+        // 2. Agrupa por conversa (remote_jid) usando um Map para garantir unicidade
+        const chatMap = new Map<string, ChatContact>();
 
-            // 2. Buscar últimas mensagens (para montar a lista de conversas ativas)
-            const { data: messagesData } = await supabase
-                .from('messages')
-                .select('remote_jid, content, created_at, message_type, from_me, status')
-                .eq('company_id', user.company_id)
-                .order('created_at', { ascending: false })
-                .limit(500);
-
-            // 3. Processamento e Merge
-            const chatMap = new Map<string, ChatContact>();
+        messages?.forEach((msg: any) => {
+          if (!chatMap.has(msg.remote_jid)) {
             
-            // Cria mapa de detalhes de contato usando a chave LIMPA (sem sufixos de dispositivo)
-            const contactDetailsMap = new Map();
-            contactsData?.forEach((c: any) => {
-                const jid = cleanJid(c.jid);
-                if (jid) contactDetailsMap.set(jid, c);
-            });
+            // Lógica de Prioridade de Nome:
+            // 1. Nome Salvo na Agenda/Grupo (contact.name)
+            // 2. Nome Público do WhatsApp (contact.push_name)
+            // 3. Nome no CRM (lead.name)
+            // 4. Número formatado
+            const contactName = msg.contacts?.name || msg.contacts?.push_name;
+            const leadName = msg.leads?.name;
+            const phoneName = msg.remote_jid.split('@')[0];
+            
+            const displayName = contactName || leadName || phoneName;
 
-            if (messagesData) {
-                messagesData.forEach((msg) => {
-                    // Limpa o JID da mensagem também para garantir o match
-                    const cleanRemoteJid = cleanJid(msg.remote_jid);
-                    if (!cleanRemoteJid) return;
-                    
-                    if (chatMap.has(cleanRemoteJid)) return;
+            // Prioridade de Foto:
+            const displayPic = msg.contacts?.profile_pic_url || msg.leads?.profile_pic_url;
 
-                    const contactInfo = contactDetailsMap.get(cleanRemoteJid);
-                    
-                    // Formata preview da mensagem baseado no message_type
-                    let preview = msg.content;
-                    const type = msg.message_type || (msg as any).type;
-
-                    if (type === 'image') preview = '📷 Imagem';
-                    else if (type === 'audio') preview = '🎵 Áudio';
-                    else if (type === 'video') preview = '🎥 Vídeo';
-                    else if (type === 'document') preview = '📄 Arquivo';
-                    else if (type === 'sticker') preview = '👾 Figurinha';
-                    else if (type === 'poll') preview = '📊 Enquete';
-                    else if (type === 'location') preview = '📍 Localização';
-
-                    chatMap.set(cleanRemoteJid, {
-                        jid: msg.remote_jid, // Mantém o JID original da mensagem para reply
-                        remote_jid: msg.remote_jid,
-                        phone_number: cleanRemoteJid,
-                        company_id: user.company_id,
-                        name: contactInfo?.name || contactInfo?.push_name || cleanRemoteJid,
-                        push_name: contactInfo?.push_name,
-                        profile_pic_url: contactInfo?.profile_pic_url,
-                        last_message: preview,
-                        last_message_time: msg.created_at,
-                        updated_at: msg.created_at,
-                        unread_count: 0
-                    });
-                });
+            // Formatação do Preview da Mensagem
+            let preview = msg.content;
+            const type = msg.message_type || (msg as any).type;
+            
+            if (!preview && type !== 'text') {
+                if (type === 'image') preview = '📷 Imagem';
+                else if (type === 'audio') preview = '🎵 Áudio';
+                else if (type === 'video') preview = '🎥 Vídeo';
+                else if (type === 'document') preview = '📄 Documento';
+                else if (type === 'sticker') preview = '👾 Figurinha';
+                else if (type === 'poll') preview = '📊 Enquete';
+                else if (type === 'location') preview = '📍 Localização';
             }
 
-            const formatted = Array.from(chatMap.values());
-            
-            formatted.sort((a, b) => {
-                const dateA = new Date(a.last_message_time || 0).getTime();
-                const dateB = new Date(b.last_message_time || 0).getTime();
-                return dateB - dateA;
-            });
-            
-            setContacts(formatted);
+            // Tratamento especial para enquetes (JSON)
+            if (type === 'poll' && typeof preview === 'string' && preview.startsWith('{')) {
+                try {
+                    const pollData = JSON.parse(preview);
+                    preview = `📊 ${pollData.name || 'Enquete'}`;
+                } catch (e) { preview = '📊 Enquete'; }
+            }
 
-        } catch (error) {
-            console.error("Erro ao carregar lista de chats:", error);
-        } finally {
-            setLoading(false);
-        }
+            chatMap.set(msg.remote_jid, {
+              id: msg.remote_jid,
+              company_id: user.company_id,
+              jid: msg.remote_jid,
+              remote_jid: msg.remote_jid,
+              name: displayName,
+              push_name: msg.contacts?.push_name,
+              profile_pic_url: displayPic,
+              unread_count: 0, // Implementar lógica de count se necessário
+              last_message: preview,
+              last_message_time: msg.created_at,
+              phone_number: phoneName
+            });
+          }
+        });
+
+        setContacts(Array.from(chatMap.values()));
+
+      } catch (err) {
+        console.error('Erro ao buscar lista de chats:', err);
+      } finally {
+        setLoading(false);
+      }
     };
 
-    fetchChatData();
-    
-    // Inscreve para atualizações em tempo real
+    fetchChats();
+
+    // 3. Realtime Updates
     const channel = supabase
-        .channel(`chat_list_main:${user.company_id}`)
-        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `company_id=eq.${user.company_id}` }, () => fetchChatData())
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'contacts', filter: `company_id=eq.${user.company_id}` }, () => fetchChatData())
-        .subscribe();
+      .channel(`chat-list-realtime:${user.company_id}`)
+      .on('postgres_changes', { 
+        event: 'INSERT', 
+        schema: 'public', 
+        table: 'messages',
+        filter: `company_id=eq.${user.company_id}`
+      }, (payload) => {
+        // Atualização simples: recarrega para reordenar
+        // Poderia ser otimizado para inserir no topo do estado local
+        fetchChats(); 
+      })
+      .subscribe();
 
     return () => {
-        supabase.removeChannel(channel);
+      supabase.removeChannel(channel);
     };
+
   }, [user?.company_id, supabase]);
 
   return { contacts, loading };
