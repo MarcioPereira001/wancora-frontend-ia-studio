@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Search, RefreshCw, Plus, Filter, Loader2, DollarSign, GripVertical, Settings2, Edit3, PaintBucket, Users } from 'lucide-react';
+import { Search, RefreshCw, Filter, Loader2, DollarSign, GripVertical, Settings2, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useKanban } from '@/hooks/useKanban';
@@ -19,7 +19,6 @@ export function KanbanBoard() {
   const [selectedUserId, setSelectedUserId] = useState<string>('all');
   
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
-  const [isNewLeadOpen, setIsNewLeadOpen] = useState(false);
   
   // States para Edição de Estágio
   const [editingStage, setEditingStage] = useState<KanbanColumn | null>(null);
@@ -60,12 +59,12 @@ export function KanbanBoard() {
   // --- DND HANDLERS ---
 
   const handleDragStart = (e: React.DragEvent, type: 'CARD' | 'COLUMN', id: string, colId?: string) => {
-    e.stopPropagation();
+    e.stopPropagation(); // Impede que o Pan Drag ative
     setDraggingType(type);
     setDraggingId(id);
     if (type === 'CARD' && colId) setDraggingFromCol(colId);
     
-    // Ghost image setup (opcional, o navegador faz default)
+    // Configura imagem fantasma e efeito
     e.dataTransfer.effectAllowed = "move";
   };
 
@@ -77,10 +76,12 @@ export function KanbanBoard() {
     e.preventDefault();
     e.stopPropagation();
 
-    // CARD DROP
+    // CARD DROP - Lógica inteligente de "encaixe"
     if (draggingType === 'CARD' && type === 'COLUMN') {
         if (draggingId && draggingFromCol && draggingFromCol !== targetId) {
-            moveLead(draggingId, targetId); // targetId é o ID da coluna destino
+            // Nota: Sem coluna 'position' no banco, a ordem persistida é por updated_at.
+            // Movemos para a nova coluna.
+            moveLead(draggingId, targetId); 
         }
     }
 
@@ -92,12 +93,10 @@ export function KanbanBoard() {
             const newIndex = columns.findIndex(c => c.id === targetId);
             
             if (oldIndex !== -1 && newIndex !== -1) {
-                // Cria novo array reordenado
                 const newOrder = [...columns];
                 const [moved] = newOrder.splice(oldIndex, 1);
                 newOrder.splice(newIndex, 0, moved);
                 
-                // Mapeia para formato { id, position }
                 const payload = newOrder.map((col, idx) => ({ id: col.id, position: idx }));
                 reorderStages(payload);
             }
@@ -110,23 +109,35 @@ export function KanbanBoard() {
     setDraggingFromCol(null);
   };
 
-  // --- SCROLL HANDLERS ---
+  // --- SCROLL PAN HANDLERS (Arrastar para navegar) ---
   const onMouseDown = (e: React.MouseEvent) => {
-     if ((e.target as HTMLElement).closest('.draggable-item') || (e.target as HTMLElement).closest('.interactive')) return;
+     // Previne scroll drag se clicar em itens interativos ou se estiver arrastando um card
+     if ((e.target as HTMLElement).closest('.interactive') || draggingType) return;
+     
      isDown.current = true;
      if(scrollContainerRef.current) {
+         scrollContainerRef.current.classList.add('cursor-grabbing');
          startX.current = e.pageX - scrollContainerRef.current.offsetLeft;
          scrollLeft.current = scrollContainerRef.current.scrollLeft;
      }
   };
-  const onMouseLeave = () => isDown.current = false;
-  const onMouseUp = () => isDown.current = false;
+  
+  const onMouseLeave = () => {
+      isDown.current = false;
+      scrollContainerRef.current?.classList.remove('cursor-grabbing');
+  };
+  
+  const onMouseUp = () => {
+      isDown.current = false;
+      scrollContainerRef.current?.classList.remove('cursor-grabbing');
+  };
+  
   const onMouseMove = (e: React.MouseEvent) => {
       if (!isDown.current) return;
       e.preventDefault();
       if(scrollContainerRef.current) {
           const x = e.pageX - scrollContainerRef.current.offsetLeft;
-          const walk = (x - startX.current) * 1.5; 
+          const walk = (x - startX.current) * 1.5; // Velocidade do scroll
           scrollContainerRef.current.scrollLeft = scrollLeft.current - walk;
       }
   };
@@ -179,8 +190,8 @@ export function KanbanBoard() {
             </div>
         </div>
         <div className="flex gap-2 w-full md:w-auto">
+           {/* Botão Novo Lead foi removido daqui para evitar duplicação */}
            <Button variant="ghost" size="icon" onClick={() => refresh()} title="Atualizar"><RefreshCw size={18} /></Button>
-           <Button onClick={() => setIsNewLeadOpen(true)} className="flex-1 md:flex-none gap-2 font-bold shadow-[0_0_15px_rgba(34,197,94,0.2)]"><Plus size={18} /> Novo Lead</Button>
         </div>
       </div>
 
@@ -191,7 +202,7 @@ export function KanbanBoard() {
         onMouseLeave={onMouseLeave}
         onMouseUp={onMouseUp}
         onMouseMove={onMouseMove}
-        className="flex-1 flex gap-4 overflow-x-auto pb-4 px-1 cursor-grab active:cursor-grabbing select-none"
+        className="flex-1 flex gap-4 overflow-x-auto pb-4 px-1 cursor-grab select-none custom-scrollbar"
       >
         {columns.map((col) => {
           const filteredItems = getFilteredItems(col.items);
@@ -199,47 +210,46 @@ export function KanbanBoard() {
           return (
             <div 
                 key={col.id}
-                draggable
-                onDragStart={(e) => handleDragStart(e, 'COLUMN', col.id)}
                 onDragOver={handleDragOver}
                 onDrop={(e) => handleDrop(e, col.id, 'COLUMN')}
                 className={cn(
-                    "min-w-[340px] w-[340px] flex flex-col h-full shrink-0 bg-zinc-900/20 rounded-xl border transition-all duration-200 draggable-item",
+                    "min-w-[340px] w-[340px] flex flex-col h-full shrink-0 bg-zinc-900/20 rounded-xl border transition-all duration-200",
                     draggingType === 'COLUMN' && draggingId === col.id ? "opacity-50 border-dashed border-primary" : "border-zinc-800/50 hover:border-zinc-700/50"
                 )}
             >
-                {/* Column Header */}
-                <div className="p-3 border-b border-zinc-800/50 bg-zinc-900/50 rounded-t-xl backdrop-blur-sm group/header relative hover:bg-zinc-900/80 transition-colors">
-                <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2.5 flex-1 min-w-0">
-                        <div 
-                            className="cursor-move p-1 rounded hover:bg-zinc-800 text-zinc-600 hover:text-zinc-300 transition-colors interactive"
-                            title="Segure para arrastar a coluna"
-                        >
-                            <GripVertical size={14} />
+                {/* Column Header - Apenas aqui é Draggable para reordenar coluna */}
+                <div 
+                    draggable
+                    onDragStart={(e) => handleDragStart(e, 'COLUMN', col.id)}
+                    className="p-3 border-b border-zinc-800/50 bg-zinc-900/50 rounded-t-xl backdrop-blur-sm group/header relative hover:bg-zinc-900/80 transition-colors cursor-move interactive"
+                >
+                    <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                            <div className="text-zinc-600 hover:text-zinc-300 transition-colors">
+                                <GripVertical size={14} />
+                            </div>
+                            <div className="w-3 h-3 rounded-full shadow-[0_0_8px_currentColor] opacity-80 shrink-0" style={{ backgroundColor: col.color || '#52525b', color: col.color || '#52525b' }} />
+                            <span className="font-bold text-zinc-100 text-sm tracking-tight truncate">{col.title}</span>
                         </div>
-                        <div className="w-3 h-3 rounded-full shadow-[0_0_8px_currentColor] opacity-80 shrink-0" style={{ backgroundColor: col.color || '#52525b', color: col.color || '#52525b' }} />
-                        <span className="font-bold text-zinc-100 text-sm tracking-tight truncate">{col.title}</span>
+                        
+                        <div className="flex items-center gap-2">
+                            <span className="bg-zinc-950 text-zinc-500 text-[10px] px-2 py-0.5 rounded-full font-mono font-bold border border-zinc-800">
+                                {filteredItems.length}
+                            </span>
+                            <button 
+                                onClick={(e) => { e.stopPropagation(); setEditingStage(col); }}
+                                className="p-1 text-zinc-600 hover:text-zinc-300 opacity-0 group-hover/header:opacity-100 transition-opacity interactive"
+                            >
+                                <Settings2 size={14} />
+                            </button>
+                        </div>
                     </div>
                     
-                    <div className="flex items-center gap-2">
-                        <span className="bg-zinc-950 text-zinc-500 text-[10px] px-2 py-0.5 rounded-full font-mono font-bold border border-zinc-800">
-                            {filteredItems.length}
-                        </span>
-                        <button 
-                            onClick={() => setEditingStage(col)}
-                            className="p-1 text-zinc-600 hover:text-zinc-300 opacity-0 group-hover/header:opacity-100 transition-opacity interactive"
-                        >
-                            <Settings2 size={14} />
-                        </button>
+                    {/* Totalizer */}
+                    <div className="flex items-center gap-1 text-xs text-zinc-500 pl-8">
+                        <DollarSign size={10} />
+                        <span className="font-mono">{formatCurrency(col.totalValue)}</span>
                     </div>
-                </div>
-                
-                {/* Totalizer */}
-                <div className="flex items-center gap-1 text-xs text-zinc-500 pl-8">
-                    <DollarSign size={10} />
-                    <span className="font-mono">{formatCurrency(col.totalValue)}</span>
-                </div>
                 </div>
                 
                 {/* Column Body (Drop Zone for Cards) */}
@@ -249,8 +259,9 @@ export function KanbanBoard() {
                         draggingType === 'CARD' && draggingFromCol && draggingFromCol !== col.id ? "bg-primary/5" : ""
                     )}
                     onDragOver={handleDragOver}
-                    onDrop={(e) => handleDrop(e, col.id, 'COLUMN')} // Drop de card na coluna
+                    onDrop={(e) => handleDrop(e, col.id, 'COLUMN')} 
                 >
+                {/* Visual Placeholder for Card Drop */}
                 {draggingType === 'CARD' && draggingFromCol && draggingFromCol !== col.id && (
                     <div className="absolute inset-0 pointer-events-none border-2 border-dashed border-primary/20 rounded-b-xl z-0" />
                 )}
@@ -281,12 +292,6 @@ export function KanbanBoard() {
         lead={selectedLead} 
         isOpen={!!selectedLead} 
         onClose={() => setSelectedLead(null)} 
-      />
-      <NewLeadModal 
-        isOpen={isNewLeadOpen} 
-        onClose={() => setIsNewLeadOpen(false)} 
-        onSuccess={refresh}
-        defaultStageId={columns[0]?.id}
       />
       <EditStageModal
         stage={editingStage}

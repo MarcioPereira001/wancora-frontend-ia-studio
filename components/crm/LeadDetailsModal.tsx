@@ -8,7 +8,8 @@ import { TagSelector } from './TagSelector';
 import { useToast } from '@/hooks/useToast';
 import { useKanban } from '@/hooks/useKanban';
 import { useLeadData } from '@/hooks/useLeadData';
-import { Trash2, Save, CheckSquare, Layout, Clock, Plus, X } from 'lucide-react';
+import { useTeam } from '@/hooks/useTeam';
+import { Trash2, Save, CheckSquare, Layout, Clock, Plus, User } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Checkbox } from '@/components/ui/checkbox';
 
@@ -21,6 +22,7 @@ interface LeadDetailsModalProps {
 export function LeadDetailsModal({ lead, isOpen, onClose }: LeadDetailsModalProps) {
   const { updateLead, deleteLead } = useKanban();
   const { checklist, addCheckitem, toggleCheckitem } = useLeadData(lead?.id, lead?.phone);
+  const { members } = useTeam(); 
   const { addToast } = useToast();
   
   const [activeTab, setActiveTab] = useState<'details' | 'checklist' | 'history'>('details');
@@ -28,7 +30,6 @@ export function LeadDetailsModal({ lead, isOpen, onClose }: LeadDetailsModalProp
   const [loading, setLoading] = useState(false);
   const [newItemText, setNewItemText] = useState('');
 
-  // Sincroniza estado local quando o lead prop muda
   useEffect(() => {
     if (lead) setData(lead);
   }, [lead]);
@@ -45,7 +46,8 @@ export function LeadDetailsModal({ lead, isOpen, onClose }: LeadDetailsModalProp
             value_potential: data.value_potential,
             notes: data.notes,
             tags: data.tags,
-            temperature: data.temperature
+            temperature: data.temperature,
+            owner_id: data.owner_id // Atualiza o dono
         }});
         addToast({ type: 'success', title: 'Salvo', message: 'Lead atualizado.' });
         onClose();
@@ -115,6 +117,26 @@ export function LeadDetailsModal({ lead, isOpen, onClose }: LeadDetailsModalProp
                     <div>
                         <label className="text-xs text-zinc-500 uppercase font-bold">Valor (R$)</label>
                         <Input type="number" value={data.value_potential || 0} onChange={e => setData({...data, value_potential: Number(e.target.value)})} className="mt-1" />
+                    </div>
+                </div>
+
+                {/* Seletor de Responsável */}
+                <div>
+                    <label className="text-xs text-zinc-500 uppercase font-bold">Responsável (Dono)</label>
+                    <div className="relative mt-1">
+                        <User className="absolute left-3 top-2.5 w-4 h-4 text-zinc-500" />
+                        <select 
+                            value={data.owner_id || ''}
+                            onChange={e => setData({...data, owner_id: e.target.value})}
+                            className="w-full bg-zinc-950 border border-zinc-800 rounded-md py-2 pl-9 pr-3 text-sm text-zinc-200 outline-none focus:ring-1 focus:ring-primary appearance-none"
+                        >
+                            <option value="" disabled>Selecione um responsável</option>
+                            {members.map(m => (
+                                <option key={m.id} value={m.id}>
+                                    {m.name} ({m.role === 'owner' ? 'Dono' : m.role === 'admin' ? 'Admin' : 'Agente'})
+                                </option>
+                            ))}
+                        </select>
                     </div>
                 </div>
                 

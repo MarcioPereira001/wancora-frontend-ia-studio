@@ -3,13 +3,15 @@
 import React, { useState } from 'react';
 import { KanbanBoard } from '@/components/crm/KanbanBoard';
 import { Button } from '@/components/ui/button';
-import { Plus, GitMerge, Edit2, Check, X } from 'lucide-react';
+import { Plus, GitMerge, Edit2, Check, X, ChevronDown } from 'lucide-react';
 import { NewLeadModal } from '@/components/crm/NewLeadModal';
 import { NewPipelineModal } from '@/components/crm/NewPipelineModal';
 import { useKanban } from '@/hooks/useKanban';
 import { Input } from '@/components/ui/input';
+import { useAuthStore } from '@/store/useAuthStore'; // Para checar permissão
 
 export default function CRMPage() {
+  const { user } = useAuthStore();
   const [isLeadModalOpen, setIsLeadModalOpen] = useState(false);
   const [isPipeModalOpen, setIsPipeModalOpen] = useState(false);
   const [isEditingPipeName, setIsEditingPipeName] = useState(false);
@@ -33,6 +35,8 @@ export default function CRMPage() {
       }
   };
 
+  const isManager = user?.role === 'owner' || user?.role === 'admin';
+
   return (
     <div className="flex flex-col h-[calc(100vh-8rem)]">
       {/* Top Bar com Seletor de Pipeline */}
@@ -51,11 +55,11 @@ export default function CRMPage() {
                       <Button size="icon" variant="ghost" onClick={() => setIsEditingPipeName(false)} className="h-9 w-9 text-red-500 hover:text-red-400 hover:bg-red-500/10"><X size={18} /></Button>
                   </div>
               ) : (
-                  <div className="flex items-center gap-2 group">
+                  <div className="flex items-center gap-2 group relative">
                       <select 
                         value={selectedPipelineId || ''}
                         onChange={(e) => setSelectedPipelineId(e.target.value)}
-                        className="bg-transparent text-3xl font-bold text-white outline-none cursor-pointer hover:text-zinc-200 transition-colors appearance-none pr-4"
+                        className="bg-transparent text-3xl font-bold text-white outline-none cursor-pointer hover:text-zinc-200 transition-colors appearance-none pr-8 z-10 relative"
                       >
                           {pipelines.map(p => (
                               <option key={p.id} value={p.id} className="text-sm bg-zinc-900 text-zinc-200">
@@ -63,17 +67,23 @@ export default function CRMPage() {
                               </option>
                           ))}
                       </select>
-                      <Button size="icon" variant="ghost" onClick={startEditPipe} className="opacity-0 group-hover:opacity-100 transition-opacity h-8 w-8 text-zinc-500 hover:text-white">
-                          <Edit2 size={14} />
-                      </Button>
+                      <ChevronDown className="absolute right-0 top-1/2 -translate-y-1/2 w-6 h-6 text-zinc-500 pointer-events-none" />
+                      
+                      {isManager && (
+                          <Button size="icon" variant="ghost" onClick={startEditPipe} className="opacity-0 group-hover:opacity-100 transition-opacity h-8 w-8 text-zinc-500 hover:text-white ml-2">
+                              <Edit2 size={14} />
+                          </Button>
+                      )}
                   </div>
               )}
           </div>
           <div className="flex items-center gap-2 mt-1">
               <span className="text-zinc-400 text-sm">Pipeline de Vendas</span>
-              <button onClick={() => setIsPipeModalOpen(true)} className="text-xs text-primary hover:underline flex items-center gap-1 bg-primary/5 px-2 py-0.5 rounded border border-primary/20 transition-colors">
-                  <GitMerge size={10} /> Criar Novo Funil
-              </button>
+              {isManager && (
+                  <button onClick={() => setIsPipeModalOpen(true)} className="text-xs text-primary hover:underline flex items-center gap-1 bg-primary/5 px-2 py-0.5 rounded border border-primary/20 transition-colors">
+                      <GitMerge size={10} /> Criar Novo Funil
+                  </button>
+              )}
           </div>
         </div>
 
