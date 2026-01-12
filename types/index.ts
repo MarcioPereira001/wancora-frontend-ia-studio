@@ -31,23 +31,21 @@ export interface Profile {
 export interface Lead {
   id: string;
   company_id: string;
-  stage_id: string;
-  pipeline_stage_id?: string; // Novo
+  stage_id: string; // FK para pipeline_stages
   name: string;
   phone: string;
   email?: string;
   profile_pic_url?: string;
-  value_potential?: number;
+  value_potential?: number; // Valor monetário (ex: 1500.00)
   lead_score?: number;
   temperature: 'cold' | 'warm' | 'hot';
-  status?: string; // Novo
+  status?: string;
   tags: string[];
   notes?: string;
   created_at: string;
   updated_at?: string;
   next_appointment_at?: string;
   owner_id?: string;
-  type?: 'b2b' | 'b2c';
 }
 
 export interface PipelineStage {
@@ -56,7 +54,7 @@ export interface PipelineStage {
   name: string;
   position: number;
   color: string;
-  items?: Lead[];
+  items?: Lead[]; // Populado no frontend
 }
 
 export interface Pipeline {
@@ -68,11 +66,12 @@ export interface Pipeline {
 }
 
 export interface KanbanColumn {
-  id: string;
+  id: string; // stage_id
   title: string;
   color: string;
   order: number;
-  items?: Lead[];
+  totalValue: number; // Novo: Soma dos valores
+  items: Lead[];
 }
 
 export interface ChecklistItem {
@@ -84,13 +83,11 @@ export interface ChecklistItem {
 }
 
 // --- WHATSAPP & CHAT ---
-
-// Interface Nova Solicitada
 export interface Contact {
   jid: string;
-  name?: string;       // Nome da Agenda / Grupo
-  push_name?: string;  // Nome do Perfil (Novo)
-  profile_pic_url?: string; // Novo
+  name?: string;
+  push_name?: string;
+  profile_pic_url?: string;
   company_id: string;
   email?: string;
   phone?: string;
@@ -101,7 +98,6 @@ export interface WhatsAppInstance {
   company_id: string;
   session_id: string;
   name: string;
-  // 'qr_ready' é o status exato que o backend envia quando tem QR
   status: 'connected' | 'disconnected' | 'qr_ready' | 'qrcode' | 'connecting';
   qrcode_url?: string | null;
   battery_level?: number;
@@ -117,17 +113,15 @@ export interface Message {
   company_id: string;
   remote_jid: string;
   from_me: boolean;
-  content: string; // Conteúdo principal (texto ou JSON de enquete)
-  body?: string; // Fallback legacy
+  content: string;
+  body?: string;
   message_type: 'text' | 'image' | 'video' | 'audio' | 'document' | 'sticker' | 'location' | 'poll' | 'contact';
   status: 'sent' | 'delivered' | 'read' | 'failed' | 'sending';
   created_at: string;
   has_media?: boolean;
-  media_url?: string; // URL pública do arquivo
+  media_url?: string;
   fileName?: string;
   caption?: string;
-  
-  // Campos de Join (Novos)
   lead_id?: string;
   lead?: Lead;
   contact?: Contact;
@@ -148,7 +142,6 @@ export interface ChatContact {
   updated_at?: string;
 }
 
-// --- AI AGENTS ---
 export interface Agent {
   id: string;
   company_id: string;

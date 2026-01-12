@@ -3,7 +3,7 @@ import { createClient } from '@/utils/supabase/client';
 import { useAuthStore } from '@/store/useAuthStore';
 import { ChatContact } from '@/types';
 
-// Agora aceita selectedSessionId como parâmetro
+// Agora aceita selectedSessionId como parâmetro obrigatório para isolamento
 export function useChatList(selectedSessionId: string | null) {
   const { user } = useAuthStore();
   const supabase = createClient();
@@ -11,8 +11,9 @@ export function useChatList(selectedSessionId: string | null) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Se não tiver instância selecionada, não carregamos nada para evitar vazamento de dados
     if (!user?.company_id || !selectedSessionId) {
-        setContacts([]); // Se não tiver instância selecionada, limpa a lista
+        setContacts([]); 
         setLoading(false);
         return;
     }
@@ -22,6 +23,7 @@ export function useChatList(selectedSessionId: string | null) {
         setLoading(true);
         
         // 1. Busca mensagens FILTRANDO PELA SESSÃO (session_id)
+        // Isso é o coração do isolamento multi-instância
         const { data: messages, error } = await supabase
           .from('messages')
           .select(`
@@ -35,12 +37,12 @@ export function useChatList(selectedSessionId: string | null) {
             contacts (name, push_name, profile_pic_url)
           `)
           .eq('company_id', user.company_id)
-          .eq('session_id', selectedSessionId) // <--- O PULO DO GATO 🐱
+          .eq('session_id', selectedSessionId) // <--- FILTRO CRÍTICO
           .order('created_at', { ascending: false });
 
         if (error) throw error;
 
-        // 2. Agrupa por conversa
+        // 2. Agrupa por conversa (remote_jid)
         const chatMap = new Map<string, ChatContact>();
 
         messages?.forEach((msg: any) => {
@@ -54,6 +56,7 @@ export function useChatList(selectedSessionId: string | null) {
             let preview = msg.content;
             const type = msg.message_type || (msg as any).type;
             
+            // Tratamento de preview para tipos não textuais
             if (!preview && type !== 'text') {
                 if (type === 'image') preview = '📷 Imagem';
                 else if (type === 'audio') preview = '🎵 Áudio';
@@ -77,11 +80,10 @@ export function useChatList(selectedSessionId: string | null) {
               name: displayName,
               push_name: msg.contacts?.push_name,
               profile_pic_url: displayPic,
-              unread_count: 0,
+              unread_count: 0, // TODO: Implementar contador real
               last_message: preview,
               last_message_time: msg.created_at,
               phone_number: phoneName,
-              // session_id: selectedSessionId // Útil se precisar debugar
             });
           }
         });
@@ -97,7 +99,7 @@ export function useChatList(selectedSessionId: string | null) {
 
     fetchChats();
 
-    // 3. Realtime com Filtro de Sessão
+    // 3. Realtime com Filtro de Sessão Específico
     const channel = supabase
       .channel(`chat-list:${selectedSessionId}`)
       .on('postgres_changes', { 

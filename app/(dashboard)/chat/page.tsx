@@ -7,7 +7,7 @@ import { ChatContact, Message, Instance } from '@/types';
 import { cleanJid, cn } from '@/lib/utils';
 import { 
     Loader2, Search, Send, Paperclip, Sparkles, Mic, Bot, 
-    Image as IconImage, FileText, BarChart2, X, Trash2, ArrowLeft, User, Smartphone
+    Image as IconImage, FileText, BarChart2, X, Trash2, ArrowLeft, User, Smartphone, Wifi
 } from 'lucide-react';
 import { MessageBubble } from '@/components/chat/MessageBubble';
 import { Button } from '@/components/ui/button';
@@ -29,18 +29,25 @@ export default function ChatPage() {
   const [instances, setInstances] = useState<Instance[]>([]);
   const [selectedInstance, setSelectedInstance] = useState<Instance | null>(null);
 
-  // Busca instâncias disponíveis
+  // Busca instâncias disponíveis apenas conectadas
   useEffect(() => {
       const fetchInstances = async () => {
-          const { data } = await supabase.from('instances').select('*').eq('status', 'connected');
+          if (!user?.company_id) return;
+          const { data } = await supabase
+            .from('instances')
+            .select('*')
+            .eq('company_id', user.company_id)
+            .eq('status', 'connected')
+            .order('created_at', { ascending: true });
+
           if (data && data.length > 0) {
               setInstances(data);
               // Seleciona a primeira automaticamente se não tiver selecionado
               if (!selectedInstance) setSelectedInstance(data[0]);
           }
       };
-      if (user?.company_id) fetchInstances();
-  }, [user?.company_id]);
+      fetchInstances();
+  }, [user?.company_id, supabase]); // selectedInstance removido das deps para não resetar loop
 
   // --- HOOK DE CHAT (VINCULADO À INSTÂNCIA SELECIONADA) ---
   const { contacts, loading: loadingContacts } = useChatList(selectedInstance?.session_id || null);
@@ -50,8 +57,7 @@ export default function ChatPage() {
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [input, setInput] = useState("");
   const [isAiLoading, setIsAiLoading] = useState(false);
-  const [isDisconnected, setIsDisconnected] = useState(false);
-
+  
   // States de Mídia e Utilitários
   const [isRecording, setIsRecording] = useState(false);
   const [mediaMenuOpen, setMediaMenuOpen] = useState(false);
@@ -69,18 +75,7 @@ export default function ChatPage() {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  useEffect(() => {
-    // Verifica status da instância selecionada
-    if (selectedInstance) {
-        const check = async () => {
-            const status = await whatsappService.getInstanceStatus(selectedInstance.session_id);
-            setIsDisconnected(status?.status !== 'connected');
-        };
-        check();
-    }
-  }, [selectedInstance]);
-
-  // Carregar Mensagens ao clicar no contato
+  // Carregar Mensagens ao clicar no contato (Filtrando por Session ID também)
   useEffect(() => {
       if(!activeContact || !selectedInstance) return;
       
@@ -90,7 +85,8 @@ export default function ChatPage() {
             .from('messages')
             .select('*')
             .eq('remote_jid', activeContact.remote_jid) 
-            .eq('session_id', selectedInstance.session_id) // <--- FILTRO DE INSTÂNCIA AQUI TAMBÉM
+            .eq('session_id', selectedInstance.session_id) // <--- GARANTIA DE ISOLAMENTO
+            .eq('company_id', user?.company_id)
             .order('created_at', { ascending: true });
           
           setMessages(data || []);
@@ -101,14 +97,14 @@ export default function ChatPage() {
       fetchMsgs();
 
       const subscription = supabase
-        .channel(`chat:${activeContact.remote_jid}`)
+        .channel(`chat:${activeContact.remote_jid}:${selectedInstance.session_id}`)
         .on('postgres_changes', { 
             event: '*', 
             schema: 'public', 
             table: 'messages',
             filter: `remote_jid=eq.${activeContact.remote_jid}`
         }, (payload) => {
-            // Verifica se a mensagem nova pertence a esta sessão
+            // Verifica rigorosa se a mensagem nova pertence a esta sessão
             if (payload.new && (payload.new as any).session_id === selectedInstance.session_id) {
                 if (payload.eventType === 'INSERT') {
                     setMessages(prev => {
@@ -124,7 +120,7 @@ export default function ChatPage() {
         .subscribe();
 
       return () => { subscription.unsubscribe(); };
-  }, [activeContact, selectedInstance, supabase]);
+  }, [activeContact, selectedInstance, supabase, user?.company_id]);
 
   // Função de Envio
   const dispatchMessage = async (payload: any) => {
@@ -310,33 +306,37 @@ export default function ChatPage() {
       {/* Sidebar */}
       <div className={cn("w-full md:w-80 border-r border-zinc-800 flex-col bg-zinc-900/30 backdrop-blur-sm", activeContact ? "hidden md:flex" : "flex")}>
         
-        {/* SELETOR DE INSTÂNCIA (NOVO) */}
-        <div className="p-4 border-b border-zinc-800 bg-zinc-900/80">
-            <div className="flex items-center gap-2 mb-4">
-                <Smartphone className="w-4 h-4 text-primary" />
+        {/* SELETOR DE INSTÂNCIA (HEADER) */}
+        <div className="p-4 border-b border-zinc-800 bg-zinc-900/80 space-y-3">
+            <div className="flex items-center gap-2 px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-lg shadow-sm">
+                <Wifi className={cn("w-4 h-4", selectedInstance ? "text-green-500" : "text-zinc-500")} />
                 <select 
-                    className="w-full bg-zinc-950 border border-zinc-700 text-zinc-200 text-sm rounded-md p-2 focus:ring-primary focus:border-primary outline-none"
+                    className="w-full bg-transparent text-zinc-200 text-sm font-medium outline-none cursor-pointer"
                     value={selectedInstance?.session_id || ''}
                     onChange={(e) => {
                         const inst = instances.find(i => i.session_id === e.target.value);
                         setSelectedInstance(inst || null);
                         setActiveContact(null); // Reseta chat ativo ao mudar instância
                     }}
+                    disabled={instances.length === 0}
                 >
-                    <option value="" disabled>Selecione uma Conexão</option>
-                    {instances.map(inst => (
-                        <option key={inst.session_id} value={inst.session_id}>
-                            {inst.name || `WhatsApp ${inst.session_id.slice(0,4)}`}
-                        </option>
-                    ))}
+                    {instances.length === 0 ? (
+                        <option value="">Sem Conexões Ativas</option>
+                    ) : (
+                        instances.map(inst => (
+                            <option key={inst.session_id} value={inst.session_id}>
+                                {inst.name || `WhatsApp ${inst.session_id.slice(0,4)}`}
+                            </option>
+                        ))
+                    )}
                 </select>
             </div>
 
             <div className="relative group">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500 group-focus-within:text-primary transition-colors" />
                 <input 
-                    className="w-full bg-zinc-950/50 border border-zinc-800 rounded-lg py-2.5 pl-9 pr-4 text-sm focus:outline-none focus:ring-1 focus:ring-primary text-white placeholder-zinc-600 transition-all"
-                    placeholder="Buscar na instância..."
+                    className="w-full bg-zinc-950/50 border border-zinc-800 rounded-lg py-2 pl-9 pr-4 text-sm focus:outline-none focus:ring-1 focus:ring-primary text-white placeholder-zinc-600 transition-all"
+                    placeholder="Buscar conversa..."
                 />
             </div>
         </div>
@@ -352,7 +352,7 @@ export default function ChatPage() {
                 >
                     <div className="flex justify-between items-start mb-1">
                         <div className="flex items-center gap-3 overflow-hidden">
-                             <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center shrink-0 border border-zinc-700 overflow-hidden">
+                             <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center shrink-0 border border-zinc-700 overflow-hidden relative">
                                 {contact.profile_pic_url ? (
                                     <img src={contact.profile_pic_url} alt={contact.name} className="w-full h-full object-cover" />
                                 ) : (
@@ -372,8 +372,23 @@ export default function ChatPage() {
                     </div>
                 </div>
              )) : (
-                 <div className="p-8 text-center text-zinc-500 text-sm">
-                    {selectedInstance ? "Nenhuma conversa nesta instância." : "Selecione uma conexão acima."}
+                 <div className="flex flex-col items-center justify-center h-48 text-zinc-500 gap-3 px-6 text-center">
+                    {instances.length === 0 ? (
+                        <>
+                            <Smartphone className="w-8 h-8 opacity-20" />
+                            <p className="text-sm">Nenhuma conexão ativa. Vá em "Conexões" para escanear o QR Code.</p>
+                        </>
+                    ) : selectedInstance ? (
+                        <>
+                            <MessageBubble message={{content: "...", from_me: false, id: "1", remote_jid: "", session_id: "", company_id: "", created_at: "", status: "read", message_type: "text"} as any} />
+                            <p className="text-sm">Nenhuma conversa encontrada nesta instância.</p>
+                        </>
+                    ) : (
+                        <>
+                            <Wifi className="w-8 h-8 opacity-20" />
+                            <p className="text-sm">Selecione uma conexão acima para carregar os chats.</p>
+                        </>
+                    )}
                  </div>
              )}
         </div>
@@ -381,7 +396,7 @@ export default function ChatPage() {
 
       {/* Área do Chat */}
       <div className={cn("flex-1 flex-col bg-[#09090b] relative", activeContact ? "flex" : "hidden md:flex")}>
-        {activeContact ? (
+        {activeContact && selectedInstance ? (
             <>
                 <div className="h-16 border-b border-zinc-800 flex items-center justify-between px-4 md:px-6 bg-zinc-900/50 backdrop-blur-md z-10">
                     <div className="flex items-center gap-3">
@@ -398,7 +413,9 @@ export default function ChatPage() {
                         <div className="flex-1 min-w-0">
                             <h3 className="font-medium text-white flex items-center gap-2 truncate">
                                 {activeContact.name}
-                                {isDisconnected && <span className="text-[10px] bg-red-500/10 text-red-500 px-2 rounded-full border border-red-500/20">Offline</span>}
+                                <span className="text-[10px] bg-zinc-800 text-zinc-400 px-1.5 rounded border border-zinc-700">
+                                    {selectedInstance.name}
+                                </span>
                             </h3>
                             <p className="text-xs text-zinc-400 font-mono tracking-wide truncate">{cleanJid(activeContact.remote_jid)}</p>
                         </div>
@@ -483,7 +500,7 @@ export default function ChatPage() {
                                     handleSendText();
                                 }
                             }}
-                            disabled={isDisconnected || isRecording}
+                            disabled={isRecording}
                             rows={1}
                         />
 
@@ -522,7 +539,7 @@ export default function ChatPage() {
                                     size="icon" 
                                     className={`h-9 w-9 transition-transform ${input.trim() ? 'scale-100' : 'scale-0 w-0 p-0 opacity-0'}`}
                                     onClick={handleSendText}
-                                    disabled={!input.trim() || isDisconnected}
+                                    disabled={!input.trim()}
                                 >
                                     <Send className="h-4 w-4" />
                                 </Button>
@@ -533,10 +550,20 @@ export default function ChatPage() {
                 </div>
             </>
         ) : (
-            <div className="flex h-full items-center justify-center flex-col text-zinc-500 bg-zinc-950/20 p-4 text-center">
+            <div className="flex h-full items-center justify-center flex-col text-zinc-500 bg-zinc-950/20 p-4 text-center animate-in fade-in">
                 <Smartphone className="h-12 w-12 text-zinc-700 mb-4 animate-bounce" />
                 <h3 className="text-lg font-medium text-zinc-300">Wancora CRM</h3>
-                <p className="text-sm opacity-60 mt-1">Selecione uma instância e um contato para conversar.</p>
+                <p className="text-sm opacity-60 mt-1 max-w-sm mx-auto">
+                    {instances.length === 0 
+                        ? "Nenhuma conexão detectada. Vá para a tela de Conexões e escaneie o QR Code."
+                        : "Selecione uma conexão no topo da lista para ver suas conversas."
+                    }
+                </p>
+                {instances.length === 0 && (
+                     <Button variant="outline" className="mt-4 border-zinc-800" onClick={() => window.location.href='/connections'}>
+                        Ir para Conexões
+                     </Button>
+                )}
             </div>
         )}
       </div>

@@ -10,51 +10,81 @@ export function useKanban() {
   const queryClient = useQueryClient();
   const { addToast } = useToast();
 
-  // Buscar Pipeline, Estágios e Leads
-  const { data: columns = [], isLoading } = useQuery({
-    queryKey: ['kanban', user?.company_id],
+  const queryKey = ['kanban', user?.company_id];
+
+  // --- QUERY: Busca Pipeline Completo ---
+  const { data: columns = [], isLoading, refetch } = useQuery({
+    queryKey,
     queryFn: async () => {
       if (!user?.company_id) return [];
 
       try {
-        // 1. Buscar Pipeline Padrão
-        let { data: pipeline, error: pipeError } = await supabase
+        // 1. Busca Pipeline Padrão
+        let { data: pipeline } = await supabase
             .from('pipelines')
-            .select('*')
+            .select('id')
             .eq('company_id', user.company_id)
             .eq('is_default', true)
             .maybeSingle();
 
-        if (pipeError && pipeError.code !== 'PGRST116') {
-             console.error("Erro ao buscar pipeline:", pipeError);
-             return [];
+        // Se não existir pipeline padrão, pega qualquer um ou retorna vazio
+        if (!pipeline) {
+             const { data: anyPipeline } = await supabase
+                .from('pipelines')
+                .select('id')
+                .eq('company_id', user.company_id)
+                .limit(1)
+                .maybeSingle();
+             pipeline = anyPipeline;
         }
 
-        // REMOVIDO: Auto-Healing perigoso. Se não tem pipeline, retorna vazio e a UI avisa.
-        if (!pipeline) return [];
+        if (!pipeline) return []; // Empresa sem pipeline configurado
 
-        // 2. Buscar Estágios do Pipeline
+        // 2. Busca Estágios
         const { data: stages } = await supabase
             .from('pipeline_stages')
             .select('*')
             .eq('pipeline_id', pipeline.id)
             .order('position');
         
-        if (!stages) return [];
+        if (!stages || stages.length === 0) return [];
 
-        // 3. Buscar Leads da Empresa
+        // 3. Busca Leads
         const { data: leads } = await supabase
             .from('leads')
             .select('*')
             .eq('company_id', user.company_id);
 
-        return stages.map((stage: PipelineStage) => ({
-            id: stage.id,
-            title: stage.name,
-            color: stage.color,
-            order: stage.position,
-            items: leads?.filter((l: Lead) => l.stage_id === stage.id) || []
-        })) as KanbanColumn[];
+        const allLeads = leads || [];
+
+        // 4. Monta Colunas
+        const board: KanbanColumn[] = stages.map((stage: PipelineStage) => {
+            const stageLeads = allLeads.filter((l: Lead) => l.stage_id === stage.id);
+            // Calcula total monetário da coluna
+            const totalValue = stageLeads.reduce((acc, lead) => acc + (Number(lead.value_potential) || 0), 0);
+            
+            return {
+                id: stage.id,
+                title: stage.name,
+                color: stage.color,
+                order: stage.position,
+                totalValue,
+                items: stageLeads
+            };
+        });
+
+        // 5. Tratamento de Leads Órfãos (Sem estágio definido ou estágio deletado)
+        // Isso acontece com o "Anti-Ghost" se o ID do estágio não for setado na criação
+        const stageIds = new Set(stages.map(s => s.id));
+        const orphanLeads = allLeads.filter((l: Lead) => !l.stage_id || !stageIds.has(l.stage_id));
+        
+        if (orphanLeads.length > 0 && board.length > 0) {
+            // Adiciona órfãos na primeira coluna
+            board[0].items.unshift(...orphanLeads);
+            board[0].totalValue += orphanLeads.reduce((acc, l) => acc + (Number(l.value_potential) || 0), 0);
+        }
+
+        return board;
 
       } catch (error) {
           console.error("Erro fatal no Kanban:", error);
@@ -62,11 +92,10 @@ export function useKanban() {
       }
     },
     enabled: !!user?.company_id,
-    staleTime: 1000 * 60 * 5, 
-    retry: 1 
+    staleTime: 1000 * 60 * 2, // 2 min cache
   });
 
-  // Mover Lead (Drag & Drop)
+  // --- MUTATION: Mover Lead (Optimistic Update) ---
   const moveLeadMutation = useMutation({
     mutationFn: async ({ leadId, toStageId }: { leadId: string; toStageId: string }) => {
       const { error } = await supabase
@@ -79,78 +108,65 @@ export function useKanban() {
       return { leadId, toStageId };
     },
     onMutate: async ({ leadId, toStageId }) => {
-      await queryClient.cancelQueries({ queryKey: ['kanban', user?.company_id] });
-      const previousBoard = queryClient.getQueryData<KanbanColumn[]>(['kanban', user?.company_id]);
+      // Cancela refetches em andamento
+      await queryClient.cancelQueries({ queryKey });
 
-      queryClient.setQueryData(['kanban', user?.company_id], (old: KanbanColumn[] | undefined) => {
+      // Snapshot do estado anterior
+      const previousBoard = queryClient.getQueryData<KanbanColumn[]>(queryKey);
+
+      // Atualiza Cache Otimisticamente
+      queryClient.setQueryData(queryKey, (old: KanbanColumn[] | undefined) => {
         if (!old) return [];
-        const newCols = old.map(col => ({ ...col, items: col.items ? [...col.items] : [] }));
         
+        // Deep clone para evitar mutação direta insegura
+        const newBoard = old.map(col => ({
+             ...col, 
+             items: [...col.items] 
+        }));
+
         let movedLead: Lead | undefined;
-        for (const col of newCols) {
-          if (!col.items) continue;
+
+        // Remove da coluna antiga
+        for (const col of newBoard) {
           const idx = col.items.findIndex(l => l.id === leadId);
           if (idx !== -1) {
             [movedLead] = col.items.splice(idx, 1);
+            // Atualiza total da coluna antiga (subtrai)
+            col.totalValue -= (Number(movedLead.value_potential) || 0);
             break;
           }
         }
+
+        // Adiciona na nova coluna
         if (movedLead) {
           movedLead.stage_id = toStageId;
-          const targetCol = newCols.find(c => c.id === toStageId);
+          const targetCol = newBoard.find(c => c.id === toStageId);
           if (targetCol) {
-            if (!targetCol.items) targetCol.items = [];
-            targetCol.items.push(movedLead);
+            targetCol.items.push(movedLead); // Adiciona no final (ou poderia ser no topo)
+            // Atualiza total da nova coluna (soma)
+            targetCol.totalValue += (Number(movedLead.value_potential) || 0);
           }
         }
-        return newCols;
+
+        return newBoard;
       });
 
       return { previousBoard };
     },
     onError: (err, newTodo, context) => {
+      // Reverte se der erro
       if (context?.previousBoard) {
-        queryClient.setQueryData(['kanban', user?.company_id], context.previousBoard);
+        queryClient.setQueryData(queryKey, context.previousBoard);
       }
-      addToast({ type: 'error', title: 'Erro ao mover', message: 'Falha ao atualizar o estágio.' });
+      addToast({ type: 'error', title: 'Erro ao mover', message: 'Falha ao atualizar o estágio. Tente novamente.' });
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['kanban', user?.company_id] });
+      // Sincroniza com o servidor para garantir consistência final
+      queryClient.invalidateQueries({ queryKey });
     },
   });
 
-  // Action Manual para criar Pipeline (Substitui o Auto-Healing)
-  const createDefaultBoardMutation = useMutation({
-      mutationFn: async () => {
-          if (!user?.company_id) throw new Error("Sem empresa");
-          
-          const { data: pipeline, error: pErr } = await supabase
-              .from('pipelines')
-              .insert({ company_id: user.company_id, name: 'Funil de Vendas', is_default: true })
-              .select()
-              .single();
-          
-          if(pErr) throw pErr;
-
-          const defaultStages = [
-            { pipeline_id: pipeline.id, name: 'Novos', position: 0, color: '#3b82f6', company_id: user.company_id },
-            { pipeline_id: pipeline.id, name: 'Qualificação', position: 1, color: '#eab308', company_id: user.company_id },
-            { pipeline_id: pipeline.id, name: 'Negociação', position: 2, color: '#f97316', company_id: user.company_id },
-            { pipeline_id: pipeline.id, name: 'Ganho', position: 3, color: '#22c55e', company_id: user.company_id }
-          ];
-          
-          const { error: sErr } = await supabase.from('pipeline_stages').insert(defaultStages);
-          if(sErr) throw sErr;
-      },
-      onSuccess: () => {
-          queryClient.invalidateQueries({ queryKey: ['kanban', user?.company_id] });
-          addToast({ type: 'success', title: 'Pronto!', message: 'Funil padrão criado com sucesso.' });
-      },
-      onError: (e: any) => {
-          addToast({ type: 'error', title: 'Erro', message: e.message || 'Falha ao criar funil.' });
-      }
-  });
-
+  // --- MUTATION: Criar Lead ---
   const createLeadMutation = useMutation({
       mutationFn: async (leadData: any) => {
           if (!user?.company_id) throw new Error("Sem empresa");
@@ -161,16 +177,19 @@ export function useKanban() {
           if(error) throw error;
       },
       onSuccess: () => {
-          queryClient.invalidateQueries({ queryKey: ['kanban', user?.company_id] });
+          queryClient.invalidateQueries({ queryKey });
+          addToast({ type: 'success', title: 'Sucesso', message: 'Lead criado.' });
+      },
+      onError: (e: any) => {
+          addToast({ type: 'error', title: 'Erro', message: e.message });
       }
   });
 
   return { 
     columns, 
     loading: isLoading, 
-    moveLead: (leadId: string, fromColId: string, toColId: string) => moveLeadMutation.mutate({ leadId, toStageId: toColId }),
+    moveLead: (leadId: string, toColId: string) => moveLeadMutation.mutate({ leadId, toStageId: toColId }),
     createLead: createLeadMutation.mutateAsync,
-    refresh: () => queryClient.invalidateQueries({ queryKey: ['kanban', user?.company_id] }),
-    initializeBoard: createDefaultBoardMutation.mutate
+    refresh: refetch
   };
 }
