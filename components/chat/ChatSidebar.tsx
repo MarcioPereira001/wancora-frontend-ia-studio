@@ -141,11 +141,11 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
       setLoading(true);
       
       try {
-          // 1. Atualiza Status na tabela Contacts (Anti-Ghost)
+          // 1. Garante que o contato existe e NÃO está ignorado
           await supabase.from('contacts').upsert({
               jid: contact.remote_jid,
               company_id: user.company_id,
-              is_ignored: false,
+              is_ignored: false, // IMPORTANTE: Desmarca ignorado
               name: contact.name || contact.push_name,
               updated_at: new Date().toISOString()
           }, { onConflict: 'jid' });
@@ -196,31 +196,36 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
       
       setLoading(true);
       try {
-          // 1. Marca contato como ignorado
-          await supabase.from('contacts')
-            .update({ is_ignored: true })
-            .eq('jid', contact.remote_jid)
-            .eq('company_id', user.company_id);
+          // 1. Marca contato como ignorado (Anti-Ghost ON)
+          // USAMOS UPSERT: Se o contato não existir na tabela contacts, ele CRIA e já marca como ignorado.
+          const { error: contactError } = await supabase.from('contacts').upsert({
+              jid: contact.remote_jid,
+              company_id: user.company_id,
+              is_ignored: true, // VITAL: Marca como ignorado
+              name: contact.name || contact.push_name,
+              updated_at: new Date().toISOString()
+          }, { onConflict: 'jid' });
+
+          if (contactError) throw contactError;
           
           // 2. Remove Lead da tabela leads
-          if (lead) {
-              const { error } = await supabase.from('leads').delete().eq('id', lead.id);
-              if (error) throw error;
-          } else {
-              // Fallback: Tenta remover por telefone se o objeto lead estiver desatualizado
-              const cleanPhone = contact.remote_jid.split('@')[0].replace(/\D/g, '');
-              await supabase.from('leads')
-                .delete()
-                .eq('company_id', user.company_id)
-                .ilike('phone', `%${cleanPhone}%`);
-          }
+          // O Trigger SQL que criamos também fará isso, mas fazemos aqui para feedback imediato
+          const cleanPhone = contact.remote_jid.split('@')[0].replace(/\D/g, '');
+          
+          const { error: deleteError } = await supabase.from('leads')
+            .delete()
+            .eq('company_id', user.company_id)
+            .ilike('phone', `%${cleanPhone}%`); // Remove qualquer lead com esse numero
+
+          if (deleteError) throw deleteError;
           
           addToast({ type: 'info', title: 'Removido', message: 'Lead excluído e contato pausado.' });
           setIsIgnored(true);
           
+          // Força refresh para atualizar a UI
           setTimeout(async () => {
               await refreshLead();
-          }, 800);
+          }, 500);
 
       } catch (e: any) {
           console.error("Erro Remove CRM:", e);
