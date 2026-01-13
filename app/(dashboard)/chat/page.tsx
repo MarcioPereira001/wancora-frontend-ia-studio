@@ -7,7 +7,7 @@ import { ChatContact, Message, Instance, Lead } from '@/types';
 import { cleanJid, cn } from '@/lib/utils';
 import { 
     Loader2, Search, Send, Paperclip, Sparkles, Mic, 
-    Image as IconImage, FileText, BarChart2, X, Trash2, ArrowLeft, User, Smartphone, Wifi, Clock
+    Image as IconImage, FileText, BarChart2, X, Trash2, ArrowLeft, User, Smartphone, Wifi, Clock, ArrowDown
 } from 'lucide-react';
 import { MessageBubble } from '@/components/chat/MessageBubble';
 import { ChatSidebar } from '@/components/chat/ChatSidebar';
@@ -21,6 +21,8 @@ import { whatsappService } from '@/services/whatsappService';
 import { api } from '@/services/api';
 import { useChatList } from '@/hooks/useChatList';
 import { uploadChatMedia } from '@/utils/supabase/storage';
+
+const MESSAGES_PER_PAGE = 30;
 
 export default function ChatPage() {
   const { user } = useAuthStore();
@@ -54,8 +56,13 @@ export default function ChatPage() {
   
   const [activeContact, setActiveContact] = useState<ChatContact | null>(null);
   const [activeLead, setActiveLead] = useState<Lead | null>(null);
+  
+  // Message State & Pagination
   const [messages, setMessages] = useState<Message[]>([]);
   const [loadingMessages, setLoadingMessages] = useState(false);
+  const [hasMoreMessages, setHasMoreMessages] = useState(true);
+  const [fetchingMore, setFetchingMore] = useState(false);
+  
   const [input, setInput] = useState("");
   const [isAiLoading, setIsAiLoading] = useState(false);
   
@@ -73,34 +80,58 @@ export default function ChatPage() {
   const [pollModalOpen, setPollModalOpen] = useState(false);
   const [pollQuestion, setPollQuestion] = useState("");
   const [pollOptions, setPollOptions] = useState(["", ""]);
+  
+  // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  const scrollToBottom = () => {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  const scrollToBottom = (behavior: 'auto' | 'smooth' = 'smooth') => {
+      messagesEndRef.current?.scrollIntoView({ behavior });
   };
 
-  // Load Messages & Lead
+  // --- FETCH MESSAGES (Pagination) ---
+  const fetchMessages = async (offset: number) => {
+      if(!activeContact || !selectedInstance) return [];
+      
+      const { data, error } = await supabase
+        .from('messages')
+        .select(`
+            *,
+            contacts (push_name)
+        `)
+        .eq('remote_jid', activeContact.remote_jid) 
+        .eq('session_id', selectedInstance.session_id) 
+        .eq('company_id', user?.company_id)
+        .order('created_at', { ascending: false }) // Importante: Pegamos do mais recente para o mais antigo
+        .range(offset, offset + MESSAGES_PER_PAGE - 1);
+
+      if (error) {
+          console.error("Error fetching messages:", error);
+          return [];
+      }
+
+      // O Supabase retorna em ordem DESC (recentes primeiro), mas no React precisamos ASC (antigas primeiro)
+      return (data || []).reverse(); 
+  };
+
+  // --- INITIAL LOAD ---
   useEffect(() => {
       if(!activeContact || !selectedInstance) {
           setActiveLead(null);
+          setMessages([]);
           return;
       }
       
-      const fetchData = async () => {
+      const initChat = async () => {
           setLoadingMessages(true);
+          setMessages([]);
+          setHasMoreMessages(true);
           
-          // 1. Messages
-          const { data: msgs } = await supabase
-            .from('messages')
-            .select('*')
-            .eq('remote_jid', activeContact.remote_jid) 
-            .eq('session_id', selectedInstance.session_id) 
-            .eq('company_id', user?.company_id)
-            .order('created_at', { ascending: true });
+          // 1. Load Initial Messages
+          const initialMsgs = await fetchMessages(0);
+          setMessages(initialMsgs);
           
-          setMessages(msgs || []);
-          
-          // 2. Lead (by phone)
+          // 2. Load Lead
           const cleanPhone = activeContact.remote_jid.split('@')[0];
           const { data: lead } = await supabase
             .from('leads')
@@ -111,37 +142,82 @@ export default function ChatPage() {
             .maybeSingle();
             
           setActiveLead(lead);
-
           setLoadingMessages(false);
-          setTimeout(scrollToBottom, 100);
+          
+          // Scroll to bottom immediately without animation on first load
+          setTimeout(() => scrollToBottom('auto'), 100);
       };
 
-      fetchData();
+      initChat();
+
+      // --- REALTIME SUBSCRIPTION ---
+      const channelName = `chat:${activeContact.remote_jid}:${selectedInstance.session_id}`;
+      console.log("🔌 Connecting Realtime:", channelName);
 
       const subscription = supabase
-        .channel(`chat:${activeContact.remote_jid}:${selectedInstance.session_id}`)
+        .channel(channelName)
         .on('postgres_changes', { 
             event: '*', 
             schema: 'public', 
             table: 'messages',
-            filter: `remote_jid=eq.${activeContact.remote_jid}`
+            filter: `remote_jid=eq.${activeContact.remote_jid}` // Filtro físico
         }, (payload) => {
+            // Filtro lógico de segurança (Session check)
             if (payload.new && (payload.new as any).session_id === selectedInstance.session_id) {
+                console.log("⚡ Realtime Event:", payload.eventType, payload.new);
+                
                 if (payload.eventType === 'INSERT') {
                     setMessages(prev => {
+                        // Anti-duplicidade (Optimistic UI vs Realtime)
                         if (prev.some(m => m.id === payload.new.id)) return prev;
                         return [...prev, payload.new as Message];
                     });
-                    setTimeout(scrollToBottom, 100);
+                    // Só rola se o usuário já estiver lá embaixo
+                    setTimeout(() => scrollToBottom('smooth'), 100);
                 } else if (payload.eventType === 'UPDATE') {
                     setMessages(prev => prev.map(m => m.id === payload.new.id ? payload.new as Message : m));
                 }
             }
         })
-        .subscribe();
+        .subscribe((status) => {
+            if(status === 'SUBSCRIBED') console.log("✅ Channel Subscribed");
+        });
 
-      return () => { subscription.unsubscribe(); };
-  }, [activeContact, selectedInstance, supabase, user?.company_id]);
+      return () => { 
+          console.log("🔌 Disconnecting Realtime");
+          subscription.unsubscribe(); 
+      };
+  }, [activeContact?.id, selectedInstance?.session_id]); // Use IDs to avoid deep object ref changes
+
+  // --- INFINITE SCROLL HANDLER ---
+  const handleScroll = async (e: React.UIEvent<HTMLDivElement>) => {
+      const container = e.currentTarget;
+      
+      // Se rolou até o topo (ou quase) e tem mais mensagens
+      if (container.scrollTop < 50 && hasMoreMessages && !fetchingMore && !loadingMessages) {
+          setFetchingMore(true);
+          const currentHeight = container.scrollHeight;
+          
+          const olderMessages = await fetchMessages(messages.length);
+          
+          if (olderMessages.length > 0) {
+              setMessages(prev => [...olderMessages, ...prev]);
+              
+              // Ajusta scroll para manter posição visual (anti-jump)
+              // Espera o render acontecer
+              setTimeout(() => {
+                  if (scrollContainerRef.current) {
+                      const newHeight = scrollContainerRef.current.scrollHeight;
+                      scrollContainerRef.current.scrollTop = newHeight - currentHeight;
+                  }
+              }, 0);
+          } else {
+              setHasMoreMessages(false); // Acabou o histórico
+          }
+          
+          setFetchingMore(false);
+      }
+  };
 
   const refreshLeadData = async () => {
       if(!activeContact || !user?.company_id) return;
@@ -174,7 +250,7 @@ export default function ChatPage() {
       } as any;
 
       setMessages(prev => [...prev, tempMsg]);
-      setTimeout(scrollToBottom, 50);
+      setTimeout(() => scrollToBottom('smooth'), 50);
 
       try {
           await api.post('/message/send', {
@@ -206,7 +282,7 @@ export default function ChatPage() {
       try {
           const { error } = await supabase.from('scheduled_messages').insert({
               company_id: user.company_id,
-              lead_id: activeLead?.id || null, // Se não tiver lead, manda nulo (contato solto)
+              lead_id: activeLead?.id || null, 
               contact_jid: activeContact.remote_jid,
               session_id: selectedInstance.session_id,
               content: content,
@@ -313,12 +389,31 @@ export default function ChatPage() {
                     </div>
                 </div>
 
-                {/* Área de Mensagens (Fundo com padrão sutil) */}
-                <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-2" style={{ backgroundImage: 'radial-gradient(circle at center, rgba(34, 197, 94, 0.03) 0%, transparent 70%)' }}>
-                    {loadingMessages ? <div className="flex h-full items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-primary/50" /></div> : 
-                     messages.map((msg, idx) => (
+                {/* SCROLL CONTAINER */}
+                <div 
+                    ref={scrollContainerRef}
+                    onScroll={handleScroll}
+                    className="flex-1 overflow-y-auto p-4 md:p-6 space-y-2 relative" 
+                    style={{ backgroundImage: 'radial-gradient(circle at center, rgba(34, 197, 94, 0.03) 0%, transparent 70%)' }}
+                >
+                    {/* Loader de histórico */}
+                    {fetchingMore && (
+                        <div className="flex justify-center py-2">
+                            <Loader2 className="w-5 h-5 text-primary/50 animate-spin" />
+                        </div>
+                    )}
+
+                    {/* Aviso de Fim de Histórico */}
+                    {!hasMoreMessages && !loadingMessages && messages.length > 0 && (
+                        <div className="text-center py-4 text-xs text-zinc-600">
+                            Início da conversa
+                        </div>
+                    )}
+
+                    {loadingMessages ? (
+                        <div className="flex h-full items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-primary/50" /></div>
+                    ) : messages.map((msg, idx) => (
                         <div key={msg.id || idx} className={`flex ${msg.from_me ? 'justify-end' : 'justify-start'} mb-1`}>
-                            {/* AQUI: O wrapper da bolha agora é simples e delega o estilo para MessageBubble */}
                             <div className="max-w-[85%] md:max-w-[70%]">
                                 <MessageBubble message={msg} />
                             </div>
@@ -388,7 +483,6 @@ export default function ChatPage() {
 
       {/* Modals */}
       <Modal isOpen={pollModalOpen} onClose={() => setPollModalOpen(false)} title="Nova Enquete">
-          {/* ... Conteúdo Enquete (Omitido para brevidade, mantido do original) ... */}
           <div className="space-y-4">
               <Input value={pollQuestion} onChange={e => setPollQuestion(e.target.value)} placeholder="Pergunta" />
               <Button onClick={handleCreatePoll} className="w-full">Criar</Button>

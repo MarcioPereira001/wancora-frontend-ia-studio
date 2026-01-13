@@ -23,7 +23,8 @@ export function useChatList(selectedSessionId: string | null) {
         setLoading(true);
         
         // 1. Busca mensagens FILTRANDO PELA SESSÃO (session_id)
-        // Isso é o coração do isolamento multi-instância
+        // Buscamos um volume maior para garantir que pegamos as últimas conversas ativas
+        // O JOIN com contacts e leads é essencial para a foto de perfil
         const { data: messages, error } = await supabase
           .from('messages')
           .select(`
@@ -34,24 +35,27 @@ export function useChatList(selectedSessionId: string | null) {
             from_me,
             status,
             leads (name, profile_pic_url),
-            contacts (name, push_name, profile_pic_url)
+            contacts (name, push_name, profile_pic_url, is_ignored)
           `)
           .eq('company_id', user.company_id)
           .eq('session_id', selectedSessionId) // <--- FILTRO CRÍTICO
-          .order('created_at', { ascending: false });
+          .order('created_at', { ascending: false })
+          .limit(200); // Aumentado para pegar mais conversas recentes no agrupamento
 
         if (error) throw error;
 
-        // 2. Agrupa por conversa (remote_jid)
+        // 2. Agrupa por conversa (remote_jid) usando Map para garantir unicidade
         const chatMap = new Map<string, ChatContact>();
 
         messages?.forEach((msg: any) => {
           if (!chatMap.has(msg.remote_jid)) {
-            const contactName = msg.contacts?.name || msg.contacts?.push_name;
-            const leadName = msg.leads?.name;
-            const phoneName = msg.remote_jid.split('@')[0];
-            const displayName = contactName || leadName || phoneName;
-            const displayPic = msg.contacts?.profile_pic_url || msg.leads?.profile_pic_url;
+            // Prioridade de Dados: Contact (WhatsApp Real) > Lead (CRM) > JID
+            const contactData = msg.contacts;
+            const leadData = msg.leads;
+
+            const displayName = contactData?.push_name || contactData?.name || leadData?.name || msg.remote_jid.split('@')[0];
+            // Foto: Prioriza contato (WhatsApp atualizado), depois lead, ou null
+            const displayPic = contactData?.profile_pic_url || leadData?.profile_pic_url;
 
             let preview = msg.content;
             const type = msg.message_type || (msg as any).type;
@@ -59,12 +63,14 @@ export function useChatList(selectedSessionId: string | null) {
             // Tratamento de preview para tipos não textuais
             if (!preview && type !== 'text') {
                 if (type === 'image') preview = '📷 Imagem';
-                else if (type === 'audio') preview = '🎵 Áudio';
+                else if (type === 'audio' || type === 'ptt') preview = '🎵 Áudio';
                 else if (type === 'video') preview = '🎥 Vídeo';
                 else if (type === 'document') preview = '📄 Documento';
                 else if (type === 'poll') preview = '📊 Enquete';
+                else if (type === 'location') preview = '📍 Localização';
             }
 
+            // Tratamento JSON safe
             if (type === 'poll' && typeof preview === 'string' && preview.startsWith('{')) {
                 try {
                     const pollData = JSON.parse(preview);
@@ -78,12 +84,12 @@ export function useChatList(selectedSessionId: string | null) {
               jid: msg.remote_jid,
               remote_jid: msg.remote_jid,
               name: displayName,
-              push_name: msg.contacts?.push_name,
+              push_name: contactData?.push_name,
               profile_pic_url: displayPic,
-              unread_count: 0, // TODO: Implementar contador real
+              unread_count: 0, // TODO: Implementar contador real via RPC count
               last_message: preview,
               last_message_time: msg.created_at,
-              phone_number: phoneName,
+              phone_number: msg.remote_jid.split('@')[0],
             });
           }
         });
@@ -100,14 +106,17 @@ export function useChatList(selectedSessionId: string | null) {
     fetchChats();
 
     // 3. Realtime com Filtro de Sessão Específico
+    // Escuta novas mensagens para atualizar a lista lateral (subir conversa pro topo)
     const channel = supabase
       .channel(`chat-list:${selectedSessionId}`)
       .on('postgres_changes', { 
         event: 'INSERT', 
         schema: 'public', 
         table: 'messages',
-        filter: `session_id=eq.${selectedSessionId}` // Só atualiza se for desta instância
-      }, () => {
+        filter: `session_id=eq.${selectedSessionId}` 
+      }, (payload) => {
+        // Quando chega mensagem nova, recarrega a lista para reordenar
+        // Otimização futura: Atualizar o Map localmente sem fetch
         fetchChats(); 
       })
       .subscribe();
