@@ -48,7 +48,8 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
             .from('contacts')
             .select('is_ignored')
             .eq('jid', contact.remote_jid)
-            .single();
+            .eq('company_id', user.company_id)
+            .maybeSingle();
         
         if (contactData) setIsIgnored(contactData.is_ignored || false);
 
@@ -82,34 +83,68 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
       setLoading(true);
       
       try {
-          // Reativa contato
-          await supabase.from('contacts').update({ is_ignored: false }).eq('jid', contact.remote_jid);
+          // 1. Reativa contato na tabela contacts (Anti-Ghost OFF)
+          await supabase.from('contacts')
+            .update({ is_ignored: false })
+            .eq('jid', contact.remote_jid)
+            .eq('company_id', user.company_id);
           
           if (!lead) {
-              // Busca pipeline default
-              const { data: pipe } = await supabase.from('pipelines').select('id').eq('company_id', user.company_id).eq('is_default', true).single();
+              // 2. Busca pipeline para inserir o lead
+              let { data: pipe } = await supabase
+                .from('pipelines')
+                .select('id')
+                .eq('company_id', user.company_id)
+                .eq('is_default', true)
+                .maybeSingle();
+              
+              // Fallback: se não tiver default, pega o primeiro
+              if (!pipe) {
+                  const { data: firstPipe } = await supabase
+                    .from('pipelines')
+                    .select('id')
+                    .eq('company_id', user.company_id)
+                    .limit(1)
+                    .maybeSingle();
+                  pipe = firstPipe;
+              }
+
               if (pipe) {
-                  const { data: stage } = await supabase.from('pipeline_stages').select('id').eq('pipeline_id', pipe.id).eq('position', 0).single();
+                  const { data: stage } = await supabase
+                    .from('pipeline_stages')
+                    .select('id')
+                    .eq('pipeline_id', pipe.id)
+                    .order('position', { ascending: true })
+                    .limit(1)
+                    .maybeSingle();
+                  
                   if (stage) {
                       const cleanPhone = contact.remote_jid.split('@')[0];
-                      await supabase.from('leads').insert({
+                      const { error } = await supabase.from('leads').insert({
                           company_id: user.company_id,
                           pipeline_stage_id: stage.id,
-                          name: name || contact.push_name || 'Novo Lead',
+                          name: name || contact.push_name || contact.name || 'Novo Lead',
                           phone: cleanPhone,
                           status: 'new',
                           owner_id: user.id
                       });
+
+                      if (error) throw error;
                       addToast({ type: 'success', title: 'Adicionado', message: 'Lead criado no Kanban.' });
+                  } else {
+                      throw new Error("Pipeline sem estágios configurados.");
                   }
+              } else {
+                  throw new Error("Nenhum funil de vendas encontrado.");
               }
           }
           
           setIsIgnored(false);
-          setTimeout(refreshLead, 500);
+          await refreshLead(); // Atualiza estado pai
 
       } catch (e: any) {
-          addToast({ type: 'error', title: 'Erro', message: e.message });
+          console.error(e);
+          addToast({ type: 'error', title: 'Erro', message: e.message || 'Falha ao criar lead.' });
       } finally {
           setLoading(false);
       }
@@ -122,15 +157,28 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
       
       setLoading(true);
       try {
-          await supabase.from('contacts').update({ is_ignored: true }).eq('jid', contact.remote_jid);
+          // 1. Marca contato como ignorado (Anti-Ghost ON)
+          await supabase.from('contacts')
+            .update({ is_ignored: true })
+            .eq('jid', contact.remote_jid)
+            .eq('company_id', user.company_id);
           
+          // 2. Remove Lead da tabela leads
           if (lead) {
-              await supabase.from('leads').delete().eq('id', lead.id);
+              const { error } = await supabase.from('leads').delete().eq('id', lead.id);
+              if (error) throw error;
               addToast({ type: 'info', title: 'Removido', message: 'Lead excluído do CRM.' });
+          } else {
+              // Fallback caso objeto lead esteja desatualizado
+              const cleanPhone = contact.remote_jid.split('@')[0];
+              await supabase.from('leads')
+                .delete()
+                .eq('company_id', user.company_id)
+                .ilike('phone', `%${cleanPhone}%`);
           }
           
           setIsIgnored(true);
-          setTimeout(refreshLead, 500);
+          await refreshLead(); // Atualiza estado pai
 
       } catch (e: any) {
           addToast({ type: 'error', title: 'Erro', message: e.message });
@@ -143,13 +191,15 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
       if (!lead) return;
       setLoading(true);
       try {
-          await supabase.from('leads').update({
+          const { error } = await supabase.from('leads').update({
               name,
               value_potential: value,
               tags,
               bot_status: botStatus
           }).eq('id', lead.id);
           
+          if (error) throw error;
+
           addToast({ type: 'success', title: 'Salvo', message: 'Dados do lead atualizados.' });
           refreshLead();
       } catch (e: any) {
@@ -163,13 +213,16 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
       if (!lead) return;
 
       if (action === 'add' && newItemText.trim()) {
-          const { data } = await supabase.from('lead_checklists').insert({
+          const { data, error } = await supabase.from('lead_checklists').insert({
               lead_id: lead.id,
               text: newItemText,
               is_completed: false
           }).select().single();
-          if (data) setChecklist([...checklist, data]);
-          setNewItemText('');
+          
+          if (data && !error) {
+              setChecklist([...checklist, data]);
+              setNewItemText('');
+          }
       }
 
       if (action === 'toggle' && itemId) {

@@ -95,12 +95,6 @@ export function ToastProvider({ children }: ToastProviderProps) {
           <div className="absolute bottom-0 left-0 h-[2px] bg-current opacity-30 w-full animate-[shrink_linear_forwards] origin-left rounded-b-xl" style={{ animationDuration: `${toast.duration}ms` }}></div>
         </div>
       ))}
-      <style jsx>{`
-        @keyframes shrink {
-          from { width: 100%; }
-          to { width: 0%; }
-        }
-      `}</style>
     </div>
   );
 
