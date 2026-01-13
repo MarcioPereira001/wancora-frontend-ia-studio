@@ -1,6 +1,7 @@
 'use client';
 
-import React, { createContext, useState, useCallback, ReactNode } from 'react';
+import React, { createContext, useState, useCallback, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { X, CheckCircle, AlertCircle, Info, AlertTriangle } from 'lucide-react';
 
 export type ToastType = 'success' | 'error' | 'info' | 'warning';
@@ -26,16 +27,19 @@ interface ToastProviderProps {
 
 export function ToastProvider({ children }: ToastProviderProps) {
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [mounted, setMounted] = useState(false);
+
+  // Garante que o Portal só renderize no cliente após a montagem
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const addToast = useCallback(({ type, title, message, duration = 4000 }: Omit<Toast, 'id'>) => {
     const id = Math.random().toString(36).substr(2, 9);
-    
     setToasts((state) => [...state, { id, type, title, message, duration }]);
 
     if (duration > 0) {
-        setTimeout(() => {
-            removeToast(id);
-        }, duration);
+      setTimeout(() => removeToast(id), duration);
     }
   }, []);
 
@@ -43,45 +47,63 @@ export function ToastProvider({ children }: ToastProviderProps) {
     setToasts((state) => state.filter((toast) => toast.id !== id));
   }, []);
 
+  // Renderização do conteúdo das notificações
+  const ToastContainer = () => (
+    <div 
+      className="fixed top-0 left-0 w-full h-0 z-[2147483647] flex flex-col items-center md:items-end px-4 py-4 gap-3 pointer-events-none"
+      role="region" 
+      aria-live="polite"
+    >
+      {toasts.map((toast) => (
+        <div 
+          key={toast.id}
+          className={`
+            pointer-events-auto w-full max-w-[350px] md:max-w-sm flex items-start gap-3 p-4 rounded-xl shadow-[0_10px_40px_-10px_rgba(0,0,0,0.5)] border backdrop-blur-xl transition-all duration-300 animate-in slide-in-from-top-5 fade-in zoom-in-95
+            ${toast.type === 'success' ? 'bg-[#09090b]/95 border-green-500/30 text-white shadow-green-500/10' : ''}
+            ${toast.type === 'error' ? 'bg-[#09090b]/95 border-red-500/30 text-white shadow-red-500/10' : ''}
+            ${toast.type === 'info' ? 'bg-[#09090b]/95 border-blue-500/30 text-white shadow-blue-500/10' : ''}
+            ${toast.type === 'warning' ? 'bg-[#09090b]/95 border-yellow-500/30 text-white shadow-yellow-500/10' : ''}
+          `}
+        >
+          {/* Ícone */}
+          <div className="mt-0.5 shrink-0">
+            {toast.type === 'success' && <CheckCircle className="w-5 h-5 text-green-500 animate-bounce" />}
+            {toast.type === 'error' && <AlertCircle className="w-5 h-5 text-red-500 animate-pulse" />}
+            {toast.type === 'info' && <Info className="w-5 h-5 text-blue-500" />}
+            {toast.type === 'warning' && <AlertTriangle className="w-5 h-5 text-yellow-500" />}
+          </div>
+
+          {/* Conteúdo */}
+          <div className="flex-1 min-w-0">
+            <h4 className="text-sm font-bold leading-none">{toast.title}</h4>
+            {toast.message && (
+              <p className="text-xs text-zinc-400 mt-1.5 leading-relaxed font-medium opacity-90">
+                {toast.message}
+              </p>
+            )}
+          </div>
+
+          {/* Botão Fechar */}
+          <button 
+            onClick={() => removeToast(toast.id)}
+            className="text-zinc-500 hover:text-white transition-colors p-1 -mt-1 -mr-1 rounded-md hover:bg-white/10"
+          >
+            <X className="w-4 h-4" />
+          </button>
+
+          {/* Barra de Progresso (Visual) */}
+          <div className="absolute bottom-0 left-0 h-[2px] bg-current opacity-20 w-full animate-[shrink_4s_linear_forwards] origin-left rounded-b-xl" style={{ animationDuration: `${toast.duration}ms` }}></div>
+        </div>
+      ))}
+    </div>
+  );
+
   return (
     <ToastContext.Provider value={{ addToast, removeToast }}>
       {children}
-      {/* 
-          Container de Notificações 
-          - z-[2147483647]: Usa o maior inteiro assinado de 32 bits permitido em CSS para garantir que nada (modais, headers, etc) fique por cima.
-          - top-2 right-2: Posicionamento "bem no cantinho" (8px da borda).
-      */}
-      <div className="fixed top-2 right-2 z-[2147483647] flex flex-col gap-2 w-full max-w-sm pointer-events-none">
-        {toasts.map((toast) => (
-            <div 
-                key={toast.id}
-                className={`
-                    pointer-events-auto flex items-start gap-3 p-4 rounded-lg shadow-2xl border backdrop-blur-xl animate-in slide-in-from-right-full duration-300
-                    ${toast.type === 'success' ? 'bg-zinc-950/95 border-green-500/50 text-zinc-100 shadow-green-500/10' : ''}
-                    ${toast.type === 'error' ? 'bg-zinc-950/95 border-red-500/50 text-zinc-100 shadow-red-500/10' : ''}
-                    ${toast.type === 'info' ? 'bg-zinc-950/95 border-blue-500/50 text-zinc-100 shadow-blue-500/10' : ''}
-                    ${toast.type === 'warning' ? 'bg-zinc-950/95 border-yellow-500/50 text-zinc-100 shadow-yellow-500/10' : ''}
-                `}
-            >
-                <div className="mt-0.5 shrink-0">
-                    {toast.type === 'success' && <CheckCircle className="w-5 h-5 text-green-500" />}
-                    {toast.type === 'error' && <AlertCircle className="w-5 h-5 text-red-500" />}
-                    {toast.type === 'info' && <Info className="w-5 h-5 text-blue-500" />}
-                    {toast.type === 'warning' && <AlertTriangle className="w-5 h-5 text-yellow-500" />}
-                </div>
-                <div className="flex-1">
-                    <h4 className="text-sm font-bold">{toast.title}</h4>
-                    {toast.message && <p className="text-xs text-zinc-400 mt-1 leading-relaxed">{toast.message}</p>}
-                </div>
-                <button 
-                    onClick={() => removeToast(toast.id)}
-                    className="text-zinc-500 hover:text-zinc-300 transition-colors p-1 hover:bg-white/5 rounded"
-                >
-                    <X className="w-4 h-4" />
-                </button>
-            </div>
-        ))}
-      </div>
+      {mounted && typeof document !== 'undefined' 
+        ? createPortal(<ToastContainer />, document.body) 
+        : null}
     </ToastContext.Provider>
   );
 }

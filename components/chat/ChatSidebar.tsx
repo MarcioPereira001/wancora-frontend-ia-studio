@@ -6,8 +6,7 @@ import { useAuthStore } from '@/store/useAuthStore';
 import { ChatContact, Lead, ChecklistItem } from '@/types';
 import { useToast } from '@/hooks/useToast';
 import { 
-  User, Save, CheckSquare, Brain, ToggleLeft, ToggleRight, 
-  Trash2, Plus, X, DollarSign
+  User, Save, CheckSquare, Brain, Trash2, Plus, X, DollarSign, UserPlus, Ban, Lock
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -77,57 +76,60 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
     loadData();
   }, [contact.remote_jid, lead, user?.company_id]);
 
-  // 2. Actions
-  const handleToggleIgnore = async () => {
+  // 2. Actions: Adicionar ao CRM
+  const handleAddToCRM = async () => {
       if (!user?.company_id) return;
-      const newStatus = !isIgnored;
+      setLoading(true);
       
       try {
-          setLoading(true);
+          // Reativa contato
+          await supabase.from('contacts').update({ is_ignored: false }).eq('jid', contact.remote_jid);
           
-          if (newStatus) {
-              // BANIR: is_ignored = true & Delete Lead
-              if (lead && !confirm("ATENÇÃO: Isso removerá o lead do Pipeline e impedirá respostas automáticas. Continuar?")) {
-                  setLoading(false);
-                  return;
-              }
-
-              await supabase.from('contacts').update({ is_ignored: true }).eq('jid', contact.remote_jid);
-              
-              if (lead) {
-                  await supabase.from('leads').delete().eq('id', lead.id);
-                  addToast({ type: 'info', title: 'Banido', message: 'Contato ignorado e lead removido.' });
-              } else {
-                  addToast({ type: 'info', title: 'Ignorado', message: 'Contato adicionado à lista negra.' });
-              }
-
-          } else {
-              // REATIVAR: is_ignored = false & Create Lead
-              await supabase.from('contacts').update({ is_ignored: false }).eq('jid', contact.remote_jid);
-              
-              if (!lead) {
-                  // Busca pipeline default
-                  const { data: pipe } = await supabase.from('pipelines').select('id').eq('company_id', user.company_id).eq('is_default', true).single();
-                  if (pipe) {
-                      const { data: stage } = await supabase.from('pipeline_stages').select('id').eq('pipeline_id', pipe.id).eq('position', 0).single();
-                      if (stage) {
-                          const cleanPhone = contact.remote_jid.split('@')[0];
-                          await supabase.from('leads').insert({
-                              company_id: user.company_id,
-                              pipeline_stage_id: stage.id,
-                              name: name || contact.push_name || 'Novo Lead',
-                              phone: cleanPhone, // Usa numero limpo
-                              status: 'new',
-                              owner_id: user.id
-                          });
-                          addToast({ type: 'success', title: 'Sincronizado', message: 'Lead criado no Kanban.' });
-                      }
+          if (!lead) {
+              // Busca pipeline default
+              const { data: pipe } = await supabase.from('pipelines').select('id').eq('company_id', user.company_id).eq('is_default', true).single();
+              if (pipe) {
+                  const { data: stage } = await supabase.from('pipeline_stages').select('id').eq('pipeline_id', pipe.id).eq('position', 0).single();
+                  if (stage) {
+                      const cleanPhone = contact.remote_jid.split('@')[0];
+                      await supabase.from('leads').insert({
+                          company_id: user.company_id,
+                          pipeline_stage_id: stage.id,
+                          name: name || contact.push_name || 'Novo Lead',
+                          phone: cleanPhone,
+                          status: 'new',
+                          owner_id: user.id
+                      });
+                      addToast({ type: 'success', title: 'Adicionado', message: 'Lead criado no Kanban.' });
                   }
               }
           }
           
-          setIsIgnored(newStatus);
-          // Pequeno delay para o banco propagar antes de recarregar
+          setIsIgnored(false);
+          setTimeout(refreshLead, 500);
+
+      } catch (e: any) {
+          addToast({ type: 'error', title: 'Erro', message: e.message });
+      } finally {
+          setLoading(false);
+      }
+  };
+
+  // 3. Actions: Remover do CRM
+  const handleRemoveFromCRM = async () => {
+      if (!user?.company_id) return;
+      if (!confirm("Isso removerá o lead do CRM e impedirá a IA de responder. Continuar?")) return;
+      
+      setLoading(true);
+      try {
+          await supabase.from('contacts').update({ is_ignored: true }).eq('jid', contact.remote_jid);
+          
+          if (lead) {
+              await supabase.from('leads').delete().eq('id', lead.id);
+              addToast({ type: 'info', title: 'Removido', message: 'Lead excluído do CRM.' });
+          }
+          
+          setIsIgnored(true);
           setTimeout(refreshLead, 500);
 
       } catch (e: any) {
@@ -196,23 +198,30 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
             <h3 className="font-bold text-white text-lg leading-tight truncate w-full">{name || 'Visitante'}</h3>
             <p className="text-zinc-500 text-xs font-mono mt-1">{contact.phone_number}</p>
             
-            {/* Status Toggle */}
-            <div className="mt-4 flex items-center gap-2 bg-zinc-950 rounded-full px-3 py-1.5 border border-zinc-800 shadow-sm">
-                <span className={cn("text-[10px] font-bold uppercase tracking-wider", isIgnored ? "text-red-500" : "text-green-500")}>
-                    {isIgnored ? "Ignorado" : "Sincronizado"}
-                </span>
-                <button 
-                    onClick={handleToggleIgnore} 
-                    disabled={loading} 
-                    className="text-zinc-400 hover:text-white transition-colors focus:outline-none"
-                    title={isIgnored ? "Reativar Lead" : "Ignorar/Banir"}
-                >
-                    {isIgnored ? <ToggleLeft className="w-6 h-6 text-zinc-600" /> : <ToggleRight className="w-6 h-6 text-green-500" />}
-                </button>
+            {/* Lead Status Actions */}
+            <div className="mt-4 w-full px-2">
+                {isIgnored || !lead ? (
+                    <Button 
+                        onClick={handleAddToCRM} 
+                        disabled={loading}
+                        className="w-full bg-green-600 hover:bg-green-500 text-white shadow-lg shadow-green-500/20"
+                    >
+                        <UserPlus className="w-4 h-4 mr-2" /> Adicionar ao CRM
+                    </Button>
+                ) : (
+                    <Button 
+                        onClick={handleRemoveFromCRM} 
+                        disabled={loading} 
+                        variant="outline"
+                        className="w-full border-red-500/30 text-red-400 hover:bg-red-500/10 hover:text-red-300 hover:border-red-500/50"
+                    >
+                        <Ban className="w-4 h-4 mr-2" /> Remover do CRM
+                    </Button>
+                )}
             </div>
         </div>
 
-        {/* Lead Controls (Only if NOT ignored) */}
+        {/* Lead Controls */}
         {!isIgnored && lead ? (
             <div className="p-4 space-y-6">
                 
@@ -299,31 +308,28 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
                     </div>
                 </div>
 
-                <Button onClick={handleSaveLead} disabled={loading} className="w-full bg-primary/10 text-primary hover:bg-primary/20 border border-primary/20 shadow-none mt-4">
-                    <Save className="w-4 h-4 mr-2" /> Salvar Alterações
-                </Button>
+                <div className="pt-2">
+                    <Button onClick={handleSaveLead} disabled={loading} className="w-full bg-primary/10 text-primary hover:bg-primary/20 border border-primary/20 shadow-none">
+                        <Save className="w-4 h-4 mr-2" /> Salvar Alterações
+                    </Button>
+                </div>
 
             </div>
         ) : (
-            <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-zinc-500">
-                {isIgnored ? (
-                    <div className="animate-in zoom-in duration-300">
-                        <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-red-500/20">
-                            <Trash2 className="w-8 h-8 text-red-500" />
-                        </div>
-                        <p className="text-sm font-bold text-zinc-300">Contato Ignorado</p>
-                        <p className="text-xs mt-2 max-w-[200px] mx-auto opacity-70">
-                            Novas mensagens não criarão leads e o robô (Sentinela) não responderá.
-                        </p>
-                        <Button variant="outline" size="sm" onClick={handleToggleIgnore} className="mt-6 border-zinc-700 text-zinc-300 hover:bg-zinc-800">
-                            Reativar no CRM
-                        </Button>
-                    </div>
-                ) : (
-                    <div className="flex flex-col gap-2 opacity-50">
-                        <p className="text-sm">Carregando dados...</p>
-                    </div>
-                )}
+            <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-zinc-500 space-y-4">
+                <div className="p-4 bg-zinc-900/50 rounded-full border border-zinc-800">
+                    <Lock className="w-8 h-8 text-zinc-600" />
+                </div>
+                <div>
+                    <p className="text-sm font-bold text-zinc-300">Fora do CRM</p>
+                    <p className="text-xs mt-2 max-w-[200px] mx-auto opacity-70">
+                        Adicione este contato ao CRM para habilitar o robô, checklist e edição de dados.
+                    </p>
+                </div>
+                {/* Botão Salvar Desativado Visualmente */}
+                <Button disabled className="w-full opacity-50 cursor-not-allowed bg-zinc-800 text-zinc-500 border border-zinc-700">
+                    <Save className="w-4 h-4 mr-2" /> Salvar (Bloqueado)
+                </Button>
             </div>
         )}
     </div>

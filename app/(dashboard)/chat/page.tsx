@@ -7,7 +7,7 @@ import { ChatContact, Message, Instance, Lead } from '@/types';
 import { cleanJid, cn } from '@/lib/utils';
 import { 
     Loader2, Search, Send, Paperclip, Sparkles, Mic, 
-    Image as IconImage, FileText, BarChart2, X, Trash2, ArrowLeft, User, Smartphone, Wifi, Clock, MoreVertical, CheckSquare
+    Image as IconImage, FileText, BarChart2, X, Trash2, ArrowLeft, User, Smartphone, Wifi, Clock, MoreVertical, CheckSquare, BellOff, Bell, Users, Check
 } from 'lucide-react';
 import { MessageBubble } from '@/components/chat/MessageBubble';
 import { ChatSidebar } from '@/components/chat/ChatSidebar';
@@ -15,6 +15,7 @@ import { MessageScheduler } from '@/components/chat/MessageScheduler';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Modal } from '@/components/ui/Modal';
+import { Checkbox } from '@/components/ui/checkbox';
 import { generateSmartReplyAction } from '@/app/actions/gemini';
 import { useToast } from '@/hooks/useToast';
 import { api } from '@/services/api';
@@ -51,10 +52,16 @@ export default function ChatPage() {
   }, [user?.company_id, supabase]); 
 
   // --- CHAT LOGIC ---
-  const { contacts, loading: loadingContacts } = useChatList(selectedInstance?.session_id || null);
+  const { contacts, loading: loadingContacts, refreshChats } = useChatList(selectedInstance?.session_id || null);
   
   const [activeContact, setActiveContact] = useState<ChatContact | null>(null);
   const [activeLead, setActiveLead] = useState<Lead | null>(null);
+  
+  // INBOX SELECTION STATE
+  const [isInboxSelectionMode, setIsInboxSelectionMode] = useState(false);
+  const [selectedInboxIds, setSelectedInboxIds] = useState<Set<string>>(new Set());
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [deleteLeadToo, setDeleteLeadToo] = useState(false);
   
   // Message State & Pagination
   const [messages, setMessages] = useState<Message[]>([]);
@@ -62,8 +69,8 @@ export default function ChatPage() {
   const [hasMoreMessages, setHasMoreMessages] = useState(true);
   const [fetchingMore, setFetchingMore] = useState(false);
   
-  // Selection & Deletion State
-  const [isSelectionMode, setIsSelectionMode] = useState(false);
+  // Message Selection & Deletion State
+  const [isMsgSelectionMode, setIsMsgSelectionMode] = useState(false);
   const [selectedMsgIds, setSelectedMsgIds] = useState<Set<string>>(new Set());
   const [showOptionsMenu, setShowOptionsMenu] = useState(false);
   
@@ -99,22 +106,30 @@ export default function ChatPage() {
       
       const { data, error } = await supabase
         .from('messages')
-        .select(`
-            *,
-            contacts (push_name)
-        `)
+        .select(`*, contacts (push_name)`)
         .eq('remote_jid', activeContact.remote_jid) 
         .eq('session_id', selectedInstance.session_id) 
         .eq('company_id', user?.company_id)
         .order('created_at', { ascending: false }) // Recentes primeiro
         .range(offset, offset + MESSAGES_PER_PAGE - 1);
 
-      if (error) {
-          console.error("Error fetching messages:", error);
-          return [];
-      }
-
+      if (error) return [];
       return (data || []).reverse(); 
+  };
+
+  // --- REFRESH LEAD DATA ---
+  const refreshLeadData = async () => {
+      if(!activeContact || !user?.company_id) return;
+      const cleanPhone = activeContact.remote_jid.split('@')[0];
+      const { data: lead } = await supabase
+        .from('leads')
+        .select('*')
+        .eq('company_id', user.company_id)
+        .ilike('phone', `%${cleanPhone}%`)
+        .limit(1)
+        .maybeSingle();
+      setActiveLead(lead);
+      refreshChats(); // Atualiza lista para refletir mudanças no card
   };
 
   // --- INITIAL LOAD ---
@@ -122,7 +137,7 @@ export default function ChatPage() {
       if(!activeContact || !selectedInstance) {
           setActiveLead(null);
           setMessages([]);
-          setIsSelectionMode(false);
+          setIsMsgSelectionMode(false);
           setSelectedMsgIds(new Set());
           return;
       }
@@ -135,16 +150,7 @@ export default function ChatPage() {
           const initialMsgs = await fetchMessages(0);
           setMessages(initialMsgs);
           
-          const cleanPhone = activeContact.remote_jid.split('@')[0];
-          const { data: lead } = await supabase
-            .from('leads')
-            .select('*')
-            .eq('company_id', user?.company_id)
-            .ilike('phone', `%${cleanPhone}%`)
-            .limit(1)
-            .maybeSingle();
-            
-          setActiveLead(lead);
+          await refreshLeadData();
           setLoadingMessages(false);
           setTimeout(() => scrollToBottom('auto'), 100);
       };
@@ -171,7 +177,6 @@ export default function ChatPage() {
                 } else if (payload.eventType === 'UPDATE') {
                     setMessages(prev => prev.map(m => m.id === payload.new.id ? payload.new as Message : m));
                 } else if (payload.eventType === 'DELETE') {
-                    // Realtime Deletion Sync
                     setMessages(prev => prev.filter(m => m.id !== payload.old.id));
                 }
             }
@@ -181,9 +186,92 @@ export default function ChatPage() {
       return () => { subscription.unsubscribe(); };
   }, [activeContact?.id, selectedInstance?.session_id]);
 
-  // --- SELECTION & DELETION LOGIC ---
-  const toggleSelectionMode = () => {
-      setIsSelectionMode(!isSelectionMode);
+  // --- INBOX ACTIONS (SIDEBAR ESQUERDA) ---
+  const handleInboxSelect = (jid: string) => {
+      if (!isInboxSelectionMode) return;
+      setSelectedInboxIds(prev => {
+          const newSet = new Set(prev);
+          if (newSet.has(jid)) newSet.delete(jid);
+          else newSet.add(jid);
+          return newSet;
+      });
+  };
+
+  const handleToggleMute = async () => {
+      if (selectedInboxIds.size === 0) return;
+      
+      // Verifica o estado "majoritário" para toggle (se a maioria está mutada, desmuta)
+      const selectedContacts = contacts.filter(c => selectedInboxIds.has(c.jid));
+      const allMuted = selectedContacts.every(c => c.is_muted);
+      const newStatus = !allMuted;
+
+      try {
+          const { error } = await supabase
+            .from('contacts')
+            .update({ is_muted: newStatus })
+            .in('jid', Array.from(selectedInboxIds))
+            .eq('company_id', user?.company_id);
+
+          if (error) throw error;
+          
+          addToast({ 
+              type: 'success', 
+              title: newStatus ? 'Silenciado' : 'Som Ativado', 
+              message: `${selectedInboxIds.size} conversas atualizadas.` 
+          });
+          
+          refreshChats();
+          setIsInboxSelectionMode(false);
+          setSelectedInboxIds(new Set());
+
+      } catch (e) {
+          addToast({ type: 'error', title: 'Erro', message: 'Falha ao atualizar status.' });
+      }
+  };
+
+  const handleDeleteChats = async () => {
+      if (selectedInboxIds.size === 0) return;
+      
+      try {
+          const jids = Array.from(selectedInboxIds);
+          
+          // 1. Apagar Mensagens
+          await supabase.from('messages')
+            .delete()
+            .in('remote_jid', jids)
+            .eq('company_id', user?.company_id);
+
+          // 2. Se marcado, apagar Leads
+          if (deleteLeadToo) {
+              // Extrai números limpos para buscar leads
+              const phones = jids.map((jid: string) => jid.split('@')[0]);
+              await supabase.from('leads')
+                .delete()
+                .in('phone', phones) // Note: Isso assume phone = parte do JID. Para grupos, não afeta leads.
+                .eq('company_id', user?.company_id);
+          }
+
+          addToast({ type: 'success', title: 'Excluído', message: 'Conversas removidas.' });
+          refreshChats();
+          
+          // Se o contato ativo foi deletado, limpa a tela
+          if (activeContact && selectedInboxIds.has(activeContact.jid)) {
+              setActiveContact(null);
+          }
+
+          setIsInboxSelectionMode(false);
+          setSelectedInboxIds(new Set());
+          setDeleteModalOpen(false);
+          setDeleteLeadToo(false);
+
+      } catch (e) {
+          addToast({ type: 'error', title: 'Erro', message: 'Falha ao excluir.' });
+      }
+  };
+
+  // --- MESSAGE SELECTION (AREA CENTRAL) ---
+  const toggleMsgSelectionMode = () => {
+      setIsMsgSelectionMode(!isMsgSelectionMode);
       setSelectedMsgIds(new Set());
       setShowOptionsMenu(false);
   };
@@ -191,37 +279,26 @@ export default function ChatPage() {
   const handleSelectMessage = (msgId: string) => {
       setSelectedMsgIds(prev => {
           const newSet = new Set(prev);
-          if (newSet.has(msgId)) {
-              newSet.delete(msgId);
-          } else {
-              newSet.add(msgId);
-          }
+          if (newSet.has(msgId)) newSet.delete(msgId);
+          else newSet.add(msgId);
           return newSet;
       });
   };
 
-  const handleDeleteSelected = async () => {
+  const handleDeleteSelectedMsgs = async () => {
       if (selectedMsgIds.size === 0) return;
       if (!confirm(`Excluir ${selectedMsgIds.size} mensagens?`)) return;
 
       const idsToDelete = Array.from(selectedMsgIds);
-      
-      // Optimistic UI Update
       setMessages(prev => prev.filter(m => !selectedMsgIds.has(m.id)));
-      setIsSelectionMode(false);
+      setIsMsgSelectionMode(false);
       setSelectedMsgIds(new Set());
 
       try {
-          const { error } = await supabase
-            .from('messages')
-            .delete()
-            .in('id', idsToDelete);
-          
-          if(error) throw error;
+          await supabase.from('messages').delete().in('id', idsToDelete);
           addToast({ type: 'success', title: 'Apagado', message: 'Mensagens removidas.' });
       } catch (error) {
           addToast({ type: 'error', title: 'Erro', message: 'Falha ao deletar do servidor.' });
-          // Reverteria aqui em um app complexo, mas fetchMessages trata reload
       }
   };
 
@@ -229,17 +306,14 @@ export default function ChatPage() {
       if (!activeContact || !user?.company_id) return;
       if (!confirm(`TEM CERTEZA? Isso apagará TODO o histórico com ${activeContact.name}.`)) return;
 
-      setMessages([]); // Limpa UI imediatamente
+      setMessages([]); 
       setShowOptionsMenu(false);
 
       try {
-          const { error } = await supabase
-            .from('messages')
+          await supabase.from('messages')
             .delete()
             .eq('remote_jid', activeContact.remote_jid)
             .eq('company_id', user.company_id);
-          
-          if(error) throw error;
           addToast({ type: 'success', title: 'Limpo', message: 'Conversa esvaziada.' });
       } catch (error) {
           addToast({ type: 'error', title: 'Erro', message: 'Falha ao limpar conversa.' });
@@ -268,12 +342,9 @@ export default function ChatPage() {
       }
   };
 
-  const refreshLeadData = async () => { /* ... */ };
-  
   // Funções de Mensagem (Simplificadas)
   const dispatchMessage = async (payload: any) => {
       if(!activeContact || !user?.company_id || !selectedInstance) return;
-      // ... (Mesma lógica anterior)
       const optimisticId = Date.now().toString();
       const tempMsg: Message = {
           id: optimisticId,
@@ -334,6 +405,8 @@ export default function ChatPage() {
       
       {/* 1. Sidebar Esquerda */}
       <div className={cn("w-full md:w-80 border-r border-zinc-800 flex-col bg-zinc-900/30 backdrop-blur-sm", activeContact ? "hidden md:flex" : "flex")}>
+        
+        {/* Header da Sidebar */}
         <div className="p-4 border-b border-zinc-800 bg-zinc-900/80 space-y-3">
             <div className="flex items-center gap-2 px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-lg shadow-sm">
                 <Wifi className={cn("w-4 h-4", selectedInstance ? "text-green-500" : "text-zinc-500")} />
@@ -350,33 +423,100 @@ export default function ChatPage() {
                     {instances.length === 0 ? <option value="">Sem Conexões</option> : instances.map(i => <option key={i.session_id} value={i.session_id}>{i.name}</option>)}
                 </select>
             </div>
-            <div className="relative group">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500" />
-                <input className="w-full bg-zinc-950/50 border border-zinc-800 rounded-lg py-2 pl-9 pr-4 text-sm focus:outline-none focus:ring-1 focus:ring-primary text-white" placeholder="Buscar conversa..." />
-            </div>
-        </div>
-        <div className="flex-1 overflow-y-auto custom-scrollbar">
-            {loadingContacts ? <div className="flex justify-center p-8"><Loader2 className="animate-spin text-primary" /></div> : 
-             contacts.map(contact => (
-                <div key={contact.id} onClick={() => setActiveContact(contact)} className={`p-4 border-b border-zinc-800/30 cursor-pointer hover:bg-zinc-800/50 ${activeContact?.id === contact.id ? 'bg-primary/5 border-l-2 border-l-primary' : ''}`}>
-                    <div className="flex justify-between items-start mb-1">
-                        <div className="flex items-center gap-3 overflow-hidden">
-                             <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center shrink-0 border border-zinc-700 overflow-hidden">
-                                {contact.profile_pic_url ? <img src={contact.profile_pic_url} className="w-full h-full object-cover" /> : <span className="text-zinc-500 font-bold">{contact.name?.charAt(0) || 'U'}</span>}
-                             </div>
-                             <div className="min-w-0">
-                                <span className={`font-medium truncate block ${activeContact?.id === contact.id ? 'text-primary' : 'text-zinc-200'}`}>{contact.name}</span>
-                                <p className="text-xs text-zinc-500 truncate">{contact.last_message}</p>
-                             </div>
-                        </div>
-                        <span className="text-[10px] text-zinc-500 pt-1">{contact.last_message_time ? new Date(contact.last_message_time).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : ''}</span>
+            
+            {/* Action Bar do Inbox */}
+            {isInboxSelectionMode ? (
+                <div className="flex items-center justify-between bg-zinc-800/80 rounded-lg px-2 py-1.5 animate-in slide-in-from-top-2">
+                    <span className="text-xs text-white font-bold px-2">{selectedInboxIds.size} selecionados</span>
+                    <div className="flex gap-1">
+                        <Button size="icon" variant="ghost" className="h-8 w-8 text-zinc-300 hover:text-white" onClick={handleToggleMute}>
+                            <BellOff className="h-4 w-4" />
+                        </Button>
+                        <Button size="icon" variant="ghost" className="h-8 w-8 text-red-400 hover:bg-red-500/10 hover:text-red-300" onClick={() => setDeleteModalOpen(true)}>
+                            <Trash2 className="h-4 w-4" />
+                        </Button>
+                        <Button size="icon" variant="ghost" className="h-8 w-8 text-zinc-400" onClick={() => { setIsInboxSelectionMode(false); setSelectedInboxIds(new Set()); }}>
+                            <X className="h-4 w-4" />
+                        </Button>
                     </div>
                 </div>
-             ))}
+            ) : (
+                <div className="flex gap-2">
+                    <div className="relative group flex-1">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500" />
+                        <input className="w-full bg-zinc-950/50 border border-zinc-800 rounded-lg py-2 pl-9 pr-4 text-sm focus:outline-none focus:ring-1 focus:ring-primary text-white" placeholder="Buscar..." />
+                    </div>
+                    <Button 
+                        size="icon" 
+                        variant="ghost" 
+                        className="border border-zinc-800 hover:bg-zinc-800" 
+                        onClick={() => setIsInboxSelectionMode(true)}
+                        title="Selecionar Conversas"
+                    >
+                        <CheckSquare className="h-4 w-4 text-zinc-400" />
+                    </Button>
+                </div>
+            )}
+        </div>
+
+        {/* Lista de Contatos */}
+        <div className="flex-1 overflow-y-auto custom-scrollbar">
+            {loadingContacts ? <div className="flex justify-center p-8"><Loader2 className="animate-spin text-primary" /></div> : 
+             contacts.map(contact => {
+                const isSelected = selectedInboxIds.has(contact.jid);
+                return (
+                    <div 
+                        key={contact.id} 
+                        onClick={() => isInboxSelectionMode ? handleInboxSelect(contact.jid) : setActiveContact(contact)} 
+                        className={cn(
+                            "p-4 border-b border-zinc-800/30 cursor-pointer hover:bg-zinc-800/50 relative",
+                            activeContact?.id === contact.id && !isInboxSelectionMode ? 'bg-primary/5 border-l-2 border-l-primary' : '',
+                            isSelected ? "bg-primary/10" : ""
+                        )}
+                    >
+                        <div className="flex justify-between items-start mb-1">
+                            {isInboxSelectionMode && (
+                                <div className="mr-3 mt-1">
+                                    <Checkbox checked={isSelected} onCheckedChange={() => handleInboxSelect(contact.jid)} className="border-zinc-600 data-[state=checked]:bg-primary data-[state=checked]:border-primary" />
+                                </div>
+                            )}
+                            
+                            <div className="flex items-center gap-3 overflow-hidden flex-1">
+                                 <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center shrink-0 border border-zinc-700 overflow-hidden relative">
+                                    {contact.profile_pic_url ? (
+                                        <img src={contact.profile_pic_url} className="w-full h-full object-cover" />
+                                    ) : contact.is_group ? (
+                                        <Users className="w-5 h-5 text-zinc-500" />
+                                    ) : (
+                                        <span className="text-zinc-500 font-bold">{contact.name?.charAt(0) || 'U'}</span>
+                                    )}
+                                 </div>
+                                 <div className="min-w-0 flex-1">
+                                    <div className="flex justify-between items-center">
+                                        <span className={cn("font-medium truncate block", activeContact?.id === contact.id ? 'text-primary' : 'text-zinc-200')}>
+                                            {contact.name}
+                                        </span>
+                                        <span className="text-[10px] text-zinc-500">
+                                            {contact.last_message_time ? new Date(contact.last_message_time).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : ''}
+                                        </span>
+                                    </div>
+                                    <div className="flex items-center justify-between mt-0.5">
+                                        <p className="text-xs text-zinc-500 truncate max-w-[140px]">{contact.last_message}</p>
+                                        <div className="flex gap-1">
+                                            {contact.is_muted && <BellOff className="w-3 h-3 text-zinc-600" />}
+                                            {contact.unread_count > 0 && <span className="bg-primary text-primary-foreground text-[10px] font-bold px-1.5 rounded-full min-w-[18px] text-center">{contact.unread_count}</span>}
+                                        </div>
+                                    </div>
+                                 </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+             })}
         </div>
       </div>
 
-      {/* 2. Área Central */}
+      {/* 2. Área Central (Chat) */}
       <div className={cn("flex-1 flex-col bg-[#09090b] relative", activeContact ? "flex" : "hidden md:flex")}>
         {activeContact && selectedInstance ? (
             <>
@@ -384,7 +524,7 @@ export default function ChatPage() {
                     <div className="flex items-center gap-3">
                         <Button variant="ghost" size="icon" className="md:hidden text-zinc-400" onClick={() => setActiveContact(null)}><ArrowLeft className="h-5 w-5" /></Button>
                         <div className="h-10 w-10 rounded-full bg-zinc-800 flex items-center justify-center border border-zinc-700 overflow-hidden">
-                             {activeContact.profile_pic_url ? <img src={activeContact.profile_pic_url} className="w-full h-full object-cover" /> : <User className="w-5 h-5 text-zinc-500" />}
+                             {activeContact.profile_pic_url ? <img src={activeContact.profile_pic_url} className="w-full h-full object-cover" /> : (activeContact.is_group ? <Users className="w-5 h-5 text-zinc-500" /> : <User className="w-5 h-5 text-zinc-500" />)}
                         </div>
                         <div className="flex-1 min-w-0">
                             <h3 className="font-medium text-white truncate">{activeContact.name}</h3>
@@ -400,7 +540,7 @@ export default function ChatPage() {
                         {showOptionsMenu && (
                             <div className="absolute right-0 top-12 bg-zinc-900 border border-zinc-800 rounded-lg shadow-xl py-2 w-48 z-50 animate-in fade-in slide-in-from-top-2">
                                 <button 
-                                    onClick={toggleSelectionMode}
+                                    onClick={toggleMsgSelectionMode}
                                     className="w-full text-left px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-white flex items-center gap-2"
                                 >
                                     <CheckSquare className="w-4 h-4" /> Selecionar Mensagens
@@ -432,7 +572,7 @@ export default function ChatPage() {
                         <div key={msg.id || idx} className={`flex w-full mb-1`}>
                             <MessageBubble 
                                 message={msg} 
-                                isSelectionMode={isSelectionMode}
+                                isSelectionMode={isMsgSelectionMode}
                                 isSelected={selectedMsgIds.has(msg.id)}
                                 onSelect={() => handleSelectMessage(msg.id)}
                             />
@@ -442,16 +582,16 @@ export default function ChatPage() {
                 </div>
 
                 {/* FOOTER: INPUT OU SELECTION ACTION BAR */}
-                {isSelectionMode ? (
+                {isMsgSelectionMode ? (
                     <div className="p-4 border-t border-zinc-800 bg-zinc-900 flex items-center justify-between animate-in slide-in-from-bottom-10">
                         <span className="text-sm text-white font-medium pl-2">
                             {selectedMsgIds.size} selecionada(s)
                         </span>
                         <div className="flex gap-3">
-                            <Button variant="ghost" onClick={toggleSelectionMode}>Cancelar</Button>
+                            <Button variant="ghost" onClick={toggleMsgSelectionMode}>Cancelar</Button>
                             <Button 
                                 variant="destructive" 
-                                onClick={handleDeleteSelected}
+                                onClick={handleDeleteSelectedMsgs}
                                 disabled={selectedMsgIds.size === 0}
                                 className="bg-red-600 hover:bg-red-700"
                             >
@@ -525,6 +665,29 @@ export default function ChatPage() {
           <div className="space-y-4">
               <Input value={pollQuestion} onChange={e => setPollQuestion(e.target.value)} placeholder="Pergunta" />
               <Button onClick={handleCreatePoll} className="w-full">Criar</Button>
+          </div>
+      </Modal>
+
+      {/* Modal Deletar Conversas */}
+      <Modal isOpen={deleteModalOpen} onClose={() => setDeleteModalOpen(false)} title="Excluir Conversas">
+          <div className="space-y-6">
+              <div className="text-sm text-zinc-300 bg-red-500/10 p-4 rounded-lg border border-red-500/20">
+                  <p className="font-bold text-red-400 mb-2 flex items-center gap-2"><Trash2 className="w-4 h-4" /> Atenção</p>
+                  Você está prestes a apagar {selectedInboxIds.size} conversa(s). Isso removerá todo o histórico de mensagens.
+              </div>
+              
+              <div className="flex items-center gap-3 p-3 border border-zinc-800 rounded-lg hover:bg-zinc-900/50 cursor-pointer" onClick={() => setDeleteLeadToo(!deleteLeadToo)}>
+                  <Checkbox checked={deleteLeadToo} onCheckedChange={(c) => setDeleteLeadToo(!!c)} className="data-[state=checked]:bg-red-500 border-zinc-600" />
+                  <div>
+                      <span className="text-sm font-bold text-white block">Apagar também no CRM?</span>
+                      <span className="text-xs text-zinc-500">Se marcado, os leads vinculados serão removidos do Kanban.</span>
+                  </div>
+              </div>
+
+              <div className="flex justify-end gap-2">
+                  <Button variant="ghost" onClick={() => setDeleteModalOpen(false)}>Cancelar</Button>
+                  <Button variant="destructive" onClick={handleDeleteChats}>Confirmar Exclusão</Button>
+              </div>
           </div>
       </Modal>
     </div>

@@ -139,6 +139,7 @@ export interface Contact {
   email?: string;
   phone?: string;
   is_ignored?: boolean; // Novo campo do Schema
+  is_muted?: boolean;   // Novo campo do Schema
   updated_at?: string;
 }
 
@@ -188,6 +189,8 @@ export interface ChatContact {
   last_message?: string;
   last_message_time?: string;
   phone_number?: string;
+  is_muted?: boolean;   // Novo
+  is_group?: boolean;   // Novo
   updated_at?: string;
 }
 
