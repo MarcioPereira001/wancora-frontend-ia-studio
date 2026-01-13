@@ -43,7 +43,10 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
     const loadData = async () => {
         if(!user?.company_id) return;
 
-        // Load Contact Ignored Status
+        // Reset states when contact changes
+        setChecklist([]);
+        
+        // Load Contact Ignored Status directly
         const { data: contactData } = await supabase
             .from('contacts')
             .select('is_ignored')
@@ -77,6 +80,61 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
     loadData();
   }, [contact.remote_jid, lead, user?.company_id]);
 
+  // FUNÇÃO DE SEGURANÇA: Garante que exista um funil e um estágio
+  const ensurePipelineExists = async () => {
+      if (!user?.company_id) throw new Error("Usuário sem empresa.");
+
+      // 1. Tenta achar qualquer estágio válido
+      const { data: existingStage } = await supabase
+          .from('pipeline_stages')
+          .select('id')
+          .eq('company_id', user.company_id)
+          .limit(1)
+          .maybeSingle();
+
+      if (existingStage) return existingStage.id;
+
+      // 2. Se não achou estágio, verifica se tem pipeline
+      let { data: pipe } = await supabase
+          .from('pipelines')
+          .select('id')
+          .eq('company_id', user.company_id)
+          .limit(1)
+          .maybeSingle();
+
+      // 3. Se não tem pipeline, cria um "Padrão"
+      if (!pipe) {
+          const { data: newPipe, error: pipeError } = await supabase
+              .from('pipelines')
+              .insert({ 
+                  company_id: user.company_id, 
+                  name: 'Funil Padrão', 
+                  is_default: true 
+              })
+              .select()
+              .single();
+          
+          if (pipeError) throw pipeError;
+          pipe = newPipe;
+      }
+
+      // 4. Cria estágio "Novo" no pipeline
+      const { data: newStage, error: stageError } = await supabase
+          .from('pipeline_stages')
+          .insert({
+              company_id: user.company_id,
+              pipeline_id: pipe.id,
+              name: 'Novo Lead',
+              position: 0,
+              color: '#3b82f6'
+          })
+          .select()
+          .single();
+
+      if (stageError) throw stageError;
+      return newStage.id;
+  };
+
   // 2. Actions: Adicionar ao CRM
   const handleAddToCRM = async () => {
       if (!user?.company_id) return;
@@ -84,7 +142,6 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
       
       try {
           // 1. Atualiza Status na tabela Contacts (Anti-Ghost)
-          // Usamos upsert para garantir que funcione mesmo se o contato não existir completamente
           await supabase.from('contacts').upsert({
               jid: contact.remote_jid,
               company_id: user.company_id,
@@ -94,66 +151,35 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
           }, { onConflict: 'jid' });
           
           if (!lead) {
-              // 2. Busca Pipeline (Lógica de Fallback Robusta)
-              // Tenta pegar o padrão
-              let { data: pipe } = await supabase
-                .from('pipelines')
-                .select('id')
-                .eq('company_id', user.company_id)
-                .eq('is_default', true)
-                .limit(1)
-                .maybeSingle();
+              // 2. Garante Pipeline/Estágio (Self-Healing)
+              const stageId = await ensurePipelineExists();
+
+              // 3. Insere o Lead com telefone limpo (apenas números)
+              const cleanPhone = contact.remote_jid.split('@')[0].replace(/\D/g, '');
               
-              // Se não tem padrão, pega QUALQUER um (evita erro fatal)
-              if (!pipe) {
-                  const { data: firstPipe } = await supabase
-                    .from('pipelines')
-                    .select('id')
-                    .eq('company_id', user.company_id)
-                    .order('created_at', { ascending: true })
-                    .limit(1)
-                    .maybeSingle();
-                  pipe = firstPipe;
-              }
-
-              if (!pipe) {
-                  throw new Error("Crie um Funil de Vendas no menu CRM antes de adicionar leads.");
-              }
-
-              // 3. Busca o primeiro estágio desse funil
-              const { data: stage } = await supabase
-                .from('pipeline_stages')
-                .select('id')
-                .eq('pipeline_id', pipe.id)
-                .order('position', { ascending: true })
-                .limit(1)
-                .maybeSingle();
-              
-              if (!stage) {
-                  throw new Error("O Funil selecionado não possui etapas.");
-              }
-
-              // 4. Insere o Lead
-              const cleanPhone = contact.remote_jid.split('@')[0];
               const { error: insertError } = await supabase.from('leads').insert({
                   company_id: user.company_id,
-                  pipeline_stage_id: stage.id,
+                  pipeline_stage_id: stageId,
                   name: name || contact.push_name || contact.name || 'Novo Lead',
-                  phone: cleanPhone, // Salva apenas números
+                  phone: cleanPhone,
                   status: 'new',
-                  owner_id: user.id, // Atribui ao usuário logado
+                  owner_id: user.id,
                   value_potential: 0,
-                  temperature: 'cold'
+                  temperature: 'cold',
+                  bot_status: 'active'
               });
 
               if (insertError) throw insertError;
               
-              addToast({ type: 'success', title: 'Adicionado', message: 'Lead criado no Kanban.' });
+              addToast({ type: 'success', title: 'Sucesso', message: 'Lead criado no CRM.' });
           }
           
           setIsIgnored(false);
-          // Pequeno delay para garantir propagação no banco antes do refresh
-          setTimeout(() => refreshLead(), 500);
+          
+          // Delay para garantir que o banco processou antes de dar refresh
+          setTimeout(async () => {
+              await refreshLead();
+          }, 800);
 
       } catch (e: any) {
           console.error("Erro Add CRM:", e);
@@ -166,11 +192,11 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
   // 3. Actions: Remover do CRM
   const handleRemoveFromCRM = async () => {
       if (!user?.company_id) return;
-      if (!confirm("Isso removerá o lead do CRM e bloqueará a IA. Continuar?")) return;
+      if (!confirm("Isso removerá o lead do CRM e bloqueará a IA para este contato. Continuar?")) return;
       
       setLoading(true);
       try {
-          // 1. Marca contato como ignorado (Bloqueia IA)
+          // 1. Marca contato como ignorado
           await supabase.from('contacts')
             .update({ is_ignored: true })
             .eq('jid', contact.remote_jid)
@@ -181,8 +207,8 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
               const { error } = await supabase.from('leads').delete().eq('id', lead.id);
               if (error) throw error;
           } else {
-              // Fallback de segurança: remove por telefone se o objeto lead estiver null
-              const cleanPhone = contact.remote_jid.split('@')[0];
+              // Fallback: Tenta remover por telefone se o objeto lead estiver desatualizado
+              const cleanPhone = contact.remote_jid.split('@')[0].replace(/\D/g, '');
               await supabase.from('leads')
                 .delete()
                 .eq('company_id', user.company_id)
@@ -191,7 +217,10 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
           
           addToast({ type: 'info', title: 'Removido', message: 'Lead excluído e contato pausado.' });
           setIsIgnored(true);
-          setTimeout(() => refreshLead(), 500);
+          
+          setTimeout(async () => {
+              await refreshLead();
+          }, 800);
 
       } catch (e: any) {
           console.error("Erro Remove CRM:", e);
