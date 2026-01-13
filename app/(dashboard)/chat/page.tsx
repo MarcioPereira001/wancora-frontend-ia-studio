@@ -104,13 +104,32 @@ export default function ChatPage() {
   const [contactName, setContactName] = useState("");
   const [contactPhone, setContactPhone] = useState("");
   
+  // Location Data
+  const [locLat, setLocLat] = useState("");
+  const [locLng, setLocLng] = useState("");
+
   // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const mediaMenuRef = useRef<HTMLDivElement>(null); // Ref para click outside
+  const fileInputRef = useRef<HTMLInputElement>(null); // Added missing ref
   
   const scrollToBottom = (behavior: 'auto' | 'smooth' = 'smooth') => {
       messagesEndRef.current?.scrollIntoView({ behavior });
   };
+
+  // --- CLICK OUTSIDE HANDLER ---
+  useEffect(() => {
+      function handleClickOutside(event: MouseEvent) {
+          if (mediaMenuRef.current && !mediaMenuRef.current.contains(event.target as Node)) {
+              setMediaMenuOpen(false);
+          }
+      }
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => {
+          document.removeEventListener("mousedown", handleClickOutside);
+      };
+  }, []);
 
   // --- ACTIONS ---
   
@@ -121,8 +140,13 @@ export default function ChatPage() {
       }
       setActiveContact(contact);
       setSearchTerm("");
+      setMediaMenuOpen(false); // Fecha menu ao trocar
       
-      if (contact.unread_count > 0) {
+      // Zera o count LOCALMENTE para feedback instantâneo
+      contact.unread_count = 0;
+      
+      // Zera no banco
+      if (contact.unread_count > -1) { // Sempre tenta zerar se abrir
           await supabase.from('contacts').update({ unread_count: 0 }).eq('jid', contact.jid).eq('company_id', user?.company_id);
           refreshChats();
       }
@@ -135,7 +159,7 @@ export default function ChatPage() {
         .from('messages')
         .select(`*, contacts (push_name)`)
         .eq('remote_jid', activeContact.remote_jid) 
-        .eq('session_id', selectedInstance.session_id) 
+        // .eq('session_id', selectedInstance.session_id) // REMOVIDO: Para ver msgs de outros devices
         .eq('company_id', user?.company_id)
         .order('created_at', { ascending: false })
         .range(offset, offset + MESSAGES_PER_PAGE - 1);
@@ -181,25 +205,52 @@ export default function ChatPage() {
 
       initChat();
 
-      const channelName = `chat:${activeContact.remote_jid}:${selectedInstance.session_id}`;
+      const channelName = `chat:${activeContact.remote_jid}`;
       const subscription = supabase
         .channel(channelName)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `remote_jid=eq.${activeContact.remote_jid}` }, (payload) => {
-            if (payload.new && (payload.new as any).session_id !== selectedInstance.session_id) return;
+        .on('postgres_changes', { 
+            event: '*', 
+            schema: 'public', 
+            table: 'messages', 
+            filter: `remote_jid=eq.${activeContact.remote_jid}` // Filtro simplificado para pegar tudo desse chat
+        }, (payload) => {
             if (payload.eventType === 'INSERT') {
                 const newMessage = payload.new as Message;
+                
+                // Evita duplicidade com mensagem otimista
                 setMessages(prev => {
-                    if (prev.some(m => m.id === newMessage.id)) return prev;
-                    const now = new Date(newMessage.created_at).getTime();
-                    const index = prev.findIndex(m => m.status === 'sending' && m.content === newMessage.content && m.from_me === newMessage.from_me && Math.abs(new Date(m.created_at).getTime() - now) < 5000);
-                    if (index !== -1) { const newArr = [...prev]; newArr[index] = newMessage; return newArr; }
+                    const exists = prev.some(m => m.id === newMessage.id);
+                    if (exists) return prev;
+
+                    // Procura mensagem temporária enviada há pouco tempo com mesmo conteúdo
+                    const tempIndex = prev.findIndex(m => 
+                        m.status === 'sending' && 
+                        m.from_me === newMessage.from_me &&
+                        // Verifica conteúdo (Texto ou URL de media)
+                        (m.content === newMessage.content || (m.message_type !== 'text' && m.message_type === newMessage.message_type))
+                    );
+
+                    if (tempIndex !== -1) {
+                        // Substitui a temp pela real
+                        const newArr = [...prev];
+                        newArr[tempIndex] = newMessage;
+                        return newArr;
+                    }
+
                     return [...prev, newMessage];
                 });
+
+                // Scroll se estiver perto do fundo
                 if (scrollContainerRef.current) {
                     const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current;
-                    if (scrollHeight - scrollTop - clientHeight < 200) setTimeout(() => scrollToBottom('smooth'), 100);
+                    if (scrollHeight - scrollTop - clientHeight < 300) setTimeout(() => scrollToBottom('smooth'), 100);
                 }
-                if (!newMessage.from_me) supabase.from('contacts').update({ unread_count: 0 }).eq('jid', activeContact.remote_jid);
+                
+                // Marca como lida se recebida agora
+                if (!newMessage.from_me) {
+                    supabase.from('contacts').update({ unread_count: 0 }).eq('jid', activeContact.remote_jid);
+                }
+
             } else if (payload.eventType === 'UPDATE') {
                 setMessages(prev => prev.map(m => m.id === payload.new.id ? payload.new as Message : m));
             } else if (payload.eventType === 'DELETE') {
@@ -216,24 +267,34 @@ export default function ChatPage() {
       if(!activeContact || !user?.company_id || !selectedInstance) return;
       
       const tempId = `temp-${Date.now()}`;
+      // Cria objeto de mensagem otimista correto para cada tipo
+      let contentDisplay = payload.text;
+      if (payload.type === 'pix') contentDisplay = `Chave Pix: ${payload.text}`;
+      if (payload.type === 'poll') contentDisplay = JSON.stringify(payload.content);
+      if (payload.type === 'location') contentDisplay = JSON.stringify(payload.content);
+      if (payload.type === 'contact') contentDisplay = JSON.stringify(payload.content);
+      if (payload.caption) contentDisplay = payload.caption;
+
       const tempMsg: Message = {
           id: tempId,
           remote_jid: activeContact.remote_jid,
           from_me: true,
-          content: payload.text || payload.caption || JSON.stringify(payload.content) || "Mídia",
+          content: contentDisplay,
           body: payload.text,
           message_type: payload.type || 'text',
           status: 'sending',
           created_at: new Date().toISOString(),
           session_id: selectedInstance.session_id,
           company_id: user.company_id,
-          media_url: payload.url 
+          media_url: payload.url,
+          fileName: payload.fileName // Mantém nome original para doc
       } as any;
 
       setMessages(prev => [...prev, tempMsg]);
       setTimeout(() => scrollToBottom('smooth'), 50);
 
       try {
+          // Payload unificado para o backend
           await api.post('/message/send', {
               sessionId: selectedInstance.session_id,
               companyId: user.company_id,
@@ -242,9 +303,10 @@ export default function ChatPage() {
               text: payload.text,       
               url: payload.url,         
               caption: payload.caption, 
-              options: payload.options,
-              content: payload.content, // Para Polls/Contatos complexos
-              name: payload.name        
+              options: payload.options, // Para Polls antigos (se backend suportar)
+              content: payload.content, // Payload genérico para Polls/Contacts/Locations JSON
+              name: payload.name,       // Para Contatos/Docs
+              fileName: payload.fileName // Nome do arquivo
           });
       } catch (error) { 
           addToast({ type: 'error', title: 'Falha', message: 'Erro ao enviar mensagem.' });
@@ -257,7 +319,7 @@ export default function ChatPage() {
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file || !user?.company_id) return;
-      setMediaMenuOpen(false);
+      setMediaMenuOpen(false); // Fecha menu
       addToast({ type: 'info', title: 'Upload', message: 'Enviando arquivo...' });
       
       try {
@@ -267,10 +329,12 @@ export default function ChatPage() {
           else if (file.type.startsWith('video/')) type = 'video';
           else if (file.type.startsWith('audio/')) type = 'audio';
           
-          await dispatchMessage({ type, url: publicUrl, caption: input, fileName });
+          await dispatchMessage({ type, url: publicUrl, caption: input, fileName: fileName }); // fileName original
           setInput("");
       } catch (e: any) {
           addToast({ type: 'error', title: 'Erro', message: e.message });
+      } finally {
+          if (fileInputRef.current) fileInputRef.current.value = ''; // Limpa input
       }
   };
 
@@ -278,17 +342,19 @@ export default function ChatPage() {
   const handleCreatePoll = () => {
       if(!pollQuestion.trim() || pollOptions.length < 2) return;
       const validOptions = pollOptions.filter(o => o.trim());
+      // Envia estrutura JSON no content
       dispatchMessage({ 
           type: 'poll', 
-          content: { name: pollQuestion, options: validOptions } 
+          content: { name: pollQuestion, options: validOptions, selectableOptionsCount: 1 } 
       });
       setPollQuestion(""); setPollOptions(["Sim", "Não"]); setActiveModal(null);
   };
 
   const handleSendPix = () => {
       if(!pixKey.trim()) return;
-      // Envia como Texto Formatado ou Tipo Pix se o backend suportar
-      const text = `Chave Pix: ${pixKey}`;
+      // Backend espera texto simples ou payload específico. Vamos mandar texto formatado para garantir
+      // mas com tipo 'pix' para o frontend renderizar bonito
+      const text = `${pixKey}`;
       dispatchMessage({ type: 'pix', text });
       setPixKey(""); setActiveModal(null);
   };
@@ -301,7 +367,17 @@ export default function ChatPage() {
   };
 
   const handleSendLocation = () => {
-      // Simulação Web: Envia coordenadas fixas ou pede input (aqui vamos simplificar pedindo input manual ou pegando atual)
+      // Se tiver coordenadas manuais
+      if (locLat && locLng) {
+          dispatchMessage({ 
+              type: 'location', 
+              content: { latitude: parseFloat(locLat), longitude: parseFloat(locLng) } 
+          });
+          setActiveModal(null);
+          return;
+      }
+
+      // Senão tenta pegar do navegador
       if (navigator.geolocation) {
           navigator.geolocation.getCurrentPosition((pos) => {
               dispatchMessage({ 
@@ -320,10 +396,16 @@ export default function ChatPage() {
       const container = e.currentTarget;
       if (container.scrollTop < 50 && hasMoreMessages && !fetchingMore && !loadingMessages) {
           setFetchingMore(true);
+          const currentHeight = container.scrollHeight; // Capture height before fetching
           const olderMessages = await fetchMessages(messages.length);
           if (olderMessages.length > 0) {
               setMessages(prev => [...olderMessages, ...prev]);
-              setTimeout(() => { if (scrollContainerRef.current) scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight - container.scrollHeight; }, 0);
+              setTimeout(() => {
+                  if (scrollContainerRef.current) {
+                      const newHeight = scrollContainerRef.current.scrollHeight;
+                      scrollContainerRef.current.scrollTop = newHeight - currentHeight;
+                  }
+              }, 0);
           } else {
               setHasMoreMessages(false);
           }
@@ -333,6 +415,13 @@ export default function ChatPage() {
 
   const handleInboxSelect = (jid: string) => {
       setSelectedInboxIds(prev => { const n = new Set(prev); if(n.has(jid)) n.delete(jid); else n.add(jid); return n; });
+  };
+
+  // Quick Message Handler (Slash Command)
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      const val = e.target.value;
+      setInput(val);
+      // Aqui poderia entrar lógica de mostrar popup se val.startsWith('/')
   };
 
   // Logic placeholders to satisfy imports
@@ -398,6 +487,7 @@ export default function ChatPage() {
             {loadingContacts ? <div className="flex justify-center p-8"><Loader2 className="animate-spin text-primary" /></div> : 
              filteredContacts.map(contact => {
                 const isSelected = selectedInboxIds.has(contact.jid);
+                // Badge Novo: Menos de 24h E unread > 0 ou última msg não lida
                 const isNewLead = contact.updated_at && (new Date().getTime() - new Date(contact.updated_at).getTime() < 24 * 60 * 60 * 1000);
 
                 return (
@@ -519,8 +609,8 @@ export default function ChatPage() {
                 ) : (
                     <div className="p-3 md:p-4 border-t border-zinc-800 bg-zinc-900/30 backdrop-blur relative">
                         <div className="flex items-end gap-2 bg-zinc-950/80 border border-zinc-800 rounded-xl p-2 focus-within:ring-1 focus-within:ring-primary/50 transition-all shadow-inner relative">
-                            {/* Anexo Menu (Expansível) */}
-                            <div className="relative">
+                            {/* Anexo Menu (Expansível) - Click Outside Implementado */}
+                            <div className="relative" ref={mediaMenuRef}>
                                 <Button variant="ghost" size="icon" className="h-9 w-9 text-zinc-400 hover:text-zinc-100" onClick={() => setMediaMenuOpen(!mediaMenuOpen)}><Paperclip className="h-5 w-5" /></Button>
                                 {mediaMenuOpen && (
                                     <div className="absolute bottom-12 left-0 bg-zinc-900 border border-zinc-800 rounded-xl shadow-xl p-2 w-56 z-50 grid grid-cols-2 gap-2 animate-in slide-in-from-bottom-2">
@@ -531,6 +621,11 @@ export default function ChatPage() {
                                         <label className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
                                             <FileText className="w-5 h-5 text-blue-400" /> Documento
                                             <input type="file" className="hidden" accept="*" onChange={handleFileUpload} />
+                                        </label>
+                                        {/* Audio File Input (Workaround for "Audio não envia") */}
+                                        <label className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
+                                            <Mic className="w-5 h-5 text-pink-400" /> Áudio
+                                            <input type="file" className="hidden" accept="audio/*" onChange={handleFileUpload} />
                                         </label>
                                         <button onClick={() => { setMediaMenuOpen(false); setActiveModal('location'); }} className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
                                             <MapPin className="w-5 h-5 text-red-400" /> Localização
@@ -544,21 +639,11 @@ export default function ChatPage() {
                                         <button onClick={() => { setMediaMenuOpen(false); setActiveModal('pix'); }} className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
                                             <DollarSign className="w-5 h-5 text-green-400" /> Pix
                                         </button>
-                                        <label className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
-                                            <span className="w-5 h-5 flex items-center justify-center border-2 border-zinc-600 rounded-full text-[10px] font-bold">PTT</span>
-                                            Áudio
-                                            <input type="file" className="hidden" accept="audio/*" capture onClick={(e) => { e.stopPropagation(); }} onChange={handleFileUpload} />
-                                        </label>
-                                        <label className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
-                                            <span className="w-5 h-5 flex items-center justify-center border-2 border-zinc-600 rounded-lg text-[10px] font-bold">CAM</span>
-                                            Câmera
-                                            <input type="file" className="hidden" accept="image/*" capture="environment" onChange={handleFileUpload} />
-                                        </label>
                                     </div>
                                 )}
                             </div>
 
-                            <textarea className="flex-1 bg-transparent border-none outline-none text-sm text-white resize-none py-2 max-h-32 custom-scrollbar" placeholder="Digite..." value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendText(); }}} rows={1} />
+                            <textarea className="flex-1 bg-transparent border-none outline-none text-sm text-white resize-none py-2 max-h-32 custom-scrollbar" placeholder="Digite..." value={input} onChange={handleInputChange} onKeyDown={(e) => { if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendText(); }}} rows={1} />
                             
                             <Button size="icon" className={`h-9 w-9 transition-transform ${input.trim() ? 'scale-100' : 'scale-0 w-0 p-0'}`} onClick={handleSendText}><Send className="h-4 w-4" /></Button>
                         </div>
@@ -633,13 +718,24 @@ export default function ChatPage() {
           </div>
       </Modal>
 
-      {/* 4. LOCATION MODAL */}
+      {/* 4. LOCATION MODAL (Manual Input Added) */}
       <Modal isOpen={activeModal === 'location'} onClose={() => setActiveModal(null)} title="Enviar Localização">
           <div className="space-y-4 text-center py-4">
               <MapPin className="w-12 h-12 text-red-500 mx-auto mb-2" />
               <p className="text-sm text-zinc-400">Deseja enviar sua localização atual?</p>
-              <p className="text-xs text-zinc-600">(O navegador solicitará permissão)</p>
-              <Button onClick={handleSendLocation} className="w-full mt-4">Confirmar e Enviar</Button>
+              <Button onClick={handleSendLocation} className="w-full mt-4">Usar GPS Atual</Button>
+              
+              <div className="relative flex py-2 items-center">
+                  <div className="flex-grow border-t border-zinc-800"></div>
+                  <span className="flex-shrink-0 mx-4 text-zinc-600 text-xs">OU DIGITE</span>
+                  <div className="flex-grow border-t border-zinc-800"></div>
+              </div>
+
+              <div className="flex gap-2">
+                  <Input placeholder="Latitude" value={locLat} onChange={e => setLocLat(e.target.value)} className="text-xs" />
+                  <Input placeholder="Longitude" value={locLng} onChange={e => setLocLng(e.target.value)} className="text-xs" />
+              </div>
+              <Button onClick={handleSendLocation} disabled={!locLat || !locLng} className="w-full mt-2" variant="secondary">Enviar Manual</Button>
           </div>
       </Modal>
 

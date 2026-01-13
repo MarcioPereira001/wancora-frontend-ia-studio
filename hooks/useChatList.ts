@@ -10,7 +10,6 @@ export function useChatList(selectedSessionId: string | null) {
   const [rawContacts, setRawContacts] = useState<ChatContact[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Função auxiliar para formatar o preview da mensagem
   const formatMessagePreview = (content: string, type: string) => {
     if (!content && type !== 'text') {
         if (type === 'image') return '📷 Imagem';
@@ -21,51 +20,51 @@ export function useChatList(selectedSessionId: string | null) {
         if (type === 'location') return '📍 Localização';
         if (type === 'sticker') return '👾 Figurinha';
         if (type === 'contact') return '👤 Contato';
-    }
-    if (type === 'poll' && typeof content === 'string' && content.startsWith('{')) {
-        try {
-            const pollData = JSON.parse(content);
-            return `📊 ${pollData.name || 'Enquete'}`;
-        } catch (e) { return '📊 Enquete'; }
+        if (type === 'pix') return '💲 Pix';
     }
     return content;
   };
 
   const fetchChats = async () => {
-    if (!user?.company_id || !selectedSessionId) {
+    if (!user?.company_id) {
         setRawContacts([]); 
         setLoading(false);
         return;
     }
 
     try {
-      setLoading(true);
+      // setLoading(true); // Removemos loading agressivo para evitar piscar na tela em updates
       
+      // Se não tiver session_id selecionado, busca de todos (visão geral)
       const { data, error } = await supabase.rpc('get_my_chat_list', {
           p_company_id: user.company_id,
-          p_session_id: selectedSessionId
+          p_session_id: selectedSessionId || undefined 
       });
 
       if (error) throw error;
 
       const mappedContacts: ChatContact[] = (data || []).map((row: any) => {
-          // Lógica de Foto: Lead (CRM) > Contato (WhatsApp)
           const displayPic = row.lead_pic || row.contact_pic;
           
-          // Helper Object para usar a função getDisplayName
+          // Lógica aprimorada para evitar "Novo Contato" se tiver push_name
+          let finalName = row.contact_name;
+          if (!finalName || finalName.includes('Novo Contato')) {
+              finalName = row.contact_push_name || row.lead_name || row.contact_name;
+          }
+
           const tempContact = {
               is_group: row.is_group,
-              name: row.contact_name || row.lead_name, // Nome salvo no banco
-              push_name: row.contact_push_name, // Nome do perfil
+              name: finalName,
+              push_name: row.contact_push_name,
               remote_jid: row.remote_jid
           };
 
           return {
-              id: row.remote_jid, // ID único visual
+              id: row.remote_jid,
               company_id: user.company_id,
               jid: row.remote_jid,
               remote_jid: row.remote_jid,
-              name: getDisplayName(tempContact), // Lógica centralizada
+              name: getDisplayName(tempContact),
               push_name: row.contact_push_name,
               profile_pic_url: displayPic,
               unread_count: Number(row.unread_count),
@@ -74,7 +73,6 @@ export function useChatList(selectedSessionId: string | null) {
               phone_number: row.remote_jid.split('@')[0],
               is_muted: row.is_muted,
               is_group: row.is_group,
-              // Data de criação para badge "Novo Lead" (usamos a data da primeira mensagem ou updated_at do contato se não houver lead)
               updated_at: row.contact_updated_at || new Date().toISOString()
           };
       });
@@ -82,7 +80,7 @@ export function useChatList(selectedSessionId: string | null) {
       setRawContacts(mappedContacts);
 
     } catch (err) {
-      console.error('Erro crítico ao buscar lista de chats:', err);
+      console.error('Erro chat list:', err);
     } finally {
       setLoading(false);
     }
@@ -91,31 +89,25 @@ export function useChatList(selectedSessionId: string | null) {
   useEffect(() => {
     fetchChats();
 
-    // REALTIME: Escuta Mensagens (Update de última msg e contador) E Contatos (Update de nome/mute)
-    // Isso garante que se chegar msg de contato novo, a lista atualiza
-    const msgChannel = supabase
-      .channel(`chat-list-msgs:${selectedSessionId}`)
+    // REALTIME IMPROVED: Escuta qualquer mudança em mensagens ou contatos desta empresa
+    const channel = supabase
+      .channel(`chat-list-global:${user?.company_id}`)
       .on('postgres_changes', { 
         event: '*', 
         schema: 'public', 
         table: 'messages',
-        filter: `session_id=eq.${selectedSessionId}` 
-      }, () => fetchChats()) // Recarrega lista para reordenar
+        filter: `company_id=eq.${user?.company_id}` 
+      }, () => fetchChats())
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'contacts',
+        filter: `company_id=eq.${user?.company_id}`
+      }, () => fetchChats())
       .subscribe();
 
-    const contactChannel = supabase
-        .channel(`chat-list-contacts:${user?.company_id}`)
-        .on('postgres_changes', {
-            event: '*',
-            schema: 'public',
-            table: 'contacts',
-            filter: `company_id=eq.${user?.company_id}`
-        }, () => fetchChats())
-        .subscribe();
-
     return () => {
-      supabase.removeChannel(msgChannel);
-      supabase.removeChannel(contactChannel);
+      supabase.removeChannel(channel);
     };
 
   }, [user?.company_id, selectedSessionId]);

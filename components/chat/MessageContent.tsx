@@ -20,7 +20,7 @@ export function MessageContent({ message }: MessageContentProps) {
 
   const handleCopy = (text: string) => {
       navigator.clipboard.writeText(text);
-      addToast({ type: 'success', title: 'Copiado!', message: 'Texto copiado para a área de transferência.' });
+      addToast({ type: 'success', title: 'Copiado!', message: 'Texto copiado.' });
   };
 
   // --- 1. IMAGEM ---
@@ -101,7 +101,8 @@ export function MessageContent({ message }: MessageContentProps) {
 
   // --- 4. DOCUMENTO ---
   if (type === 'document') {
-    const fileName = (message as any).fileName || mediaUrl?.split('/').pop()?.split('?')[0] || 'Documento';
+    // Tenta pegar fileName salvo ou extrair da URL
+    const fileName = (message as any).fileName || (mediaUrl ? decodeURIComponent(mediaUrl.split('/').pop()?.split('?')[0] || '') : 'Documento');
     
     return (
       <div 
@@ -115,7 +116,7 @@ export function MessageContent({ message }: MessageContentProps) {
           <FileText className={cn("w-5 h-5", isMe ? "text-primary" : "text-emerald-500")} />
         </div>
         <div className="flex-1 overflow-hidden">
-          <p className="text-sm font-medium truncate" title={fileName}>
+          <p className="text-sm font-medium truncate max-w-[180px]" title={fileName}>
             {fileName}
           </p>
           <span className="text-[10px] opacity-70 uppercase tracking-wide">Clique para baixar</span>
@@ -143,7 +144,6 @@ export function MessageContent({ message }: MessageContentProps) {
     return (
       <div className="mt-1">
           <a href={mapsUrl} target="_blank" rel="noopener noreferrer" className="block relative overflow-hidden rounded-lg border border-white/10 group">
-            {/* Mapa Estático Fake (Placeholder Visual) */}
             <div className="bg-zinc-800 h-32 w-64 flex items-center justify-center relative">
                 <div className="absolute inset-0 opacity-50 bg-[url('https://maps.googleapis.com/maps/api/staticmap?center=0,0&zoom=1&size=600x300')] bg-cover bg-center filter grayscale group-hover:grayscale-0 transition-all"></div>
                 <div className="bg-red-500/20 p-3 rounded-full animate-ping absolute"></div>
@@ -151,7 +151,7 @@ export function MessageContent({ message }: MessageContentProps) {
             </div>
             <div className={cn("p-2 text-xs flex items-center gap-2", isMe ? "bg-primary/20" : "bg-zinc-900")}>
                 <MapPin className="w-3 h-3" />
-                <span className="underline decoration-dotted underline-offset-2">Ver no Google Maps</span>
+                <span className="underline decoration-dotted underline-offset-2">Ver no Maps</span>
             </div>
           </a>
       </div>
@@ -162,13 +162,11 @@ export function MessageContent({ message }: MessageContentProps) {
   if (type === 'contact') {
       let contactData = { displayName: 'Contato', vcard: '' };
       try {
-          // Se vier como JSON string
           if(content.startsWith('{')) {
              const parsed = JSON.parse(content);
              contactData.displayName = parsed.displayName || parsed.name || 'Contato';
              contactData.vcard = parsed.vcard || '';
           } else {
-             // Formato simples "Nome|Vcard" ou apenas Vcard
              const parts = content.split('|');
              if(parts.length > 1) {
                  contactData.displayName = parts[0];
@@ -198,7 +196,6 @@ export function MessageContent({ message }: MessageContentProps) {
               </div>
               <button 
                 onClick={() => {
-                    // Download VCard Logic
                     const blob = new Blob([contactData.vcard], { type: 'text/vcard' });
                     const url = window.URL.createObjectURL(blob);
                     const a = document.createElement('a');
@@ -219,8 +216,8 @@ export function MessageContent({ message }: MessageContentProps) {
   }
 
   // --- 7. PIX (Custom Type) ---
-  if (type === 'pix' || (type === 'text' && content.includes('Chave Pix:'))) {
-      // Tenta extrair a chave se for texto formatado, ou usa o content direto se for type 'pix'
+  // Verifica tipo explícito 'pix' OU se o texto parece uma chave pix
+  if (type === 'pix' || (type === 'text' && (content.includes('Chave Pix:') || content.length > 20 && content.includes('.')))) {
       const pixKey = content.replace('Chave Pix:', '').trim();
       
       return (
@@ -261,7 +258,10 @@ export function MessageContent({ message }: MessageContentProps) {
     let pollData = { name: 'Enquete', options: [] };
     try {
         pollData = typeof content === 'string' && content.startsWith('{') ? JSON.parse(content) : { name: content, options: [] };
-    } catch (e) {}
+    } catch (e) {
+        // Fallback se JSON falhar
+        pollData.name = content;
+    }
 
     return (
         <div className={cn(
@@ -270,7 +270,7 @@ export function MessageContent({ message }: MessageContentProps) {
         )}>
             <div className="flex items-start gap-2 border-b border-white/5 pb-2">
                 <BarChart2 className="w-5 h-5 text-yellow-500 shrink-0 mt-0.5" />
-                <span className="font-bold text-sm leading-tight">{pollData.name}</span>
+                <span className="font-bold text-sm leading-tight">{pollData.name || 'Enquete'}</span>
             </div>
             <div className="space-y-2">
                 {pollData.options?.map((opt: string, idx: number) => (
@@ -281,7 +281,7 @@ export function MessageContent({ message }: MessageContentProps) {
                 ))}
             </div>
             <div className="text-center">
-                <span className="text-[10px] text-zinc-500 italic">Selecione uma opção para votar</span>
+                <span className="text-[10px] text-zinc-500 italic">Votação disponível no WhatsApp</span>
             </div>
         </div>
     );
