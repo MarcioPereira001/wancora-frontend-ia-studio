@@ -6,7 +6,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { TagSelector } from './TagSelector';
 import { createClient } from '@/utils/supabase/client';
 import { useToast } from '@/hooks/useToast';
-import { Save, Flame, Sun, Snowflake, User } from 'lucide-react';
+import { Save, Flame, Sun, Snowflake, User, Link as LinkIcon } from 'lucide-react';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useKanban } from '@/hooks/useKanban';
 import { useTeam } from '@/hooks/useTeam';
@@ -34,7 +34,8 @@ export function NewLeadModal({ isOpen, onClose, onSuccess, defaultStageId }: New
     temperature: 'warm' as 'hot' | 'warm' | 'cold',
     notes: '',
     tags: [] as string[],
-    owner_id: user?.id || '' // Default para o usuário atual
+    owner_id: user?.id || '',
+    website_link: '' // Novo campo temporário
   });
 
   const handleSubmit = async () => {
@@ -47,13 +48,13 @@ export function NewLeadModal({ isOpen, onClose, onSuccess, defaultStageId }: New
 
     setLoading(true);
     try {
-        // 1. Verifica Duplicidade (Telefone)
+        // 1. Verifica Duplicidade
         const cleanPhone = formData.phone.replace(/\D/g, '');
         const { data: existing } = await supabase
             .from('leads')
             .select('id, name')
             .eq('company_id', user.company_id)
-            .ilike('phone', `%${cleanPhone}%`) // Like para evitar problemas com 9 digito
+            .ilike('phone', `%${cleanPhone}%`)
             .limit(1)
             .maybeSingle();
 
@@ -63,7 +64,7 @@ export function NewLeadModal({ isOpen, onClose, onSuccess, defaultStageId }: New
             return;
         }
 
-        // 2. Define Stage ID (Fetch se não passado)
+        // 2. Stage Default
         let stageId = defaultStageId;
         if (!stageId) {
             const { data: pipe } = await supabase.from('pipelines').select('id').eq('company_id', user.company_id).eq('is_default', true).limit(1).maybeSingle();
@@ -75,8 +76,11 @@ export function NewLeadModal({ isOpen, onClose, onSuccess, defaultStageId }: New
 
         if (!stageId) throw new Error("Não foi possível identificar a etapa do funil.");
 
-        // 3. Criação via Hook (garante cache update)
-        await createLead({
+        // 3. Criação do Lead
+        // Como o hook createLead é void, fazemos insert manual aqui para pegar o ID e salvar o link
+        const position = Date.now();
+        const { data: newLead, error: insertError } = await supabase.from('leads').insert({
+            company_id: user.company_id,
             pipeline_stage_id: stageId,
             name: formData.name,
             phone: formData.phone,
@@ -86,13 +90,27 @@ export function NewLeadModal({ isOpen, onClose, onSuccess, defaultStageId }: New
             notes: formData.notes,
             tags: formData.tags,
             lead_score: 0,
-            owner_id: formData.owner_id
-        });
+            owner_id: formData.owner_id,
+            position
+        }).select().single();
+
+        if (insertError) throw insertError;
+
+        // 4. Salvar Link (Se houver)
+        if (formData.website_link.trim() && newLead) {
+            let url = formData.website_link;
+            if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+            
+            await supabase.from('lead_links').insert({
+                lead_id: newLead.id,
+                title: 'Website / Link Principal',
+                url: url
+            });
+        }
 
         addToast({ type: 'success', title: 'Sucesso', message: 'Lead criado com sucesso!' });
-        setFormData({
-            name: '', phone: '', email: '', value_potential: 0, temperature: 'warm', notes: '', tags: [], owner_id: user.id
-        });
+        setFormData({ name: '', phone: '', email: '', value_potential: 0, temperature: 'warm', notes: '', tags: [], owner_id: user.id, website_link: '' });
+        
         if (onSuccess) onSuccess();
         onClose();
 
@@ -164,6 +182,19 @@ export function NewLeadModal({ isOpen, onClose, onSuccess, defaultStageId }: New
                         <option key={m.id} value={m.id}>{m.name} ({m.role === 'owner' ? 'Dono' : 'Agente'})</option>
                     ))}
                 </select>
+            </div>
+        </div>
+
+        <div>
+            <label className="text-xs font-bold text-zinc-500 uppercase">Link / Site (Opcional)</label>
+            <div className="relative mt-1">
+                <LinkIcon className="absolute left-3 top-2.5 w-4 h-4 text-zinc-500" />
+                <Input 
+                    value={formData.website_link} 
+                    onChange={e => setFormData({...formData, website_link: e.target.value})} 
+                    placeholder="linkedin.com/in/perfil ou site.com"
+                    className="pl-9"
+                />
             </div>
         </div>
 

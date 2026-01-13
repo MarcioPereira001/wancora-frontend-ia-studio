@@ -39,8 +39,8 @@ export interface TeamMember {
 export interface Lead {
   id: string;
   company_id: string;
-  pipeline_stage_id: string; // VITAL: Chave de ligação com o Kanban
-  stage_id?: string; // Legacy/Backup
+  pipeline_stage_id: string;
+  stage_id?: string; // Legacy
   name: string;
   phone: string;
   email?: string;
@@ -51,12 +51,32 @@ export interface Lead {
   status?: string;
   tags: string[];
   notes?: string;
+  deadline?: string; // NOVO: Prazo do Lead
   created_at: string;
   updated_at?: string;
   next_appointment_at?: string;
   owner_id?: string;
   position?: number;
-  bot_status?: 'active' | 'paused' | 'off'; // Novo campo do Schema
+  bot_status?: 'active' | 'paused' | 'off';
+}
+
+export interface LeadActivity {
+  id: string;
+  company_id: string;
+  lead_id: string;
+  type: 'note' | 'log' | 'call' | 'meeting';
+  content: string;
+  created_by?: string;
+  created_at: string;
+  creator_name?: string; // Helper UI
+}
+
+export interface LeadLink {
+  id: string;
+  lead_id: string;
+  title: string;
+  url: string;
+  created_at: string;
 }
 
 export interface PipelineStage {
@@ -79,7 +99,7 @@ export interface Pipeline {
 }
 
 export interface KanbanColumn {
-  id: string; // pipeline_stage_id
+  id: string; 
   title: string;
   color: string;
   order: number;
@@ -92,6 +112,7 @@ export interface ChecklistItem {
   lead_id: string;
   text: string;
   is_completed: boolean;
+  deadline?: string; // NOVO: Prazo da Tarefa
   created_at: string;
 }
 
@@ -138,8 +159,8 @@ export interface Contact {
   company_id: string;
   email?: string;
   phone?: string;
-  is_ignored?: boolean; // Novo campo do Schema
-  is_muted?: boolean;   // Novo campo do Schema
+  is_ignored?: boolean;
+  is_muted?: boolean;
   updated_at?: string;
 }
 
@@ -167,14 +188,14 @@ export interface Message {
   message_type: 'text' | 'image' | 'video' | 'audio' | 'ptt' | 'voice' | 'document' | 'sticker' | 'location' | 'poll' | 'contact';
   status: 'sent' | 'delivered' | 'read' | 'failed' | 'sending';
   created_at: string;
-  has_media?: boolean; // Legacy
-  media_url?: string; // VITAL: URL pública do Supabase Storage
-  fileName?: string; // Helper UI
-  caption?: string; // Helper UI
+  has_media?: boolean;
+  media_url?: string;
+  fileName?: string;
+  caption?: string;
   lead_id?: string;
   lead?: Lead;
   contact?: Contact;
-  body?: string; // Alias para content em algumas views
+  body?: string;
 }
 
 export interface ChatContact {
@@ -189,8 +210,8 @@ export interface ChatContact {
   last_message?: string;
   last_message_time?: string;
   phone_number?: string;
-  is_muted?: boolean;   // Novo
-  is_group?: boolean;   // Novo
+  is_muted?: boolean;
+  is_group?: boolean;
   updated_at?: string;
 }
 
