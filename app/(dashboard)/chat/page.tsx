@@ -313,11 +313,13 @@ export default function ChatPage() {
                     </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4" style={{ backgroundImage: 'radial-gradient(circle at center, rgba(34, 197, 94, 0.03) 0%, transparent 70%)' }}>
+                {/* Área de Mensagens (Fundo com padrão sutil) */}
+                <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-2" style={{ backgroundImage: 'radial-gradient(circle at center, rgba(34, 197, 94, 0.03) 0%, transparent 70%)' }}>
                     {loadingMessages ? <div className="flex h-full items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-primary/50" /></div> : 
                      messages.map((msg, idx) => (
-                        <div key={msg.id || idx} className={`flex ${msg.from_me ? 'justify-end' : 'justify-start'}`}>
-                            <div className={`max-w-[85%] px-3 py-2 shadow-sm text-sm relative group ${msg.from_me ? 'bg-primary/10 text-primary-foreground border border-primary/20 rounded-2xl rounded-tr-sm' : 'bg-zinc-800/80 text-zinc-200 border border-zinc-700/50 rounded-2xl rounded-tl-sm'}`}>
+                        <div key={msg.id || idx} className={`flex ${msg.from_me ? 'justify-end' : 'justify-start'} mb-1`}>
+                            {/* AQUI: O wrapper da bolha agora é simples e delega o estilo para MessageBubble */}
+                            <div className="max-w-[85%] md:max-w-[70%]">
                                 <MessageBubble message={msg} />
                             </div>
                         </div>

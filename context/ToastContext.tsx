@@ -46,16 +46,17 @@ export function ToastProvider({ children }: ToastProviderProps) {
   return (
     <ToastContext.Provider value={{ addToast, removeToast }}>
       {children}
-      <div className="fixed top-4 right-4 z-[9999] flex flex-col gap-2 w-full max-w-sm pointer-events-none">
+      {/* Container de Notificações - Z-Index Extremo para sobreposição total */}
+      <div className="fixed top-4 right-4 z-[99999] flex flex-col gap-2 w-full max-w-sm pointer-events-none">
         {toasts.map((toast) => (
             <div 
                 key={toast.id}
                 className={`
-                    pointer-events-auto flex items-start gap-3 p-4 rounded-lg shadow-lg border backdrop-blur-md animate-in slide-in-from-right-full duration-300
-                    ${toast.type === 'success' ? 'bg-zinc-900/90 border-green-500/50 text-zinc-100' : ''}
-                    ${toast.type === 'error' ? 'bg-zinc-900/90 border-red-500/50 text-zinc-100' : ''}
-                    ${toast.type === 'info' ? 'bg-zinc-900/90 border-blue-500/50 text-zinc-100' : ''}
-                    ${toast.type === 'warning' ? 'bg-zinc-900/90 border-yellow-500/50 text-zinc-100' : ''}
+                    pointer-events-auto flex items-start gap-3 p-4 rounded-lg shadow-2xl border backdrop-blur-xl animate-in slide-in-from-right-full duration-300
+                    ${toast.type === 'success' ? 'bg-zinc-950/95 border-green-500/50 text-zinc-100 shadow-green-500/10' : ''}
+                    ${toast.type === 'error' ? 'bg-zinc-950/95 border-red-500/50 text-zinc-100 shadow-red-500/10' : ''}
+                    ${toast.type === 'info' ? 'bg-zinc-950/95 border-blue-500/50 text-zinc-100 shadow-blue-500/10' : ''}
+                    ${toast.type === 'warning' ? 'bg-zinc-950/95 border-yellow-500/50 text-zinc-100 shadow-yellow-500/10' : ''}
                 `}
             >
                 <div className="mt-0.5 shrink-0">
@@ -65,12 +66,12 @@ export function ToastProvider({ children }: ToastProviderProps) {
                     {toast.type === 'warning' && <AlertTriangle className="w-5 h-5 text-yellow-500" />}
                 </div>
                 <div className="flex-1">
-                    <h4 className="text-sm font-semibold">{toast.title}</h4>
-                    {toast.message && <p className="text-xs text-zinc-400 mt-1">{toast.message}</p>}
+                    <h4 className="text-sm font-bold">{toast.title}</h4>
+                    {toast.message && <p className="text-xs text-zinc-400 mt-1 leading-relaxed">{toast.message}</p>}
                 </div>
                 <button 
                     onClick={() => removeToast(toast.id)}
-                    className="text-zinc-500 hover:text-zinc-300 transition-colors"
+                    className="text-zinc-500 hover:text-zinc-300 transition-colors p-1 hover:bg-white/5 rounded"
                 >
                     <X className="w-4 h-4" />
                 </button>
