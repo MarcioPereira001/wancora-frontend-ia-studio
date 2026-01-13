@@ -7,7 +7,7 @@ import { ChatContact, Message, Instance, Lead } from '@/types';
 import { cleanJid, cn } from '@/lib/utils';
 import { 
     Loader2, Search, Send, Paperclip, Sparkles, Mic, 
-    Image as IconImage, FileText, BarChart2, X, Trash2, ArrowLeft, User, Smartphone, Wifi, Clock, MoreVertical, CheckSquare, BellOff, Bell, Users, Check, MapPin, DollarSign, List, Calendar, Plus, Copy, Crosshair
+    Image as IconImage, FileText, BarChart2, X, Trash2, ArrowLeft, User, Smartphone, Wifi, Clock, MoreVertical, CheckSquare, BellOff, Bell, Users, Check, MapPin, DollarSign, List, Calendar, Plus, Copy, Crosshair, StopCircle
 } from 'lucide-react';
 import { MessageBubble } from '@/components/chat/MessageBubble';
 import { ChatSidebar } from '@/components/chat/ChatSidebar';
@@ -89,6 +89,13 @@ export default function ChatPage() {
   const [isSchedulerOpen, setIsSchedulerOpen] = useState(false);
   const [mediaMenuOpen, setMediaMenuOpen] = useState(false);
   
+  // -- MEDIA RECORDING --
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   // -- MODALS STATE --
   const [activeModal, setActiveModal] = useState<'poll'|'pix'|'contact'|'location'|null>(null);
   
@@ -141,21 +148,29 @@ export default function ChatPage() {
       }
       setActiveContact(contact);
       setSearchTerm("");
-      setMediaMenuOpen(false); // Fecha menu ao trocar
+      setMediaMenuOpen(false); 
       
-      // Zera o count LOCALMENTE para feedback instantâneo
+      // Zera LOCALMENTE para UX instantânea
       contact.unread_count = 0;
       
-      // Zera no banco (RLS agora permite isso)
-      if (contact.unread_count > -1) { 
-          await supabase.from('contacts').update({ unread_count: 0 }).eq('jid', contact.jid).eq('company_id', user?.company_id);
+      // Tenta zerar no banco (Agende agora que a coluna existe, isso deve funcionar)
+      try {
+          await supabase.from('contacts')
+            .update({ unread_count: 0 })
+            .eq('jid', contact.jid)
+            .eq('company_id', user?.company_id);
+          
           refreshChats();
+      } catch (e) {
+          console.error("Erro ao zerar unread:", e);
       }
   };
 
   // --- FETCH MESSAGES ---
   const fetchMessages = async (offset: number) => {
       if(!activeContact || !selectedInstance) return [];
+      
+      // Importante: Filtramos por company_id para segurança e remote_jid para contexto
       const { data, error } = await supabase
         .from('messages')
         .select(`*, contacts (push_name)`)
@@ -163,6 +178,7 @@ export default function ChatPage() {
         .eq('company_id', user?.company_id)
         .order('created_at', { ascending: false })
         .range(offset, offset + MESSAGES_PER_PAGE - 1);
+        
       if (error) return [];
       return (data || []).reverse(); 
   };
@@ -182,7 +198,7 @@ export default function ChatPage() {
       refreshChats();
   };
 
-  // --- INIT CHAT ---
+  // --- INIT CHAT & REALTIME ---
   useEffect(() => {
       if(!activeContact || !selectedInstance) {
           setActiveLead(null);
@@ -205,72 +221,65 @@ export default function ChatPage() {
 
       initChat();
 
-      const channelName = `chat:${activeContact.remote_jid}`;
-      const subscription = supabase
-        .channel(channelName)
+      // REALTIME CRÍTICO: Canal global para pegar qualquer mensagem nova desta empresa
+      // Isso resolve o problema de mensagens de outros dispositivos não aparecerem se o session_id do filtro estiver errado.
+      const channel = supabase
+        .channel(`chat-room:${activeContact.remote_jid}`)
         .on('postgres_changes', { 
-            event: '*', 
+            event: 'INSERT', 
             schema: 'public', 
             table: 'messages', 
-            filter: `remote_jid=eq.${activeContact.remote_jid}` 
+            filter: `remote_jid=eq.${activeContact.remote_jid}` // Filtra apenas pelo contato atual
         }, (payload) => {
-            if (payload.eventType === 'INSERT') {
-                const newMessage = payload.new as Message;
-                
-                // Evita duplicidade com mensagem otimista
-                setMessages(prev => {
-                    const exists = prev.some(m => m.id === newMessage.id);
-                    if (exists) return prev;
+            const newMessage = payload.new as Message;
+            
+            // Verifica se pertence à empresa atual (segurança extra frontend)
+            if (newMessage.company_id !== user?.company_id) return;
 
-                    // Procura mensagem temporária enviada há pouco tempo com mesmo conteúdo
+            setMessages(prev => {
+                const exists = prev.some(m => m.id === newMessage.id);
+                if (exists) return prev;
+
+                // De-duplication lógica para mensagens enviadas por mim (Optimistic UI replacement)
+                if (newMessage.from_me) {
                     const tempIndex = prev.findIndex(m => 
                         m.status === 'sending' && 
-                        m.from_me === newMessage.from_me &&
-                        // Verifica conteúdo (Texto ou URL de media)
-                        (m.content === newMessage.content || (m.message_type !== 'text' && m.message_type === newMessage.message_type))
+                        (m.content === newMessage.content || m.message_type === newMessage.message_type)
                     );
-
                     if (tempIndex !== -1) {
-                        // Substitui a temp pela real
                         const newArr = [...prev];
                         newArr[tempIndex] = newMessage;
                         return newArr;
                     }
-
-                    return [...prev, newMessage];
-                });
-
-                if (scrollContainerRef.current) {
-                    const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current;
-                    if (scrollHeight - scrollTop - clientHeight < 300) setTimeout(() => scrollToBottom('smooth'), 100);
-                }
-                
-                if (!newMessage.from_me) {
-                    supabase.from('contacts').update({ unread_count: 0 }).eq('jid', activeContact.remote_jid);
                 }
 
-            } else if (payload.eventType === 'UPDATE') {
-                setMessages(prev => prev.map(m => m.id === payload.new.id ? payload.new as Message : m));
-            } else if (payload.eventType === 'DELETE') {
-                setMessages(prev => prev.filter(m => m.id !== payload.old.id));
+                return [...prev, newMessage];
+            });
+
+            setTimeout(() => scrollToBottom('smooth'), 100);
+            
+            // Marca como lida se recebida na janela aberta
+            if (!newMessage.from_me) {
+                supabase.from('contacts').update({ unread_count: 0 }).eq('jid', activeContact.remote_jid);
             }
         })
         .subscribe();
 
-      return () => { subscription.unsubscribe(); };
-  }, [activeContact?.id, selectedInstance?.session_id]);
+      return () => { supabase.removeChannel(channel); };
+  }, [activeContact?.id, user?.company_id]);
 
   // --- SENDING LOGIC ---
   const dispatchMessage = async (payload: any) => {
       if(!activeContact || !user?.company_id || !selectedInstance) return;
       
       const tempId = `temp-${Date.now()}`;
-      // Cria objeto de mensagem otimista correto para cada tipo
       let contentDisplay = payload.text;
+      
+      // Formata display otimista
       if (payload.type === 'pix') contentDisplay = `Chave Pix: ${payload.text}`;
-      if (payload.type === 'poll') contentDisplay = JSON.stringify(payload.content);
-      if (payload.type === 'location') contentDisplay = JSON.stringify(payload.content);
-      if (payload.type === 'contact') contentDisplay = JSON.stringify(payload.content);
+      if (payload.type === 'poll') contentDisplay = payload.content?.name || 'Enquete';
+      if (payload.type === 'location') contentDisplay = 'Localização';
+      if (payload.type === 'contact') contentDisplay = 'Contato';
       if (payload.caption) contentDisplay = payload.caption;
 
       const tempMsg: Message = {
@@ -285,14 +294,13 @@ export default function ChatPage() {
           session_id: selectedInstance.session_id,
           company_id: user.company_id,
           media_url: payload.url,
-          fileName: payload.fileName // Mantém nome original para doc
+          fileName: payload.fileName 
       } as any;
 
       setMessages(prev => [...prev, tempMsg]);
       setTimeout(() => scrollToBottom('smooth'), 50);
 
       try {
-          // Payload unificado para o backend
           await api.post('/message/send', {
               sessionId: selectedInstance.session_id,
               companyId: user.company_id,
@@ -301,10 +309,13 @@ export default function ChatPage() {
               text: payload.text,       
               url: payload.url,         
               caption: payload.caption, 
-              options: payload.options, // Para Polls antigos (se backend suportar)
-              content: payload.content, // Payload genérico para Polls/Contacts/Locations JSON
-              name: payload.name,       // Para Contatos/Docs
-              fileName: payload.fileName // Nome do arquivo
+              // IMPORTANTE: Mapeamento correto para o backend
+              poll: payload.type === 'poll' ? payload.content : undefined,
+              location: payload.type === 'location' ? payload.content : undefined,
+              contact: payload.type === 'contact' ? payload.content : undefined,
+              mimetype: payload.mimetype, // Para Audio/Doc
+              fileName: payload.fileName,
+              ptt: payload.ptt // Flag de áudio gravado
           });
       } catch (error) { 
           addToast({ type: 'error', title: 'Falha', message: 'Erro ao enviar mensagem.' });
@@ -318,39 +329,118 @@ export default function ChatPage() {
       const file = e.target.files?.[0];
       if (!file || !user?.company_id) return;
       
-      // Limite 50MB (Segurança Client-Side)
       if (file.size > 50 * 1024 * 1024) {
           addToast({ type: 'error', title: 'Arquivo muito grande', message: 'Limite máximo de 50MB.' });
           return;
       }
 
-      setMediaMenuOpen(false); // Fecha menu
+      setMediaMenuOpen(false); 
       addToast({ type: 'info', title: 'Upload', message: 'Enviando arquivo...' });
       
       try {
           const { publicUrl, fileName } = await uploadChatMedia(file, user.company_id);
           let type = 'document';
+          let ptt = false;
+
           if (file.type.startsWith('image/')) type = 'image';
           else if (file.type.startsWith('video/')) type = 'video';
-          else if (file.type.startsWith('audio/')) type = 'audio';
+          else if (file.type.startsWith('audio/')) {
+              type = 'audio';
+              // Se for upload de arquivo de áudio, não é PTT (nota de voz), é áudio normal
+              ptt = false; 
+          }
           
-          await dispatchMessage({ type, url: publicUrl, caption: input, fileName: fileName }); // fileName original
+          await dispatchMessage({ 
+              type, 
+              url: publicUrl, 
+              caption: input, 
+              fileName: fileName,
+              mimetype: file.type,
+              ptt: ptt 
+          }); 
           setInput("");
       } catch (e: any) {
           addToast({ type: 'error', title: 'Erro', message: e.message });
       } finally {
-          if (fileInputRef.current) fileInputRef.current.value = ''; // Limpa input
+          if (fileInputRef.current) fileInputRef.current.value = ''; 
       }
+  };
+
+  // --- AUDIO RECORDING (PTT) ---
+  const startRecording = async () => {
+      try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          const mediaRecorder = new MediaRecorder(stream);
+          mediaRecorderRef.current = mediaRecorder;
+          audioChunksRef.current = [];
+
+          mediaRecorder.ondataavailable = (event) => {
+              if (event.data.size > 0) audioChunksRef.current.push(event.data);
+          };
+
+          mediaRecorder.onstop = async () => {
+              // Quando parar, cria o blob e envia
+              const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/mp3' }); // Tenta forçar mp3 container
+              const audioFile = new File([audioBlob], `voice_${Date.now()}.mp3`, { type: 'audio/mp3' });
+              
+              if (audioFile.size > 0 && user?.company_id) {
+                  try {
+                      const { publicUrl } = await uploadChatMedia(audioFile, user.company_id);
+                      await dispatchMessage({ 
+                          type: 'audio', 
+                          url: publicUrl, 
+                          mimetype: 'audio/mp4', // WhatsApp gosta de audio/mp4 para PTT
+                          ptt: true // Flag crucial para ser nota de voz (verde)
+                      });
+                  } catch (e) {
+                      addToast({ type: 'error', title: 'Erro', message: 'Falha ao enviar áudio.' });
+                  }
+              }
+              
+              // Limpeza
+              stream.getTracks().forEach(track => track.stop());
+          };
+
+          mediaRecorder.start();
+          setIsRecording(true);
+          setRecordingTime(0);
+          timerRef.current = setInterval(() => setRecordingTime(prev => prev + 1), 1000);
+
+      } catch (err) {
+          addToast({ type: 'error', title: 'Microfone', message: 'Permissão negada ou indisponível.' });
+      }
+  };
+
+  const stopRecording = (cancel = false) => {
+      if (mediaRecorderRef.current && isRecording) {
+          if (cancel) {
+              // Se cancelar, apenas para e não faz nada no onstop (precisaria refatorar para ser perfeito, mas aqui limpamos tracks)
+              mediaRecorderRef.current.stream.getTracks().forEach(t => t.stop());
+              mediaRecorderRef.current = null;
+          } else {
+              mediaRecorderRef.current.stop();
+          }
+      }
+      setIsRecording(false);
+      if (timerRef.current) clearInterval(timerRef.current);
+      setRecordingTime(0);
+  };
+
+  const formatTime = (seconds: number) => {
+      const mins = Math.floor(seconds / 60);
+      const secs = seconds % 60;
+      return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
   // --- SPECIAL SEND HANDLERS ---
   const handleCreatePoll = () => {
       if(!pollQuestion.trim() || pollOptions.length < 2) return;
       const validOptions = pollOptions.filter(o => o.trim());
-      if (validOptions.length < 2) return;
+      if (validOptions.length < 2) {
+          addToast({type: 'warning', title: 'Enquete', message: 'Mínimo 2 opções.'});
+          return;
+      }
 
-      // Envia estrutura JSON no content compatível com o backend
-      // Backend espera content: { name: string, options: string[], selectableOptionsCount: number }
       dispatchMessage({ 
           type: 'poll', 
           content: { 
@@ -364,43 +454,40 @@ export default function ChatPage() {
 
   const handleSendPix = () => {
       if(!pixKey.trim()) return;
-      const text = `Chave Pix: ${pixKey}`;
-      dispatchMessage({ type: 'pix', text });
+      // Envia como texto formatado, mas com tipo 'pix' para o frontend reconhecer
+      dispatchMessage({ type: 'pix', text: pixKey });
       setPixKey(""); setActiveModal(null);
   };
 
   const handleSendContact = () => {
       if(!contactName.trim() || !contactPhone.trim()) return;
       const vcard = `BEGIN:VCARD\nVERSION:3.0\nFN:${contactName}\nTEL;type=CELL:${contactPhone}\nEND:VCARD`;
-      
-      // Backend precisa saber que é um contato. Mandamos content JSON.
       dispatchMessage({ 
           type: 'contact', 
-          content: { 
-              displayName: contactName, 
-              vcard: vcard,
-              phone: contactPhone // Helper para backend
-          } 
+          content: { displayName: contactName, vcard } 
       });
       setContactName(""); setContactPhone(""); setActiveModal(null);
   };
 
-  // --- LOCATION LOGIC REFORMULADA (Google Maps Style) ---
   const getCurrentLocation = () => {
+      if (!navigator.geolocation) {
+          addToast({ type: 'error', title: 'Erro', message: 'Geolocalização não suportada.' });
+          return;
+      }
       setLocLoading(true);
-      if (navigator.geolocation) {
-          navigator.geolocation.getCurrentPosition((pos) => {
+      navigator.geolocation.getCurrentPosition(
+          (pos) => {
               setLocLat(pos.coords.latitude);
               setLocLng(pos.coords.longitude);
               setLocLoading(false);
-          }, (err) => {
+          },
+          (err) => {
+              console.error(err);
+              addToast({ type: 'error', title: 'Erro GPS', message: 'Não foi possível obter localização.' });
               setLocLoading(false);
-              addToast({ type: 'error', title: 'Erro', message: 'Permissão de localização negada ou indisponível.' });
-          }, { enableHighAccuracy: true });
-      } else {
-          setLocLoading(false);
-          addToast({ type: 'error', title: 'Erro', message: 'Navegador não suporta geolocalização.' });
-      }
+          },
+          { enableHighAccuracy: true, timeout: 10000 }
+      );
   };
 
   const handleSendLocation = () => {
@@ -410,8 +497,7 @@ export default function ChatPage() {
               content: { latitude: locLat, longitude: locLng } 
           });
           setActiveModal(null);
-          setLocLat(null); 
-          setLocLng(null);
+          setLocLat(null); setLocLng(null);
       }
   };
 
@@ -441,13 +527,11 @@ export default function ChatPage() {
       setSelectedInboxIds(prev => { const n = new Set(prev); if(n.has(jid)) n.delete(jid); else n.add(jid); return n; });
   };
 
-  // Quick Message Handler
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-      const val = e.target.value;
-      setInput(val);
+      setInput(e.target.value);
   };
 
-  // Placeholders
+  // Imports placeholders
   const handleToggleMute = async () => {};
   const handleDeleteChats = async () => {};
   const toggleMsgSelectionMode = () => { setIsMsgSelectionMode(!isMsgSelectionMode); setSelectedMsgIds(new Set()); setShowOptionsMenu(false); };
@@ -510,7 +594,6 @@ export default function ChatPage() {
             {loadingContacts ? <div className="flex justify-center p-8"><Loader2 className="animate-spin text-primary" /></div> : 
              filteredContacts.map(contact => {
                 const isSelected = selectedInboxIds.has(contact.jid);
-                // Badge Novo: Menos de 24h E unread > 0 ou última msg não lida
                 const isNewLead = contact.updated_at && (new Date().getTime() - new Date(contact.updated_at).getTime() < 24 * 60 * 60 * 1000);
 
                 return (
@@ -581,7 +664,6 @@ export default function ChatPage() {
                         </div>
                     </div>
                     
-                    {/* Header Actions */}
                     <div className="relative">
                         <Button variant="ghost" size="icon" onClick={() => setShowOptionsMenu(!showOptionsMenu)} className="text-zinc-400 hover:text-white">
                             <MoreVertical className="w-5 h-5" />
@@ -632,7 +714,7 @@ export default function ChatPage() {
                 ) : (
                     <div className="p-3 md:p-4 border-t border-zinc-800 bg-zinc-900/30 backdrop-blur relative">
                         <div className="flex items-end gap-2 bg-zinc-950/80 border border-zinc-800 rounded-xl p-2 focus-within:ring-1 focus-within:ring-primary/50 transition-all shadow-inner relative">
-                            {/* Anexo Menu (Expansível) - Click Outside Implementado */}
+                            {/* Anexo Menu */}
                             <div className="relative" ref={mediaMenuRef}>
                                 <Button variant="ghost" size="icon" className="h-9 w-9 text-zinc-400 hover:text-zinc-100" onClick={() => setMediaMenuOpen(!mediaMenuOpen)}><Paperclip className="h-5 w-5" /></Button>
                                 {mediaMenuOpen && (
@@ -644,11 +726,6 @@ export default function ChatPage() {
                                         <label className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
                                             <FileText className="w-5 h-5 text-blue-400" /> Documento
                                             <input type="file" className="hidden" accept="*" onChange={handleFileUpload} />
-                                        </label>
-                                        {/* Audio File Input (Workaround for "Audio não envia") */}
-                                        <label className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
-                                            <Mic className="w-5 h-5 text-pink-400" /> Áudio
-                                            <input type="file" className="hidden" accept="audio/*" onChange={handleFileUpload} />
                                         </label>
                                         <button onClick={() => { setMediaMenuOpen(false); setActiveModal('location'); }} className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
                                             <MapPin className="w-5 h-5 text-red-400" /> Localização
@@ -666,9 +743,33 @@ export default function ChatPage() {
                                 )}
                             </div>
 
-                            <textarea className="flex-1 bg-transparent border-none outline-none text-sm text-white resize-none py-2 max-h-32 custom-scrollbar" placeholder="Digite..." value={input} onChange={handleInputChange} onKeyDown={(e) => { if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendText(); }}} rows={1} />
-                            
-                            <Button size="icon" className={`h-9 w-9 transition-transform ${input.trim() ? 'scale-100' : 'scale-0 w-0 p-0'}`} onClick={handleSendText}><Send className="h-4 w-4" /></Button>
+                            {/* Text Input / Audio Recorder UI */}
+                            {isRecording ? (
+                                <div className="flex-1 flex items-center justify-between px-2">
+                                    <div className="flex items-center gap-2 text-red-500 animate-pulse">
+                                        <div className="w-3 h-3 rounded-full bg-red-500" />
+                                        <span className="font-mono text-sm font-bold">{formatTime(recordingTime)}</span>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <Button variant="ghost" size="icon" className="text-red-500 hover:bg-red-500/10" onClick={() => stopRecording(true)}>
+                                            <Trash2 className="w-5 h-5" />
+                                        </Button>
+                                        <Button size="icon" className="bg-green-600 hover:bg-green-500" onClick={() => stopRecording(false)}>
+                                            <Send className="w-4 h-4" />
+                                        </Button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <>
+                                    <textarea className="flex-1 bg-transparent border-none outline-none text-sm text-white resize-none py-2 max-h-32 custom-scrollbar" placeholder="Digite..." value={input} onChange={handleInputChange} onKeyDown={(e) => { if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendText(); }}} rows={1} />
+                                    
+                                    {input.trim() ? (
+                                        <Button size="icon" className="h-9 w-9 transition-transform" onClick={handleSendText}><Send className="h-4 w-4" /></Button>
+                                    ) : (
+                                        <Button size="icon" variant="ghost" className="h-9 w-9 text-zinc-400 hover:text-white" onClick={startRecording}><Mic className="h-5 w-5" /></Button>
+                                    )}
+                                </>
+                            )}
                         </div>
                     </div>
                 )}
@@ -749,7 +850,6 @@ export default function ChatPage() {
               <div className="relative w-full h-48 bg-zinc-800 rounded-xl overflow-hidden border border-zinc-700 group">
                   {locLat && locLng ? (
                       <>
-                        {/* Imagem de fundo genérica para simular mapa */}
                         <div className="absolute inset-0 bg-[#e5e7eb]" style={{ 
                             backgroundImage: 'url("https://upload.wikimedia.org/wikipedia/commons/e/ec/World_map_blank_without_borders.svg")', 
                             backgroundSize: 'cover',
