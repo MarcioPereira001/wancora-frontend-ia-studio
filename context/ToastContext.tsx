@@ -46,8 +46,12 @@ export function ToastProvider({ children }: ToastProviderProps) {
   return (
     <ToastContext.Provider value={{ addToast, removeToast }}>
       {children}
-      {/* Container de Notificações - Z-Index Extremo para sobreposição total */}
-      <div className="fixed top-4 right-4 z-[99999] flex flex-col gap-2 w-full max-w-sm pointer-events-none">
+      {/* 
+          Container de Notificações 
+          - z-[2147483647]: Usa o maior inteiro assinado de 32 bits permitido em CSS para garantir que nada (modais, headers, etc) fique por cima.
+          - top-2 right-2: Posicionamento "bem no cantinho" (8px da borda).
+      */}
+      <div className="fixed top-2 right-2 z-[2147483647] flex flex-col gap-2 w-full max-w-sm pointer-events-none">
         {toasts.map((toast) => (
             <div 
                 key={toast.id}
