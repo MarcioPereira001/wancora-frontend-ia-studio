@@ -83,68 +83,81 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
       setLoading(true);
       
       try {
-          // 1. Reativa contato na tabela contacts (Anti-Ghost OFF)
-          await supabase.from('contacts')
-            .update({ is_ignored: false })
-            .eq('jid', contact.remote_jid)
-            .eq('company_id', user.company_id);
+          // 1. Atualiza Status na tabela Contacts (Anti-Ghost)
+          // Usamos upsert para garantir que funcione mesmo se o contato não existir completamente
+          await supabase.from('contacts').upsert({
+              jid: contact.remote_jid,
+              company_id: user.company_id,
+              is_ignored: false,
+              name: contact.name || contact.push_name,
+              updated_at: new Date().toISOString()
+          }, { onConflict: 'jid' });
           
           if (!lead) {
-              // 2. Busca pipeline para inserir o lead
+              // 2. Busca Pipeline (Lógica de Fallback Robusta)
+              // Tenta pegar o padrão
               let { data: pipe } = await supabase
                 .from('pipelines')
                 .select('id')
                 .eq('company_id', user.company_id)
                 .eq('is_default', true)
+                .limit(1)
                 .maybeSingle();
               
-              // Fallback: se não tiver default, pega o primeiro
+              // Se não tem padrão, pega QUALQUER um (evita erro fatal)
               if (!pipe) {
                   const { data: firstPipe } = await supabase
                     .from('pipelines')
                     .select('id')
                     .eq('company_id', user.company_id)
+                    .order('created_at', { ascending: true })
                     .limit(1)
                     .maybeSingle();
                   pipe = firstPipe;
               }
 
-              if (pipe) {
-                  const { data: stage } = await supabase
-                    .from('pipeline_stages')
-                    .select('id')
-                    .eq('pipeline_id', pipe.id)
-                    .order('position', { ascending: true })
-                    .limit(1)
-                    .maybeSingle();
-                  
-                  if (stage) {
-                      const cleanPhone = contact.remote_jid.split('@')[0];
-                      const { error } = await supabase.from('leads').insert({
-                          company_id: user.company_id,
-                          pipeline_stage_id: stage.id,
-                          name: name || contact.push_name || contact.name || 'Novo Lead',
-                          phone: cleanPhone,
-                          status: 'new',
-                          owner_id: user.id
-                      });
-
-                      if (error) throw error;
-                      addToast({ type: 'success', title: 'Adicionado', message: 'Lead criado no Kanban.' });
-                  } else {
-                      throw new Error("Pipeline sem estágios configurados.");
-                  }
-              } else {
-                  throw new Error("Nenhum funil de vendas encontrado.");
+              if (!pipe) {
+                  throw new Error("Crie um Funil de Vendas no menu CRM antes de adicionar leads.");
               }
+
+              // 3. Busca o primeiro estágio desse funil
+              const { data: stage } = await supabase
+                .from('pipeline_stages')
+                .select('id')
+                .eq('pipeline_id', pipe.id)
+                .order('position', { ascending: true })
+                .limit(1)
+                .maybeSingle();
+              
+              if (!stage) {
+                  throw new Error("O Funil selecionado não possui etapas.");
+              }
+
+              // 4. Insere o Lead
+              const cleanPhone = contact.remote_jid.split('@')[0];
+              const { error: insertError } = await supabase.from('leads').insert({
+                  company_id: user.company_id,
+                  pipeline_stage_id: stage.id,
+                  name: name || contact.push_name || contact.name || 'Novo Lead',
+                  phone: cleanPhone, // Salva apenas números
+                  status: 'new',
+                  owner_id: user.id, // Atribui ao usuário logado
+                  value_potential: 0,
+                  temperature: 'cold'
+              });
+
+              if (insertError) throw insertError;
+              
+              addToast({ type: 'success', title: 'Adicionado', message: 'Lead criado no Kanban.' });
           }
           
           setIsIgnored(false);
-          await refreshLead(); // Atualiza estado pai
+          // Pequeno delay para garantir propagação no banco antes do refresh
+          setTimeout(() => refreshLead(), 500);
 
       } catch (e: any) {
-          console.error(e);
-          addToast({ type: 'error', title: 'Erro', message: e.message || 'Falha ao criar lead.' });
+          console.error("Erro Add CRM:", e);
+          addToast({ type: 'error', title: 'Erro ao salvar', message: e.message || 'Verifique as permissões.' });
       } finally {
           setLoading(false);
       }
@@ -153,11 +166,11 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
   // 3. Actions: Remover do CRM
   const handleRemoveFromCRM = async () => {
       if (!user?.company_id) return;
-      if (!confirm("Isso removerá o lead do CRM e impedirá a IA de responder. Continuar?")) return;
+      if (!confirm("Isso removerá o lead do CRM e bloqueará a IA. Continuar?")) return;
       
       setLoading(true);
       try {
-          // 1. Marca contato como ignorado (Anti-Ghost ON)
+          // 1. Marca contato como ignorado (Bloqueia IA)
           await supabase.from('contacts')
             .update({ is_ignored: true })
             .eq('jid', contact.remote_jid)
@@ -167,9 +180,8 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
           if (lead) {
               const { error } = await supabase.from('leads').delete().eq('id', lead.id);
               if (error) throw error;
-              addToast({ type: 'info', title: 'Removido', message: 'Lead excluído do CRM.' });
           } else {
-              // Fallback caso objeto lead esteja desatualizado
+              // Fallback de segurança: remove por telefone se o objeto lead estiver null
               const cleanPhone = contact.remote_jid.split('@')[0];
               await supabase.from('leads')
                 .delete()
@@ -177,10 +189,12 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
                 .ilike('phone', `%${cleanPhone}%`);
           }
           
+          addToast({ type: 'info', title: 'Removido', message: 'Lead excluído e contato pausado.' });
           setIsIgnored(true);
-          await refreshLead(); // Atualiza estado pai
+          setTimeout(() => refreshLead(), 500);
 
       } catch (e: any) {
+          console.error("Erro Remove CRM:", e);
           addToast({ type: 'error', title: 'Erro', message: e.message });
       } finally {
           setLoading(false);
@@ -257,7 +271,7 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
                     <Button 
                         onClick={handleAddToCRM} 
                         disabled={loading}
-                        className="w-full bg-green-600 hover:bg-green-500 text-white shadow-lg shadow-green-500/20"
+                        className="w-full bg-green-600 hover:bg-green-500 text-white shadow-lg shadow-green-500/20 transition-all active:scale-95"
                     >
                         <UserPlus className="w-4 h-4 mr-2" /> Adicionar ao CRM
                     </Button>
@@ -266,7 +280,7 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
                         onClick={handleRemoveFromCRM} 
                         disabled={loading} 
                         variant="outline"
-                        className="w-full border-red-500/30 text-red-400 hover:bg-red-500/10 hover:text-red-300 hover:border-red-500/50"
+                        className="w-full border-red-500/30 text-red-400 hover:bg-red-500/10 hover:text-red-300 hover:border-red-500/50 transition-all active:scale-95"
                     >
                         <Ban className="w-4 h-4 mr-2" /> Remover do CRM
                     </Button>
