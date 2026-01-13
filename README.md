@@ -29,6 +29,12 @@ Persistência: Gravação direta no Supabase via supabase-js (Service Role).
 
 Estratégia de Sincronização (Sync Strategy):
 
+Gerenciamento de Mídia (Supabase Storage):
+
+Bucket: `chat-media` (Público).
+
+Fluxo: O Backend intercepta mensagens com mídia -> Baixa o buffer -> Faz upload no Storage -> Salva a URL pública na coluna `messages.media_url`.
+
 syncFullHistory: true: Baixamos o histórico para popular a base.
 
 Chunking: Processamos mensagens em lotes seguros (ex: últimas 50) para evitar Out of Memory.
@@ -40,44 +46,36 @@ Master View: Owners e Admins possuem permissão especial (Admins and Owners can 
 B. O Banco de Dados (Supabase / PostgreSQL)
 A Fonte da Verdade. Se não está no banco, não existe.
 
-Schema Crítico & Relacionamentos
+Schema Crítico & Relacionamentos:
+
 instances
-
 Gerencia a conexão física.
-
-Regra: name pode ser nulo no insert para evitar erros de Race Condition. O Frontend define o nome.
+`session_id`: Identificador da sessão do Baileys.
 
 contacts (Agenda)
-
-jid (PK): Identificador único (551199999999@s.whatsapp.net).
-
-name: Nome salvo manualmente ou vindo de Grupos.
-
-push_name: Nome público do perfil (usado como fallback).
-
-profile_pic_url: Foto do avatar.
+`jid` (PK): Identificador único (551199999999@s.whatsapp.net).
+`is_ignored` (Boolean): [NOVO] Se TRUE, o sistema "Anti-Ghost" ignora mensagens e não cria Lead.
+`profile_pic_url`: Foto do avatar.
+`name` / `push_name`: Nomes de exibição.
 
 leads (O Negócio)
-
 Vinculado a um contato via lógica de negócio (telefone).
-
-pipeline_stage_id: Define onde ele está no Kanban.
-
-status: Status macro ('new', 'open', 'won', 'lost').
-
-owner_id (FK -> auth.users): O responsável pelo lead (para filtros e segurança).
-
-position (Float8): Indexador numérico para ordenação manual dos cards (Smart Drop).
+`pipeline_stage_id`: Define onde ele está no Kanban. (NUNCA use `stage_id`).
+`bot_status`: Controle do robô ('active', 'paused', 'off').
+`owner_id` (FK -> auth.users): Responsável pelo lead.
+`status`: Status macro ('new', 'open', 'won', 'lost').
 
 messages (O Histórico)
+`whatsapp_id` (Unique Index): Evita duplicatas.
+`remote_jid` (FK -> contacts.jid): Relacionamento físico.
+`lead_id` (FK -> leads.id): Relacionamento lógico.
+`message_type`: Tipo ('text', 'image', 'audio', 'video', 'document').
+`media_url`: Link público da mídia no Supabase Storage.
 
-whatsapp_id (Unique Index): A garantia de não haver duplicatas.
-
-remote_jid (FK -> contacts.jid): Relacionamento físico obrigatório.
-
-lead_id (FK -> leads.id): Relacionamento lógico (pode ser nulo).
-
-session_id: Rastreabilidade de qual instância baixou a mensagem.
+scheduled_messages (Agendamento)
+`scheduled_at`: Data/Hora do envio.
+`status`: 'pending', 'sent' ou 'failed'.
+`content`: Texto da mensagem.
 
 C. Segurança & RBAC (Role-Based Access Control)
 
@@ -110,42 +108,35 @@ Ao deletar: Backend fecha socket, limpa dados da tabela instances e baileys_auth
 
 Seleção: O usuário escolhe no topo do Chat qual instância ele quer operar. O chat filtra: WHERE session_id = selected_id.
 
-💬 Módulo 2: Chat Avançado (The Inbox)
-Layout: Sidebar Esquerda (Lista) + Janela Central (Chat) + Sidebar Direita (Dados do CRM/Lead).
+💬 Módulo 2: Chat Avançado (Lead Command Center)
 
-Lista de Conversas (Left Panel):
+Layout: Sidebar Esquerda (Lista) + Janela Central (Chat) + Sidebar Direita (Gestão & CRM).
 
-Ordenação: Mais recentes primeiro.
+Visualização Multimídia:
 
-Display Name Logic:
+Imagens: Renderização com Lightbox (Zoom).
 
-contacts.name (Nome editado/Grupo)
+Áudio: Player nativo com controles.
 
-leads.name (Nome no CRM)
+Vídeo: Player HTML5.
 
-contacts.push_name (Nome do Perfil)
+Documentos: Card com botão de download.
 
-Número formatado.
+Sidebar Direita (Gestão de Lead):
 
-Janela de Chat (Main):
+Switch "Sincronizar Lead":
 
-Media Support:
+ON: Cria o Lead, define `contacts.is_ignored = false`.
 
-Áudio: Player nativo com timeline.
+OFF: Remove o Lead do Kanban, define `contacts.is_ignored = true` (Backend para de criar automático).
 
-Imagem/Vídeo: Modal de preview (Lightbox).
+Edição Rápida: Alterar Nome, Valor, Etiquetas e Checklist sem sair do chat.
 
-Documentos: Card com ícone de download.
+Input Area & Agendamento:
 
-Enquetes: Renderização nativa com botões de opção.
+Botão Relógio: Abre popover para agendar mensagem (salva em `scheduled_messages`).
 
-Input Area:
-
-Gravador de Áudio (Microfone com timer e cancelamento).
-
-Anexo (Menu Popover para Tipos de Mídia).
-
-Botão "IA Sugerir" (Chama a API do Gemini/Sentinela).
+Anexos: Envio de arquivos suportado pelo Backend.
 
 📊 Módulo 3: Kanban & Pipeline (Híbrido)
 Modos de Visualização:
@@ -237,22 +228,26 @@ Filtros Globais: DateRangePicker (Datas) e Seletor de Responsável (para Admins)
 Exportação: Geração de XLSX no cliente (Client-side) com os dados filtrados.
 
 4. Fluxos Críticos (Core Business Rules)
-A. O Fluxo "Anti-Ghost" (Lead Generation)
-Problema: Receber mensagem de número desconhecido e perder a venda. Solução Wancora:
 
-Trigger: messages.upsert (tipo notify).
+A. O Fluxo "Anti-Ghost" Inteligente (Lead Generation)**
 
-Verificação: O número existe na tabela leads?
+Trigger: `messages.upsert` (tipo notify).
 
-Ação (Se Não):
+Passo 1 (Verificação de Bloqueio): O contato tem `is_ignored = true`?
 
-Busca a etapa position: 0 do Pipeline padrão.
+Sim: O sistema *PARA*. Nenhuma ação é tomada.
 
-Cria um novo Lead: name: push_name, status: new.
+Não: Segue para o passo 2.
 
-Vinculação: Salva a mensagem com lead_id preenchido.
+Passo 2 (Verificação de Existência):** O número já existe na tabela `leads`?
 
-Resultado: O Kanban "brotou" um novo card na coluna "Novos".
+Ação (Se Não existir):
+
+Busca a etapa `position: 0` do Pipeline da empresa.
+
+Cria um novo Lead vinculado a essa etapa.
+
+Resultado: Apenas contatos relevantes viram cards no Kanban. Lixo e Spam podem ser ignorados via Frontend.
 
 B. O Fluxo de Histórico & Reconexão (Data Integrity)
 Problema: Mensagens duplicadas ao reconectar ou trocar de celular. Solução Wancora:
