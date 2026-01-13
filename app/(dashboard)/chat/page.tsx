@@ -7,7 +7,7 @@ import { ChatContact, Message, Instance, Lead } from '@/types';
 import { cleanJid, cn } from '@/lib/utils';
 import { 
     Loader2, Search, Send, Paperclip, Sparkles, Mic, 
-    Image as IconImage, FileText, BarChart2, X, Trash2, ArrowLeft, User, Smartphone, Wifi, Clock, MoreVertical, CheckSquare, BellOff, Bell, Users, Check, MapPin, DollarSign, List, Calendar, Plus, Copy
+    Image as IconImage, FileText, BarChart2, X, Trash2, ArrowLeft, User, Smartphone, Wifi, Clock, MoreVertical, CheckSquare, BellOff, Bell, Users, Check, MapPin, DollarSign, List, Calendar, Plus, Copy, Crosshair
 } from 'lucide-react';
 import { MessageBubble } from '@/components/chat/MessageBubble';
 import { ChatSidebar } from '@/components/chat/ChatSidebar';
@@ -105,8 +105,9 @@ export default function ChatPage() {
   const [contactPhone, setContactPhone] = useState("");
   
   // Location Data
-  const [locLat, setLocLat] = useState("");
-  const [locLng, setLocLng] = useState("");
+  const [locLat, setLocLat] = useState<number | null>(null);
+  const [locLng, setLocLng] = useState<number | null>(null);
+  const [locLoading, setLocLoading] = useState(false);
 
   // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -145,8 +146,8 @@ export default function ChatPage() {
       // Zera o count LOCALMENTE para feedback instantâneo
       contact.unread_count = 0;
       
-      // Zera no banco
-      if (contact.unread_count > -1) { // Sempre tenta zerar se abrir
+      // Zera no banco (RLS agora permite isso)
+      if (contact.unread_count > -1) { 
           await supabase.from('contacts').update({ unread_count: 0 }).eq('jid', contact.jid).eq('company_id', user?.company_id);
           refreshChats();
       }
@@ -159,7 +160,6 @@ export default function ChatPage() {
         .from('messages')
         .select(`*, contacts (push_name)`)
         .eq('remote_jid', activeContact.remote_jid) 
-        // .eq('session_id', selectedInstance.session_id) // REMOVIDO: Para ver msgs de outros devices
         .eq('company_id', user?.company_id)
         .order('created_at', { ascending: false })
         .range(offset, offset + MESSAGES_PER_PAGE - 1);
@@ -212,7 +212,7 @@ export default function ChatPage() {
             event: '*', 
             schema: 'public', 
             table: 'messages', 
-            filter: `remote_jid=eq.${activeContact.remote_jid}` // Filtro simplificado para pegar tudo desse chat
+            filter: `remote_jid=eq.${activeContact.remote_jid}` 
         }, (payload) => {
             if (payload.eventType === 'INSERT') {
                 const newMessage = payload.new as Message;
@@ -240,13 +240,11 @@ export default function ChatPage() {
                     return [...prev, newMessage];
                 });
 
-                // Scroll se estiver perto do fundo
                 if (scrollContainerRef.current) {
                     const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current;
                     if (scrollHeight - scrollTop - clientHeight < 300) setTimeout(() => scrollToBottom('smooth'), 100);
                 }
                 
-                // Marca como lida se recebida agora
                 if (!newMessage.from_me) {
                     supabase.from('contacts').update({ unread_count: 0 }).eq('jid', activeContact.remote_jid);
                 }
@@ -319,6 +317,13 @@ export default function ChatPage() {
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file || !user?.company_id) return;
+      
+      // Limite 50MB (Segurança Client-Side)
+      if (file.size > 50 * 1024 * 1024) {
+          addToast({ type: 'error', title: 'Arquivo muito grande', message: 'Limite máximo de 50MB.' });
+          return;
+      }
+
       setMediaMenuOpen(false); // Fecha menu
       addToast({ type: 'info', title: 'Upload', message: 'Enviando arquivo...' });
       
@@ -342,19 +347,24 @@ export default function ChatPage() {
   const handleCreatePoll = () => {
       if(!pollQuestion.trim() || pollOptions.length < 2) return;
       const validOptions = pollOptions.filter(o => o.trim());
-      // Envia estrutura JSON no content
+      if (validOptions.length < 2) return;
+
+      // Envia estrutura JSON no content compatível com o backend
+      // Backend espera content: { name: string, options: string[], selectableOptionsCount: number }
       dispatchMessage({ 
           type: 'poll', 
-          content: { name: pollQuestion, options: validOptions, selectableOptionsCount: 1 } 
+          content: { 
+              name: pollQuestion, 
+              options: validOptions, 
+              selectableOptionsCount: 1 
+          } 
       });
       setPollQuestion(""); setPollOptions(["Sim", "Não"]); setActiveModal(null);
   };
 
   const handleSendPix = () => {
       if(!pixKey.trim()) return;
-      // Backend espera texto simples ou payload específico. Vamos mandar texto formatado para garantir
-      // mas com tipo 'pix' para o frontend renderizar bonito
-      const text = `${pixKey}`;
+      const text = `Chave Pix: ${pixKey}`;
       dispatchMessage({ type: 'pix', text });
       setPixKey(""); setActiveModal(null);
   };
@@ -362,32 +372,46 @@ export default function ChatPage() {
   const handleSendContact = () => {
       if(!contactName.trim() || !contactPhone.trim()) return;
       const vcard = `BEGIN:VCARD\nVERSION:3.0\nFN:${contactName}\nTEL;type=CELL:${contactPhone}\nEND:VCARD`;
-      dispatchMessage({ type: 'contact', content: { displayName: contactName, vcard } });
+      
+      // Backend precisa saber que é um contato. Mandamos content JSON.
+      dispatchMessage({ 
+          type: 'contact', 
+          content: { 
+              displayName: contactName, 
+              vcard: vcard,
+              phone: contactPhone // Helper para backend
+          } 
+      });
       setContactName(""); setContactPhone(""); setActiveModal(null);
   };
 
+  // --- LOCATION LOGIC REFORMULADA (Google Maps Style) ---
+  const getCurrentLocation = () => {
+      setLocLoading(true);
+      if (navigator.geolocation) {
+          navigator.geolocation.getCurrentPosition((pos) => {
+              setLocLat(pos.coords.latitude);
+              setLocLng(pos.coords.longitude);
+              setLocLoading(false);
+          }, (err) => {
+              setLocLoading(false);
+              addToast({ type: 'error', title: 'Erro', message: 'Permissão de localização negada ou indisponível.' });
+          }, { enableHighAccuracy: true });
+      } else {
+          setLocLoading(false);
+          addToast({ type: 'error', title: 'Erro', message: 'Navegador não suporta geolocalização.' });
+      }
+  };
+
   const handleSendLocation = () => {
-      // Se tiver coordenadas manuais
       if (locLat && locLng) {
           dispatchMessage({ 
               type: 'location', 
-              content: { latitude: parseFloat(locLat), longitude: parseFloat(locLng) } 
+              content: { latitude: locLat, longitude: locLng } 
           });
           setActiveModal(null);
-          return;
-      }
-
-      // Senão tenta pegar do navegador
-      if (navigator.geolocation) {
-          navigator.geolocation.getCurrentPosition((pos) => {
-              dispatchMessage({ 
-                  type: 'location', 
-                  content: { latitude: pos.coords.latitude, longitude: pos.coords.longitude } 
-              });
-              setActiveModal(null);
-          }, () => {
-              addToast({ type: 'error', title: 'Erro', message: 'Permissão de localização negada.' });
-          });
+          setLocLat(null); 
+          setLocLng(null);
       }
   };
 
@@ -396,7 +420,7 @@ export default function ChatPage() {
       const container = e.currentTarget;
       if (container.scrollTop < 50 && hasMoreMessages && !fetchingMore && !loadingMessages) {
           setFetchingMore(true);
-          const currentHeight = container.scrollHeight; // Capture height before fetching
+          const currentHeight = container.scrollHeight; 
           const olderMessages = await fetchMessages(messages.length);
           if (olderMessages.length > 0) {
               setMessages(prev => [...olderMessages, ...prev]);
@@ -417,14 +441,13 @@ export default function ChatPage() {
       setSelectedInboxIds(prev => { const n = new Set(prev); if(n.has(jid)) n.delete(jid); else n.add(jid); return n; });
   };
 
-  // Quick Message Handler (Slash Command)
+  // Quick Message Handler
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
       const val = e.target.value;
       setInput(val);
-      // Aqui poderia entrar lógica de mostrar popup se val.startsWith('/')
   };
 
-  // Logic placeholders to satisfy imports
+  // Placeholders
   const handleToggleMute = async () => {};
   const handleDeleteChats = async () => {};
   const toggleMsgSelectionMode = () => { setIsMsgSelectionMode(!isMsgSelectionMode); setSelectedMsgIds(new Set()); setShowOptionsMenu(false); };
@@ -718,24 +741,65 @@ export default function ChatPage() {
           </div>
       </Modal>
 
-      {/* 4. LOCATION MODAL (Manual Input Added) */}
+      {/* 4. LOCATION MODAL (Google Maps Style) */}
       <Modal isOpen={activeModal === 'location'} onClose={() => setActiveModal(null)} title="Enviar Localização">
-          <div className="space-y-4 text-center py-4">
-              <MapPin className="w-12 h-12 text-red-500 mx-auto mb-2" />
-              <p className="text-sm text-zinc-400">Deseja enviar sua localização atual?</p>
-              <Button onClick={handleSendLocation} className="w-full mt-4">Usar GPS Atual</Button>
+          <div className="space-y-4 py-2">
               
-              <div className="relative flex py-2 items-center">
-                  <div className="flex-grow border-t border-zinc-800"></div>
-                  <span className="flex-shrink-0 mx-4 text-zinc-600 text-xs">OU DIGITE</span>
-                  <div className="flex-grow border-t border-zinc-800"></div>
+              {/* Fake Map Container */}
+              <div className="relative w-full h-48 bg-zinc-800 rounded-xl overflow-hidden border border-zinc-700 group">
+                  {locLat && locLng ? (
+                      <>
+                        {/* Imagem de fundo genérica para simular mapa */}
+                        <div className="absolute inset-0 bg-[#e5e7eb]" style={{ 
+                            backgroundImage: 'url("https://upload.wikimedia.org/wikipedia/commons/e/ec/World_map_blank_without_borders.svg")', 
+                            backgroundSize: 'cover',
+                            backgroundPosition: 'center',
+                            filter: 'opacity(0.3)'
+                        }}></div>
+                        <div className="absolute inset-0 flex items-center justify-center">
+                            <div className="bg-red-500 p-2 rounded-full shadow-xl animate-bounce">
+                                <MapPin className="w-6 h-6 text-white" fill="currentColor" />
+                            </div>
+                        </div>
+                        <div className="absolute bottom-2 left-2 right-2 bg-white/90 text-black text-xs p-2 rounded shadow flex justify-between items-center">
+                            <span className="font-mono">{locLat.toFixed(6)}, {locLng.toFixed(6)}</span>
+                            <span className="text-[10px] font-bold text-green-600 flex items-center gap-1"><Check className="w-3 h-3" /> Preciso</span>
+                        </div>
+                      </>
+                  ) : (
+                      <div className="absolute inset-0 flex flex-col items-center justify-center text-zinc-500 gap-2">
+                          <MapPin className="w-8 h-8 opacity-20" />
+                          <p className="text-xs">Aguardando localização...</p>
+                      </div>
+                  )}
+                  
+                  {locLoading && (
+                      <div className="absolute inset-0 bg-black/60 flex items-center justify-center backdrop-blur-sm z-20">
+                          <Loader2 className="w-8 h-8 text-primary animate-spin" />
+                      </div>
+                  )}
               </div>
 
-              <div className="flex gap-2">
-                  <Input placeholder="Latitude" value={locLat} onChange={e => setLocLat(e.target.value)} className="text-xs" />
-                  <Input placeholder="Longitude" value={locLng} onChange={e => setLocLng(e.target.value)} className="text-xs" />
-              </div>
-              <Button onClick={handleSendLocation} disabled={!locLat || !locLng} className="w-full mt-2" variant="secondary">Enviar Manual</Button>
+              {/* Action Button */}
+              {!locLat ? (
+                  <Button onClick={getCurrentLocation} className="w-full h-12 text-sm bg-blue-600 hover:bg-blue-500" disabled={locLoading}>
+                      <Crosshair className="w-4 h-4 mr-2" /> 
+                      {locLoading ? "Buscando satélites..." : "Obter Localização Atual"}
+                  </Button>
+              ) : (
+                  <div className="flex gap-2">
+                      <Button variant="outline" onClick={() => { setLocLat(null); setLocLng(null); }} className="flex-1">
+                          Refazer
+                      </Button>
+                      <Button onClick={handleSendLocation} className="flex-[2] bg-green-600 hover:bg-green-500">
+                          <Send className="w-4 h-4 mr-2" /> Enviar Localização
+                      </Button>
+                  </div>
+              )}
+              
+              <p className="text-[10px] text-zinc-500 text-center">
+                  Usamos o GPS do seu navegador para alta precisão.
+              </p>
           </div>
       </Modal>
 

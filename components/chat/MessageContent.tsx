@@ -1,6 +1,6 @@
 "use client";
 
-import { FileText, MapPin, Download, PlayCircle, Image as ImageIcon, Film, BarChart2, User, Copy, QrCode, DollarSign } from "lucide-react";
+import { FileText, MapPin, Download, PlayCircle, Image as ImageIcon, Film, BarChart2, User, Copy, QrCode, DollarSign, CheckCircle2 } from "lucide-react";
 import { Message } from "@/types";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/useToast";
@@ -11,8 +11,6 @@ interface MessageContentProps {
 
 export function MessageContent({ message }: MessageContentProps) {
   const { addToast } = useToast();
-  // O Backend agora salva a URL pública do Supabase Storage em `media_url`.
-  // `content` geralmente contém a legenda (caption) para mídias, ou o texto da mensagem.
   const mediaUrl = message.media_url; 
   let content = message.content || message.body || "";
   const type = message.message_type || 'text';
@@ -43,7 +41,7 @@ export function MessageContent({ message }: MessageContentProps) {
                 </div>
             )}
         </div>
-        {content && content !== mediaUrl && (
+        {content && content !== mediaUrl && content !== "Imagem" && (
             <p className="text-sm px-1 whitespace-pre-wrap mt-1">{content}</p>
         )}
       </div>
@@ -92,7 +90,7 @@ export function MessageContent({ message }: MessageContentProps) {
                 </div>
             )}
         </div>
-        {content && content !== mediaUrl && (
+        {content && content !== mediaUrl && content !== "Vídeo" && (
             <p className="text-sm px-1 whitespace-pre-wrap mt-1">{content}</p>
         )}
       </div>
@@ -101,9 +99,7 @@ export function MessageContent({ message }: MessageContentProps) {
 
   // --- 4. DOCUMENTO ---
   if (type === 'document') {
-    // Tenta pegar fileName salvo ou extrair da URL
     const fileName = (message as any).fileName || (mediaUrl ? decodeURIComponent(mediaUrl.split('/').pop()?.split('?')[0] || '') : 'Documento');
-    
     return (
       <div 
         onClick={() => mediaUrl && window.open(mediaUrl, '_blank')}
@@ -128,30 +124,50 @@ export function MessageContent({ message }: MessageContentProps) {
 
   // --- 5. LOCALIZAÇÃO ---
   if (type === 'location') {
-    // Tenta parsear se for JSON ou string simples
-    let coords = content;
+    let lat: number | null = null;
+    let long: number | null = null;
+
     try {
-        const parsed = JSON.parse(content);
+        const parsed = typeof content === 'string' && content.startsWith('{') ? JSON.parse(content) : {};
         if(parsed.latitude && parsed.longitude) {
-            coords = `${parsed.latitude},${parsed.longitude}`;
+            lat = parsed.latitude;
+            long = parsed.longitude;
+        } else if (typeof content === 'string' && content.includes('Loc:')) {
+             const parts = content.replace('Loc:', '').split(',');
+             lat = parseFloat(parts[0]);
+             long = parseFloat(parts[1]);
         }
-    } catch(e) {
-        coords = content.replace('Loc:', '').trim();
-    }
-    
-    const mapsUrl = `https://www.google.com/maps?q=${coords}`;
-    
+    } catch(e) {}
+
+    const mapsUrl = lat && long ? `https://www.google.com/maps?q=${lat},${long}` : '#';
+    const staticMapUrl = lat && long 
+        ? `https://maps.googleapis.com/maps/api/staticmap?center=${lat},${long}&zoom=15&size=400x200&maptype=roadmap&markers=color:red%7C${lat},${long}&key=YOUR_API_KEY_HERE` 
+        : ''; // Fallback visual below since we don't have API KEY in frontend env usually
+
     return (
       <div className="mt-1">
-          <a href={mapsUrl} target="_blank" rel="noopener noreferrer" className="block relative overflow-hidden rounded-lg border border-white/10 group">
-            <div className="bg-zinc-800 h-32 w-64 flex items-center justify-center relative">
-                <div className="absolute inset-0 opacity-50 bg-[url('https://maps.googleapis.com/maps/api/staticmap?center=0,0&zoom=1&size=600x300')] bg-cover bg-center filter grayscale group-hover:grayscale-0 transition-all"></div>
-                <div className="bg-red-500/20 p-3 rounded-full animate-ping absolute"></div>
-                <MapPin className="w-8 h-8 text-red-500 relative z-10 drop-shadow-lg" />
+          <a href={mapsUrl} target="_blank" rel="noopener noreferrer" className="block relative overflow-hidden rounded-lg border border-white/10 group w-[260px]">
+            <div className="bg-zinc-800 h-32 w-full flex items-center justify-center relative overflow-hidden">
+                {/* Visual Fake Map Pattern */}
+                <div className="absolute inset-0 bg-[#e5e7eb] opacity-80" style={{ 
+                    backgroundImage: 'url("https://upload.wikimedia.org/wikipedia/commons/e/ec/World_map_blank_without_borders.svg")', 
+                    backgroundSize: 'cover', 
+                    backgroundPosition: 'center',
+                    filter: 'grayscale(100%) opacity(0.3)'
+                }}></div>
+                <div className="bg-red-500 p-2 rounded-full shadow-xl relative z-10 animate-bounce">
+                    <MapPin className="w-5 h-5 text-white" fill="currentColor" />
+                </div>
+                <div className="absolute bottom-2 left-2 bg-white/90 text-black text-[10px] px-2 py-1 rounded shadow">
+                    {lat?.toFixed(4)}, {long?.toFixed(4)}
+                </div>
             </div>
-            <div className={cn("p-2 text-xs flex items-center gap-2", isMe ? "bg-primary/20" : "bg-zinc-900")}>
-                <MapPin className="w-3 h-3" />
-                <span className="underline decoration-dotted underline-offset-2">Ver no Maps</span>
+            <div className={cn("p-2 text-xs flex items-center justify-between gap-2", isMe ? "bg-primary/20" : "bg-zinc-900")}>
+                <div className="flex items-center gap-2">
+                    <MapPin className="w-3 h-3" />
+                    <span className="font-bold">Localização Atual</span>
+                </div>
+                <span className="text-[10px] underline decoration-dotted opacity-70">Abrir Maps</span>
             </div>
           </a>
       </div>
@@ -160,27 +176,26 @@ export function MessageContent({ message }: MessageContentProps) {
 
   // --- 6. CONTATO ---
   if (type === 'contact') {
-      let contactData = { displayName: 'Contato', vcard: '' };
+      let contactData = { displayName: 'Contato', vcard: '', phone: '' };
       try {
           if(content.startsWith('{')) {
              const parsed = JSON.parse(content);
              contactData.displayName = parsed.displayName || parsed.name || 'Contato';
              contactData.vcard = parsed.vcard || '';
+             contactData.phone = parsed.phone || '';
           } else {
+             // Fallback legado
              const parts = content.split('|');
-             if(parts.length > 1) {
-                 contactData.displayName = parts[0];
-                 contactData.vcard = parts[1];
-             } else {
-                 contactData.displayName = 'Contato';
-                 contactData.vcard = content;
-             }
+             contactData.displayName = parts[0] || 'Contato';
+             contactData.vcard = parts[1] || '';
           }
       } catch(e) {}
 
-      // Extrai telefone do vcard se possível
-      const phoneMatch = contactData.vcard.match(/TEL.*:(.*)/);
-      const phone = phoneMatch ? phoneMatch[1] : 'Ver detalhes';
+      // Tenta extrair telefone do vcard se não tiver no JSON
+      if (!contactData.phone && contactData.vcard) {
+          const match = contactData.vcard.match(/TEL.*:(.*)/);
+          if (match) contactData.phone = match[1];
+      }
 
       return (
           <div className={cn(
@@ -191,33 +206,26 @@ export function MessageContent({ message }: MessageContentProps) {
                   <User className="w-5 h-5" />
               </div>
               <div className="flex-1 min-w-0">
-                  <p className="font-bold text-sm truncate">{contactData.displayName}</p>
-                  <p className="text-xs opacity-70 truncate">{phone}</p>
+                  <p className="font-bold text-sm truncate text-blue-400">{contactData.displayName}</p>
+                  <p className="text-xs opacity-70 truncate">{contactData.phone || 'Ver detalhes'}</p>
               </div>
               <button 
-                onClick={() => {
-                    const blob = new Blob([contactData.vcard], { type: 'text/vcard' });
-                    const url = window.URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.style.display = 'none';
-                    a.href = url;
-                    a.download = `${contactData.displayName}.vcf`;
-                    document.body.appendChild(a);
-                    a.click();
-                    window.URL.revokeObjectURL(url);
-                }}
-                className="p-2 hover:bg-white/10 rounded-full transition-colors"
+                className="p-2 hover:bg-white/10 rounded-full transition-colors text-primary"
                 title="Salvar Contato"
               >
-                  <Download className="w-4 h-4" />
+                  <span className="text-xs font-bold px-2 py-1 bg-primary/20 rounded border border-primary/30">Salvar</span>
               </button>
           </div>
       );
   }
 
-  // --- 7. PIX (Custom Type) ---
-  // Verifica tipo explícito 'pix' OU se o texto parece uma chave pix
-  if (type === 'pix' || (type === 'text' && (content.includes('Chave Pix:') || content.length > 20 && content.includes('.')))) {
+  // --- 7. PIX (FIXED LOGIC) ---
+  // Apenas considera Pix se o tipo for EXPLICITAMENTE 'pix' OU se começar com "Chave Pix:"
+  // Removemos a verificação genérica de length+ponto que quebrava textos longos.
+  const isExplicitPix = type === 'pix';
+  const isTextPix = type === 'text' && typeof content === 'string' && content.startsWith('Chave Pix:');
+
+  if (isExplicitPix || isTextPix) {
       const pixKey = content.replace('Chave Pix:', '').trim();
       
       return (
@@ -229,16 +237,16 @@ export function MessageContent({ message }: MessageContentProps) {
                   <div className="p-1.5 bg-emerald-500/20 rounded text-emerald-400">
                       <QrCode className="w-4 h-4" />
                   </div>
-                  <span className="font-bold text-sm text-emerald-400">Pagamento via Pix</span>
+                  <span className="font-bold text-sm text-emerald-400">Pix Copia e Cola</span>
               </div>
               
               <div className="space-y-1">
-                  <p className="text-[10px] text-zinc-400 uppercase tracking-wider font-bold">Chave Pix</p>
+                  <p className="text-[10px] text-zinc-400 uppercase tracking-wider font-bold">Chave</p>
                   <div className="flex items-center gap-2 bg-black/20 p-2 rounded border border-white/5">
-                      <code className="text-xs font-mono flex-1 break-all text-zinc-200">{pixKey}</code>
+                      <code className="text-xs font-mono flex-1 break-all text-zinc-200 line-clamp-2">{pixKey}</code>
                       <button 
                         onClick={() => handleCopy(pixKey)} 
-                        className="p-1.5 hover:bg-white/10 rounded text-zinc-400 hover:text-white transition-colors"
+                        className="p-1.5 hover:bg-white/10 rounded text-zinc-400 hover:text-white transition-colors shrink-0"
                       >
                           <Copy className="w-3.5 h-3.5" />
                       </button>
@@ -247,7 +255,7 @@ export function MessageContent({ message }: MessageContentProps) {
               
               <div className="flex items-center gap-1 text-[10px] text-zinc-500">
                   <DollarSign className="w-3 h-3" />
-                  <span>Envie o comprovante após pagar.</span>
+                  <span>Transferência instantânea</span>
               </div>
           </div>
       );
@@ -255,11 +263,10 @@ export function MessageContent({ message }: MessageContentProps) {
 
   // --- 8. ENQUETE ---
   if (type === 'poll') {
-    let pollData = { name: 'Enquete', options: [] };
+    let pollData = { name: 'Enquete', options: [], selectableOptionsCount: 1 };
     try {
         pollData = typeof content === 'string' && content.startsWith('{') ? JSON.parse(content) : { name: content, options: [] };
     } catch (e) {
-        // Fallback se JSON falhar
         pollData.name = content;
     }
 
@@ -270,7 +277,7 @@ export function MessageContent({ message }: MessageContentProps) {
         )}>
             <div className="flex items-start gap-2 border-b border-white/5 pb-2">
                 <BarChart2 className="w-5 h-5 text-yellow-500 shrink-0 mt-0.5" />
-                <span className="font-bold text-sm leading-tight">{pollData.name || 'Enquete'}</span>
+                <span className="font-bold text-sm leading-tight">{pollData.name || 'Pergunta da Enquete'}</span>
             </div>
             <div className="space-y-2">
                 {pollData.options?.map((opt: string, idx: number) => (
@@ -280,8 +287,10 @@ export function MessageContent({ message }: MessageContentProps) {
                     </div>
                 ))}
             </div>
-            <div className="text-center">
-                <span className="text-[10px] text-zinc-500 italic">Votação disponível no WhatsApp</span>
+            <div className="text-center flex justify-center gap-2 items-center">
+                <span className="text-[10px] text-zinc-500 italic">
+                    {pollData.selectableOptionsCount > 1 ? 'Múltipla escolha' : 'Opção única'}
+                </span>
             </div>
         </div>
     );
