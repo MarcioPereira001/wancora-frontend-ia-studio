@@ -39,7 +39,8 @@ export interface TeamMember {
 export interface Lead {
   id: string;
   company_id: string;
-  pipeline_stage_id: string; // CORRIGIDO: Nome oficial do banco
+  pipeline_stage_id: string; // VITAL: Chave de ligação com o Kanban
+  stage_id?: string; // Legacy/Backup
   name: string;
   phone: string;
   email?: string;
@@ -55,7 +56,7 @@ export interface Lead {
   next_appointment_at?: string;
   owner_id?: string;
   position?: number;
-  bot_status?: 'active' | 'paused' | 'off';
+  bot_status?: 'active' | 'paused' | 'off'; // Novo campo do Schema
 }
 
 export interface PipelineStage {
@@ -137,7 +138,8 @@ export interface Contact {
   company_id: string;
   email?: string;
   phone?: string;
-  is_ignored?: boolean;
+  is_ignored?: boolean; // Novo campo do Schema
+  updated_at?: string;
 }
 
 export interface WhatsAppInstance {
@@ -161,17 +163,17 @@ export interface Message {
   remote_jid: string;
   from_me: boolean;
   content: string;
-  body?: string;
-  message_type: 'text' | 'image' | 'video' | 'audio' | 'document' | 'sticker' | 'location' | 'poll' | 'contact';
+  message_type: 'text' | 'image' | 'video' | 'audio' | 'ptt' | 'voice' | 'document' | 'sticker' | 'location' | 'poll' | 'contact';
   status: 'sent' | 'delivered' | 'read' | 'failed' | 'sending';
   created_at: string;
-  has_media?: boolean;
-  media_url?: string;
-  fileName?: string;
-  caption?: string;
+  has_media?: boolean; // Legacy
+  media_url?: string; // VITAL: URL pública do Supabase Storage
+  fileName?: string; // Helper UI
+  caption?: string; // Helper UI
   lead_id?: string;
   lead?: Lead;
   contact?: Contact;
+  body?: string; // Alias para content em algumas views
 }
 
 export interface ChatContact {

@@ -9,48 +9,42 @@ interface MessageContentProps {
 }
 
 export function MessageContent({ message }: MessageContentProps) {
-  // Prioridade: media_url > content (se for link de imagem) > body
-  const mediaUrl = (message as any).media_url || message.media_url;
-  let content = message.content || message.body || "";
-  
-  // Fallback seguro para o tipo
-  const type = (message as any).type || message.message_type || 'text';
+  // O Backend agora salva a URL pública do Supabase Storage em `media_url`.
+  // `content` geralmente contém a legenda (caption) para mídias, ou o texto da mensagem.
+  const mediaUrl = message.media_url; 
+  const content = message.content || message.body || "";
+  const type = message.message_type || 'text';
   const isMe = message.from_me;
 
-  // Se for texto puro e tiver links, formatamos depois
-  // Se for media, o content vira a legenda (caption)
-
-  // 1. IMAGEM
+  // --- 1. IMAGEM ---
   if (type === 'image') {
-    const src = mediaUrl || (content.startsWith('http') || content.startsWith('data:') ? content : null);
-    
     return (
       <div className="space-y-1">
         <div className="relative mt-1 overflow-hidden rounded-lg bg-black/20 border border-white/10 group cursor-pointer">
-            {src ? (
+            {mediaUrl ? (
                 <img 
-                src={src} 
+                src={mediaUrl} 
                 alt="Imagem" 
                 className="max-w-[280px] max-h-[300px] object-cover hover:scale-105 transition-transform duration-500" 
                 loading="lazy"
-                onClick={() => window.open(src, '_blank')}
+                onClick={() => window.open(mediaUrl, '_blank')}
                 />
             ) : (
                 <div className="h-32 w-48 flex items-center justify-center text-zinc-500 bg-zinc-800">
                     <ImageIcon className="w-8 h-8 opacity-50" />
-                    <span className="text-xs ml-2">Imagem indisponível</span>
+                    <span className="text-xs ml-2">Carregando imagem...</span>
                 </div>
             )}
         </div>
-        {content && content !== src && (
+        {content && content !== mediaUrl && (
             <p className="text-sm px-1 whitespace-pre-wrap mt-1">{content}</p>
         )}
       </div>
     );
   }
 
-  // 2. ÁUDIO (Voice Note ou Audio File)
-  if (type === 'audio' || type === 'ptt') {
+  // --- 2. ÁUDIO (PTT ou Audio) ---
+  if (type === 'audio' || type === 'ptt' || type === 'voice') {
     return (
       <div className={cn(
           "flex items-center gap-3 min-w-[240px] mt-1 p-2 rounded-lg border transition-all",
@@ -63,23 +57,26 @@ export function MessageContent({ message }: MessageContentProps) {
             <PlayCircle className="w-6 h-6" />
         </div>
         <div className="flex-1 flex flex-col justify-center overflow-hidden">
-            <audio controls className="h-8 w-full max-w-[200px] opacity-90 scale-[0.85] origin-left filter hue-rotate-15">
-                <source src={mediaUrl || content} />
-            </audio>
+            {mediaUrl ? (
+                <audio controls className="h-8 w-full max-w-[200px] opacity-90 scale-[0.85] origin-left filter hue-rotate-15">
+                    <source src={mediaUrl} />
+                </audio>
+            ) : (
+                <span className="text-xs text-zinc-500">Áudio indisponível</span>
+            )}
         </div>
       </div>
     );
   }
 
-  // 3. VÍDEO
+  // --- 3. VÍDEO ---
   if (type === 'video') {
-    const src = mediaUrl || (content.startsWith('http') ? content : null);
     return (
       <div className="space-y-1">
         <div className="relative mt-1 overflow-hidden rounded-lg bg-black border border-zinc-800 max-w-[280px]">
-            {src ? (
+            {mediaUrl ? (
                 <video controls className="w-full rounded-lg" preload="metadata">
-                    <source src={src} />
+                    <source src={mediaUrl} />
                     Seu navegador não suporta vídeos.
                 </video>
             ) : (
@@ -88,21 +85,20 @@ export function MessageContent({ message }: MessageContentProps) {
                 </div>
             )}
         </div>
-        {content && content !== src && (
+        {content && content !== mediaUrl && (
             <p className="text-sm px-1 whitespace-pre-wrap mt-1">{content}</p>
         )}
       </div>
     );
   }
 
-  // 4. DOCUMENTO
+  // --- 4. DOCUMENTO ---
   if (type === 'document') {
-    const fileName = (message as any).fileName || content.split('/').pop()?.split('?')[0] || 'Documento';
-    const src = mediaUrl || content;
-
+    const fileName = (message as any).fileName || mediaUrl?.split('/').pop()?.split('?')[0] || 'Documento';
+    
     return (
       <div 
-        onClick={() => window.open(src, '_blank')}
+        onClick={() => mediaUrl && window.open(mediaUrl, '_blank')}
         className={cn(
             "flex items-center gap-3 p-3 mt-1 rounded-md border cursor-pointer transition-all group max-w-[280px]",
             isMe ? "bg-primary/10 border-primary/20 hover:bg-primary/20" : "bg-zinc-800/80 border-zinc-700 hover:bg-zinc-800"
@@ -122,7 +118,7 @@ export function MessageContent({ message }: MessageContentProps) {
     );
   }
 
-  // 5. LOCALIZAÇÃO
+  // --- 5. LOCALIZAÇÃO ---
   if (type === 'location') {
     const cleanCoords = content.replace('Loc:', '').trim();
     const mapsUrl = `https://www.google.com/maps?q=${cleanCoords}`;
@@ -139,7 +135,7 @@ export function MessageContent({ message }: MessageContentProps) {
     );
   }
 
-  // 6. ENQUETE (POLL)
+  // --- 6. ENQUETE ---
   if (type === 'poll') {
     let pollData = { name: 'Enquete', options: [] };
     try {
@@ -167,18 +163,7 @@ export function MessageContent({ message }: MessageContentProps) {
     );
   }
 
-  // 7. FIGURINHA
-  if (type === 'sticker') {
-    return (
-      <img 
-        src={mediaUrl || content} 
-        alt="Sticker" 
-        className="w-28 h-28 object-contain mt-1 drop-shadow-md hover:scale-110 transition-transform cursor-pointer" 
-      />
-    );
-  }
-
-  // PADRÃO: TEXTO COM LINKS
+  // --- DEFAULT: TEXTO ---
   const urlRegex = /(https?:\/\/[^\s]+)/g;
   const parts = content.split(urlRegex);
 

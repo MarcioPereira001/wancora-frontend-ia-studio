@@ -91,6 +91,13 @@ Leads: Vê apenas leads que ele é dono (`owner_id`) OU leads que estão em pipe
 
 Database: A segurança é garantida via RLS Policies (PostgreSQL), não apenas no frontend. O banco bloqueia queries não autorizadas.
 
+Camada de Performance (RPCs & Views)
+Para relatórios pesados (Dashboard), não processamos dados no Frontend. Usamos **PostgreSQL Functions (RPCs)**:
+`get_recent_activity`: Retorna feed unificado de leads e vendas.
+`get_gamification_ranking`: Calcula XP, Nível e Ranking baseado em pesos (Vendas valem mais que Leads).
+`get_sales_funnel_stats`: Agrega totais por etapa do funil.
+Regra: Sempre use `pipeline_stage_id` nas queries (nunca `stage_id`).
+
 3. Módulos do Sistema (Especificação Funcional)
 📱 Módulo 1: Gerenciador de Instâncias (Multi-Device)
 Visual: Cards mostrando status (QR Code, Conectado, Desconectado).
@@ -206,6 +213,29 @@ Convite: Geração de Link de Convite (/register?ref=COMPANY_UUID).
 
 Fluxo: O novo usuário acessa o link -> Cria conta -> O Backend intercepta o ref -> Vincula automaticamente à company_id do convite (sem criar nova empresa).
 
+🏆 Módulo 7: Dashboard Supremo (Analytics & Gamification)
+Local: `/dashboard`
+
+Conceito:** Central de Comando Gamificada.
+
+Funcionalidades:
+
+Gamificação: Barra de XP, Nível do Usuário e Ranking de Vendas (Top 3).
+
+Lógica: XP = (Vendas * 1000) + (Valor / 10).
+
+Gráficos (Recharts):
+
+Funil de Vendas (Conversão por etapa).
+
+Receita x Tempo (Evolução).
+
+Feed de Atividades: Lista em tempo real de novos leads e vendas ganhas com link direto.
+
+Filtros Globais: DateRangePicker (Datas) e Seletor de Responsável (para Admins).
+
+Exportação: Geração de XLSX no cliente (Client-side) com os dados filtrados.
+
 4. Fluxos Críticos (Core Business Rules)
 A. O Fluxo "Anti-Ghost" (Lead Generation)
 Problema: Receber mensagem de número desconhecido e perder a venda. Solução Wancora:
@@ -259,6 +289,12 @@ No Chat, use useChatList com filtro de session_id.
 Code Patching: Não reescreva arquivos inteiros se apenas uma função mudou. Indique onde inserir o código.
 
 Performance: Em queries de chat, sempre use paginação ou limites (.limit(50)) para não travar o navegador.
+
+Nomenclatura Crítica:
+
+A tabela `leads` se relaciona com etapas via coluna `pipeline_stage_id`.
+
+NUNCA use `stage_id` (campo inexistente). Se a IA sugerir isso, corrija imediatamente.
 
 ✅ Instruções Finais para o Usuário
 Salve este arquivo como README_WANCORA.md na raiz do seu projeto.

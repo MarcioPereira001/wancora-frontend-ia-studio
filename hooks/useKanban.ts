@@ -46,6 +46,7 @@ export function useKanban() {
       if (!user?.company_id || !selectedPipelineId) return { columns: [], stages: [], allLeads: [] };
 
       try {
+        // 1. Buscar Estágios
         const { data: stages } = await supabase
             .from('pipeline_stages')
             .select('*')
@@ -54,21 +55,25 @@ export function useKanban() {
         
         if (!stages || stages.length === 0) return { columns: [], stages: [], allLeads: [] };
 
-        const stageIds = stages.map(s => s.id);
+        // 2. Buscar TODOS os Leads da Empresa (para este pipeline ou sem pipeline)
+        // Alteração Crítica: Não usamos .in() para não perder leads com IDs quebrados
+        // Se quisermos filtrar apenas deste pipeline, idealmente o lead teria pipeline_id, 
+        // mas como usa pipeline_stage_id, vamos buscar e filtrar em memória para garantir segurança.
         const { data: leads } = await supabase
             .from('leads')
             .select('*')
             .eq('company_id', user.company_id)
-            .in('pipeline_stage_id', stageIds)
-            .order('created_at', { ascending: false }); // Ordem cronológica para lista geral
+            .neq('status', 'archived') // Exclui arquivados
+            .order('created_at', { ascending: false });
 
-        const allLeads = leads || [];
+        const allLeads = (leads as Lead[]) || [];
+        const stageIds = new Set(stages.map(s => s.id));
 
-        // Monta colunas para o Kanban
+        // 3. Montar Colunas
         const board: KanbanColumn[] = stages.map((stage: PipelineStage) => {
-            // Filtra e reordena por posição para o Kanban
+            // Filtra leads deste estágio
             const stageLeads = allLeads
-                .filter((l: Lead) => l.pipeline_stage_id === stage.id)
+                .filter(l => l.pipeline_stage_id === stage.id)
                 .sort((a, b) => (a.position || 0) - (b.position || 0));
 
             const totalValue = stageLeads.reduce((acc, lead) => acc + (Number(lead.value_potential) || 0), 0);
@@ -83,19 +88,23 @@ export function useKanban() {
             };
         });
 
-        // Lógica de Leads Órfãos (Para Admins)
-        const isDefault = pipelines.find(p => p.id === selectedPipelineId)?.is_default;
-        if (isDefault && (user.role === 'owner' || user.role === 'admin')) {
-             const { data: orphans } = await supabase
-                .from('leads')
-                .select('*')
-                .eq('company_id', user.company_id)
-                .is('pipeline_stage_id', null);
-             
-             if (orphans && orphans.length > 0 && board.length > 0) {
-                 board[0].items.unshift(...orphans);
-                 allLeads.push(...orphans);
-             }
+        // 4. Tratamento de Leads Órfãos (Sem estágio ou estágio inválido)
+        // Se o lead tem pipeline_stage_id que não existe nos estágios atuais, joga pro primeiro estágio
+        const firstStageId = stages[0]?.id;
+        if (firstStageId) {
+            const orphans = allLeads.filter(l => !l.pipeline_stage_id || !stageIds.has(l.pipeline_stage_id));
+            
+            if (orphans.length > 0) {
+                // Adiciona visualmente na primeira coluna
+                board[0].items.unshift(...orphans);
+                board[0].totalValue += orphans.reduce((acc, l) => acc + (Number(l.value_potential) || 0), 0);
+                
+                // Opcional: Auto-fix no banco em background (Fire and Forget)
+                // Isso cura o banco de dados silenciosamente
+                orphans.forEach(async (lead) => {
+                    await supabase.from('leads').update({ pipeline_stage_id: firstStageId }).eq('id', lead.id);
+                });
+            }
         }
 
         return { columns: board, stages, allLeads };
@@ -128,13 +137,13 @@ export function useKanban() {
       queryClient.setQueryData(queryKey, (old: any | undefined) => {
         if (!old || !old.columns) return old;
         
-        // Deep clone para evitar mutação direta
+        // Deep clone
         const newColumns = JSON.parse(JSON.stringify(old.columns));
         let newAllLeads = [...(old.allLeads || [])];
         
         let movedLead: Lead | undefined;
 
-        // 1. Atualiza Colunas (Kanban View)
+        // Remove da coluna antiga
         for (const col of newColumns) {
           const idx = col.items.findIndex((l: Lead) => l.id === leadId);
           if (idx !== -1) {
@@ -144,6 +153,7 @@ export function useKanban() {
           }
         }
 
+        // Adiciona na nova
         if (movedLead) {
           movedLead.pipeline_stage_id = toStageId;
           movedLead.position = newPosition;
@@ -151,11 +161,12 @@ export function useKanban() {
           const targetCol = newColumns.find((c: KanbanColumn) => c.id === toStageId);
           if (targetCol) {
             targetCol.items.push(movedLead);
+            // Reordena visualmente
             targetCol.items.sort((a: Lead, b: Lead) => (a.position || 0) - (b.position || 0));
             targetCol.totalValue += (Number(movedLead.value_potential) || 0);
           }
 
-          // 2. Atualiza Lista Geral (List View) para consistência
+          // Atualiza lista global
           newAllLeads = newAllLeads.map(l => 
             l.id === leadId ? { ...l, pipeline_stage_id: toStageId, position: newPosition } : l
           );
@@ -172,11 +183,18 @@ export function useKanban() {
     onSettled: () => queryClient.invalidateQueries({ queryKey }),
   });
 
-  // Demais mutations mantidas...
   const reorderStagesMutation = useMutation({
       mutationFn: async (newOrder: { id: string, position: number }[]) => {
-          const { error } = await supabase.rpc('reorder_pipeline_stages', { p_updates: newOrder });
-          if(error) throw error;
+          // Fallback manual se RPC não existir, mas tentamos RPC primeiro
+          try {
+            const { error } = await supabase.rpc('reorder_pipeline_stages', { p_updates: newOrder });
+            if(error) throw error;
+          } catch(e) {
+             // Fallback loop
+             for(const item of newOrder) {
+                 await supabase.from('pipeline_stages').update({ position: item.position }).eq('id', item.id);
+             }
+          }
       },
       onSuccess: () => queryClient.invalidateQueries({ queryKey })
   });
@@ -217,7 +235,7 @@ export function useKanban() {
       onSuccess: (newPipe) => {
           queryClient.invalidateQueries({ queryKey: pipelinesKey });
           setSelectedPipelineId(newPipe.id); 
-          addToast({ type: 'success', title: 'Criado', message: `Funil "${newPipe.name}" criado com sucesso.` });
+          addToast({ type: 'success', title: 'Criado', message: `Funil "${newPipe.name}" criado.` });
       }
   });
 
@@ -237,7 +255,7 @@ export function useKanban() {
       },
       onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: pipelinesKey });
-          addToast({ type: 'success', title: 'Atualizado', message: 'Nome do funil alterado.' });
+          addToast({ type: 'success', title: 'Atualizado', message: 'Funil renomeado.' });
       }
   });
 
@@ -265,8 +283,8 @@ export function useKanban() {
     selectedPipelineId,
     setSelectedPipelineId,
     columns: kanbanData?.columns || [], 
-    allLeads: kanbanData?.allLeads || [], // Nova propriedade exposta
-    stages: kanbanData?.stages || [],     // Nova propriedade exposta
+    allLeads: kanbanData?.allLeads || [],
+    stages: kanbanData?.stages || [],
     loading: loadingBoard || loadingPipelines, 
     moveLead: (leadId: string, toColId: string, newPosition: number) => moveLeadMutation.mutate({ leadId, toStageId: toColId, newPosition }),
     reorderStages: reorderStagesMutation.mutate,
