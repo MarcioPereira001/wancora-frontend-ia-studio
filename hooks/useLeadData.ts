@@ -29,7 +29,7 @@ export function useLeadData(leadId?: string, leadPhone?: string) {
             .order('created_at');
         if (list) setChecklist(list);
 
-        // 2. Fetch Links (NOVO)
+        // 2. Fetch Links
         const { data: linkData } = await supabase
             .from('lead_links')
             .select('*')
@@ -59,10 +59,16 @@ export function useLeadData(leadId?: string, leadPhone?: string) {
 
     fetchData();
 
-    // Realtime Listeners
+    // Realtime Listeners (Suporte a atualização de outros usuários)
     const subChecklist = supabase.channel(`lead_checklists:${leadId}`)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'lead_checklists', filter: `lead_id=eq.${leadId}` }, (payload) => {
-            if(payload.eventType === 'INSERT') setChecklist(prev => [...prev, payload.new as ChecklistItem]);
+            if(payload.eventType === 'INSERT') {
+                setChecklist(prev => {
+                    // Evita duplicatas se já adicionamos otimisticamente
+                    if(prev.some(i => i.id === payload.new.id)) return prev;
+                    return [...prev, payload.new as ChecklistItem];
+                });
+            }
             if(payload.eventType === 'UPDATE') setChecklist(prev => prev.map(i => i.id === payload.new.id ? payload.new as ChecklistItem : i));
             if(payload.eventType === 'DELETE') setChecklist(prev => prev.filter(i => i.id !== payload.old.id));
         })
@@ -70,7 +76,12 @@ export function useLeadData(leadId?: string, leadPhone?: string) {
 
     const subLinks = supabase.channel(`lead_links:${leadId}`)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'lead_links', filter: `lead_id=eq.${leadId}` }, (payload) => {
-            if(payload.eventType === 'INSERT') setLinks(prev => [payload.new as LeadLink, ...prev]);
+            if(payload.eventType === 'INSERT') {
+                setLinks(prev => {
+                    if(prev.some(l => l.id === payload.new.id)) return prev;
+                    return [payload.new as LeadLink, ...prev];
+                });
+            }
             if(payload.eventType === 'DELETE') setLinks(prev => prev.filter(i => i.id !== payload.old.id));
         })
         .subscribe();
@@ -81,10 +92,9 @@ export function useLeadData(leadId?: string, leadPhone?: string) {
     };
   }, [leadId, leadPhone, user?.company_id]);
 
-  // --- ACTIONS ---
+  // --- ACTIONS (OPTIMISTIC UPDATES) ---
 
   const sendMessage = async (text: string) => {
-      // (Mantido igual ao original...)
       if(!leadPhone || !user?.company_id) return;
       const tempId = Date.now().toString();
       const tempMsg: any = { id: tempId, content: text, body: text, from_me: true, created_at: new Date().toISOString(), message_type: 'text', status: 'sending' };
@@ -100,29 +110,59 @@ export function useLeadData(leadId?: string, leadPhone?: string) {
 
   const addCheckitem = async (text: string, deadline?: string) => {
       if(!leadId) return;
+      
+      // 1. Optimistic Update (Cria ID temporário)
+      const tempId = `temp-${Date.now()}`;
+      const tempItem: ChecklistItem = {
+          id: tempId,
+          lead_id: leadId,
+          text,
+          is_completed: false,
+          deadline: deadline,
+          created_at: new Date().toISOString()
+      };
+      
+      setChecklist(prev => [...prev, tempItem]);
+
+      // 2. Server Call
       const { data, error } = await supabase
         .from('lead_checklists')
         .insert({ lead_id: leadId, text, is_completed: false, deadline: deadline || null })
         .select()
         .single();
       
-      if(error) addToast({ type: 'error', title: 'Erro', message: 'Erro ao salvar tarefa.' });
+      // 3. Reconcile or Rollback
+      if(error) {
+          setChecklist(prev => prev.filter(i => i.id !== tempId));
+          addToast({ type: 'error', title: 'Erro', message: 'Erro ao salvar tarefa.' });
+      } else if (data) {
+          setChecklist(prev => prev.map(i => i.id === tempId ? data : i));
+      }
   };
 
   const toggleCheckitem = async (id: string, currentStatus: boolean) => {
-      // Optimistic
       setChecklist(prev => prev.map(i => i.id === id ? { ...i, is_completed: !currentStatus } : i));
       const { error } = await supabase.from('lead_checklists').update({ is_completed: !currentStatus }).eq('id', id);
-      if(error) setChecklist(prev => prev.map(i => i.id === id ? { ...i, is_completed: currentStatus } : i));
+      if(error) {
+          // Rollback
+          setChecklist(prev => prev.map(i => i.id === id ? { ...i, is_completed: currentStatus } : i));
+      }
   };
 
   const updateCheckitemDeadline = async (id: string, deadline: string | null) => {
+      setChecklist(prev => prev.map(i => i.id === id ? { ...i, deadline } : i));
       const { error } = await supabase.from('lead_checklists').update({ deadline }).eq('id', id);
       if(error) addToast({ type: 'error', title: 'Erro', message: 'Falha ao atualizar prazo.' });
   };
 
   const deleteCheckitem = async (id: string) => {
-      await supabase.from('lead_checklists').delete().eq('id', id);
+      const original = checklist;
+      setChecklist(prev => prev.filter(i => i.id !== id));
+      const { error } = await supabase.from('lead_checklists').delete().eq('id', id);
+      if(error) {
+          setChecklist(original);
+          addToast({ type: 'error', title: 'Erro', message: 'Falha ao excluir.' });
+      }
   };
 
   // --- LINKS ACTIONS ---
@@ -131,12 +171,24 @@ export function useLeadData(leadId?: string, leadPhone?: string) {
       let finalUrl = url;
       if (!/^https?:\/\//i.test(url)) finalUrl = 'https://' + url;
 
-      const { error } = await supabase.from('lead_links').insert({ lead_id: leadId, title, url: finalUrl });
-      if(error) addToast({ type: 'error', title: 'Erro', message: 'Falha ao adicionar link.' });
+      const tempId = `temp-${Date.now()}`;
+      const tempLink: LeadLink = { id: tempId, lead_id: leadId, title, url: finalUrl, created_at: new Date().toISOString() };
+      setLinks(prev => [tempLink, ...prev]);
+
+      const { data, error } = await supabase.from('lead_links').insert({ lead_id: leadId, title, url: finalUrl }).select().single();
+      if(error) {
+          setLinks(prev => prev.filter(l => l.id !== tempId));
+          addToast({ type: 'error', title: 'Erro', message: 'Falha ao salvar link.' });
+      } else if(data) {
+          setLinks(prev => prev.map(l => l.id === tempId ? data : l));
+      }
   };
 
   const deleteLink = async (id: string) => {
-      await supabase.from('lead_links').delete().eq('id', id);
+      const original = links;
+      setLinks(prev => prev.filter(l => l.id !== id));
+      const { error } = await supabase.from('lead_links').delete().eq('id', id);
+      if(error) setLinks(original);
   };
 
   return { 

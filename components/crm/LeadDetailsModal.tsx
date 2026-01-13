@@ -10,7 +10,7 @@ import { useKanban } from '@/hooks/useKanban';
 import { useLeadData } from '@/hooks/useLeadData';
 import { useLeadActivities } from '@/hooks/useLeadActivities';
 import { useTeam } from '@/hooks/useTeam';
-import { Trash2, Save, CheckSquare, Layout, Activity, Plus, User, Clock, Link as LinkIcon, ExternalLink, X, Calendar } from 'lucide-react';
+import { Trash2, Save, CheckSquare, Layout, Activity, Plus, User, Clock, Link as LinkIcon, ExternalLink, X, Calendar, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Checkbox } from '@/components/ui/checkbox';
 import { createClient } from '@/utils/supabase/client';
@@ -37,8 +37,10 @@ export function LeadDetailsModal({ lead, isOpen, onClose }: LeadDetailsModalProp
   
   // Checklist State
   const [newItemText, setNewItemText] = useState('');
-  const [newItemDeadline, setNewItemDeadline] = useState(''); // Temp state para nova tarefa
-  const [editingTaskId, setEditingTaskId] = useState<string | null>(null); // ID da tarefa que está editando prazo
+  const [showTaskDeadlineInput, setShowTaskDeadlineInput] = useState(false);
+  const [taskDeadlineDate, setTaskDeadlineDate] = useState('');
+  const [taskDeadlineTime, setTaskDeadlineTime] = useState('');
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
 
   // Links State
   const [newLinkTitle, setNewLinkTitle] = useState('');
@@ -46,11 +48,24 @@ export function LeadDetailsModal({ lead, isOpen, onClose }: LeadDetailsModalProp
 
   // Lead Deadline State
   const [hasDeadline, setHasDeadline] = useState(!!lead?.deadline);
+  const [deadlineDate, setDeadlineDate] = useState('');
+  const [deadlineTime, setDeadlineTime] = useState('');
 
+  // --- INIT & LOGGING ---
   useEffect(() => {
     if (lead) {
         setData(lead);
         setHasDeadline(!!lead.deadline);
+        if (lead.deadline) {
+            const d = new Date(lead.deadline);
+            // Formata YYYY-MM-DD
+            setDeadlineDate(d.toISOString().split('T')[0]);
+            // Formata HH:MM
+            setDeadlineTime(d.toTimeString().slice(0, 5));
+        } else {
+            setDeadlineDate('');
+            setDeadlineTime('');
+        }
     }
   }, [lead]);
 
@@ -59,6 +74,20 @@ export function LeadDetailsModal({ lead, isOpen, onClose }: LeadDetailsModalProp
   const handleSave = async () => {
       setLoading(true);
       try {
+        // Constrói ISO String segura para o Deadline
+        let finalDeadline = null;
+        if (hasDeadline && deadlineDate) {
+            const time = deadlineTime || '23:59';
+            finalDeadline = new Date(`${deadlineDate}T${time}`).toISOString();
+        }
+
+        // Verifica mudanças para logar
+        const changes: string[] = [];
+        if (data.name !== lead.name) changes.push(`Nome alterado para "${data.name}"`);
+        if (data.value_potential !== lead.value_potential) changes.push(`Valor alterado para ${data.value_potential}`);
+        if (data.pipeline_stage_id !== lead.pipeline_stage_id) changes.push(`Mudou de etapa`);
+        if (finalDeadline !== lead.deadline) changes.push(finalDeadline ? `Prazo definido para ${new Date(finalDeadline).toLocaleString()}` : `Prazo removido`);
+
         await updateLead({ id: data.id, data: {
             name: data.name,
             phone: data.phone,
@@ -68,14 +97,22 @@ export function LeadDetailsModal({ lead, isOpen, onClose }: LeadDetailsModalProp
             tags: data.tags,
             temperature: data.temperature,
             owner_id: data.owner_id,
-            deadline: hasDeadline ? data.deadline : null // Remove se toggle off
+            deadline: finalDeadline
         }});
         
-        await logSystemActivity(`Dados do lead atualizados.`);
+        // Loga todas as mudanças
+        if (changes.length > 0) {
+            await logSystemActivity(changes.join(', '));
+        } else {
+            // Se não houve mudança específica detectada mas clicou em salvar
+            await logSystemActivity(`Atualização manual dos dados.`);
+        }
+        
         addToast({ type: 'success', title: 'Salvo', message: 'Lead atualizado.' });
         onClose();
       } catch (error: any) {
-        addToast({ type: 'error', title: 'Erro', message: error.message });
+        console.error(error);
+        addToast({ type: 'error', title: 'Erro', message: 'Erro ao salvar alterações.' });
       } finally {
         setLoading(false);
       }
@@ -99,33 +136,46 @@ export function LeadDetailsModal({ lead, isOpen, onClose }: LeadDetailsModalProp
       e.preventDefault();
       if(!newItemText.trim()) return;
       
-      // Converte deadline para ISO se existir
       let deadlineISO = undefined;
-      if (newItemDeadline) {
-          deadlineISO = new Date(newItemDeadline).toISOString();
+      if (showTaskDeadlineInput && taskDeadlineDate) {
+          const time = taskDeadlineTime || '12:00';
+          deadlineISO = new Date(`${taskDeadlineDate}T${time}`).toISOString();
       }
 
+      // Optimistic Update é tratado no hook useLeadData
       await addCheckitem(newItemText, deadlineISO);
-      await logSystemActivity(`Adicionou tarefa: "${newItemText}"`);
+      await logSystemActivity(`Nova tarefa: "${newItemText}"`);
+      
       setNewItemText('');
-      setNewItemDeadline('');
+      setTaskDeadlineDate('');
+      setTaskDeadlineTime('');
+      setShowTaskDeadlineInput(false);
   };
 
   const handleToggleTask = async (id: string, currentStatus: boolean, text: string) => {
       await toggleCheckitem(id, currentStatus);
-      if(!currentStatus) await logSystemActivity(`Concluiu tarefa: "${text}"`);
+      if(!currentStatus) await logSystemActivity(`Tarefa concluída: "${text}"`);
   };
 
-  const handleTaskDeadlineUpdate = async (id: string, dateStr: string) => {
-      const iso = dateStr ? new Date(dateStr).toISOString() : null;
-      await updateCheckitemDeadline(id, iso);
+  // Atualização de prazo de tarefa existente
+  const handleUpdateTaskDeadline = async (id: string) => {
+      if (!taskDeadlineDate) {
+          await updateCheckitemDeadline(id, null);
+      } else {
+          const time = taskDeadlineTime || '12:00';
+          const iso = new Date(`${taskDeadlineDate}T${time}`).toISOString();
+          await updateCheckitemDeadline(id, iso);
+      }
       setEditingTaskId(null);
+      setTaskDeadlineDate('');
+      setTaskDeadlineTime('');
   };
 
   // --- LINKS LOGIC ---
   const handleAddLink = async () => {
       if(!newLinkTitle.trim() || !newLinkUrl.trim()) return;
       await addLink(newLinkTitle, newLinkUrl);
+      await logSystemActivity(`Link adicionado: ${newLinkTitle}`);
       setNewLinkTitle('');
       setNewLinkUrl('');
   };
@@ -159,7 +209,7 @@ export function LeadDetailsModal({ lead, isOpen, onClose }: LeadDetailsModalProp
                     </div>
                 </div>
                 
-                {/* Deadline Control */}
+                {/* Deadline Control (NOVO DESIGN "MINI CALENDÁRIO") */}
                 <div className="bg-zinc-900/50 p-3 rounded-lg border border-zinc-800">
                     <div className="flex items-center justify-between mb-2">
                         <label className="text-xs font-bold text-zinc-400 flex items-center gap-2">
@@ -177,14 +227,35 @@ export function LeadDetailsModal({ lead, isOpen, onClose }: LeadDetailsModalProp
                     </div>
                     
                     {hasDeadline && (
-                        <div className="flex gap-2 animate-in fade-in slide-in-from-top-1">
-                            <Input 
-                                type="datetime-local" 
-                                value={data.deadline ? new Date(data.deadline).toISOString().slice(0, 16) : ''}
-                                onChange={e => setData({...data, deadline: new Date(e.target.value).toISOString()})}
-                                className="text-xs bg-zinc-950 border-zinc-800 h-9"
-                            />
-                            {data.deadline && <DeadlineTimer deadline={data.deadline} />}
+                        <div className="animate-in fade-in slide-in-from-top-1 space-y-2">
+                            <div className="flex gap-2 items-center">
+                                <div className="relative flex-1">
+                                    <Calendar className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-zinc-500" />
+                                    <Input 
+                                        type="date" 
+                                        value={deadlineDate}
+                                        onChange={e => setDeadlineDate(e.target.value)}
+                                        className="pl-8 text-xs h-9 bg-zinc-950 border-zinc-800"
+                                    />
+                                </div>
+                                <div className="relative w-24">
+                                    <Clock className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-zinc-500" />
+                                    <Input 
+                                        type="time" 
+                                        value={deadlineTime}
+                                        onChange={e => setDeadlineTime(e.target.value)}
+                                        className="pl-8 text-xs h-9 bg-zinc-950 border-zinc-800"
+                                    />
+                                </div>
+                            </div>
+                            {/* Preview do Timer */}
+                            {deadlineDate && (
+                                <div className="flex justify-end">
+                                    <DeadlineTimer 
+                                        deadline={`${deadlineDate}T${deadlineTime || '23:59'}`} 
+                                    />
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>
@@ -237,21 +308,32 @@ export function LeadDetailsModal({ lead, isOpen, onClose }: LeadDetailsModalProp
                             placeholder="Nova tarefa..."
                             className="flex-1 border-zinc-700"
                         />
-                        <Button type="submit" disabled={!newItemText.trim()} size="icon" className="shrink-0">
+                        <Button type="button" size="icon" variant={showTaskDeadlineInput ? "secondary" : "ghost"} onClick={() => setShowTaskDeadlineInput(!showTaskDeadlineInput)} className="shrink-0 border border-zinc-700">
+                            <Clock className={cn("w-4 h-4", showTaskDeadlineInput ? "text-purple-400" : "text-zinc-500")} />
+                        </Button>
+                        <Button type="submit" disabled={!newItemText.trim()} size="icon" className="shrink-0 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700">
                             <Plus className="w-4 h-4" />
                         </Button>
                     </div>
-                    {/* Optional Deadline for New Task */}
-                    <div className="flex items-center gap-2">
-                        <Clock className="w-3 h-3 text-zinc-500" />
-                        <input 
-                            type="datetime-local" 
-                            value={newItemDeadline}
-                            onChange={e => setNewItemDeadline(e.target.value)}
-                            className="bg-transparent text-xs text-zinc-400 outline-none hover:text-white cursor-pointer"
-                        />
-                        {!newItemDeadline && <span className="text-[10px] text-zinc-600">(Opcional) Adicionar prazo</span>}
-                    </div>
+                    
+                    {/* Seletor de Data da Tarefa (Estilo "OK") */}
+                    {showTaskDeadlineInput && (
+                        <div className="flex items-center gap-2 bg-zinc-950 p-2 rounded border border-zinc-800 animate-in slide-in-from-top-1">
+                            <input 
+                                type="date"
+                                value={taskDeadlineDate}
+                                onChange={e => setTaskDeadlineDate(e.target.value)}
+                                className="bg-transparent text-xs text-white border border-zinc-700 rounded px-2 py-1 outline-none focus:border-purple-500"
+                            />
+                            <input 
+                                type="time"
+                                value={taskDeadlineTime}
+                                onChange={e => setTaskDeadlineTime(e.target.value)}
+                                className="bg-transparent text-xs text-white border border-zinc-700 rounded px-2 py-1 outline-none focus:border-purple-500"
+                            />
+                            <span className="text-[10px] text-zinc-500 ml-auto">Será salvo ao adicionar</span>
+                        </div>
+                    )}
                 </form>
 
                 <div className="space-y-2 mt-4">
@@ -282,7 +364,18 @@ export function LeadDetailsModal({ lead, isOpen, onClose }: LeadDetailsModalProp
                                  
                                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                      <button 
-                                        onClick={() => setEditingTaskId(editingTaskId === item.id ? null : item.id)}
+                                        onClick={() => {
+                                            setEditingTaskId(editingTaskId === item.id ? null : item.id);
+                                            // Preenche com data atual da tarefa se existir
+                                            if (item.deadline) {
+                                                const d = new Date(item.deadline);
+                                                setTaskDeadlineDate(d.toISOString().split('T')[0]);
+                                                setTaskDeadlineTime(d.toTimeString().slice(0, 5));
+                                            } else {
+                                                setTaskDeadlineDate('');
+                                                setTaskDeadlineTime('');
+                                            }
+                                        }}
                                         className={cn("p-1.5 rounded hover:bg-zinc-800 text-zinc-500", item.deadline ? "text-purple-400" : "")}
                                         title="Definir Prazo"
                                      >
@@ -294,16 +387,27 @@ export function LeadDetailsModal({ lead, isOpen, onClose }: LeadDetailsModalProp
                                  </div>
                              </div>
 
-                             {/* Inline Deadline Edit */}
+                             {/* Inline Deadline Edit (Modo "OK") */}
                              {editingTaskId === item.id && (
-                                 <div className="mt-2 pl-7 flex items-center gap-2 animate-in slide-in-from-top-1">
-                                     <Input 
-                                        type="datetime-local" 
-                                        defaultValue={item.deadline ? new Date(item.deadline).toISOString().slice(0, 16) : ''}
-                                        onChange={(e) => handleTaskDeadlineUpdate(item.id, e.target.value)}
-                                        className="h-7 text-xs w-auto bg-zinc-950"
+                                 <div className="mt-2 pl-7 flex flex-wrap items-center gap-2 animate-in slide-in-from-top-1 bg-zinc-950 p-2 rounded border border-zinc-800">
+                                     <input 
+                                        type="date" 
+                                        value={taskDeadlineDate}
+                                        onChange={(e) => setTaskDeadlineDate(e.target.value)}
+                                        className="h-6 text-xs bg-zinc-900 border border-zinc-700 rounded px-1 text-white"
                                      />
-                                     <button onClick={() => handleTaskDeadlineUpdate(item.id, '')} className="text-[10px] text-red-400 hover:underline">Remover Prazo</button>
+                                     <input 
+                                        type="time" 
+                                        value={taskDeadlineTime}
+                                        onChange={(e) => setTaskDeadlineTime(e.target.value)}
+                                        className="h-6 text-xs bg-zinc-900 border border-zinc-700 rounded px-1 text-white"
+                                     />
+                                     <Button size="sm" onClick={() => handleUpdateTaskDeadline(item.id)} className="h-6 px-2 text-xs bg-green-600 hover:bg-green-500 ml-auto">
+                                         OK
+                                     </Button>
+                                     <button onClick={() => handleUpdateTaskDeadline(item.id)} className="text-[10px] text-red-400 hover:underline px-2">
+                                         Remover
+                                     </button>
                                  </div>
                              )}
                         </div>
