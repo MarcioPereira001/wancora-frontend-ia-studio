@@ -6,7 +6,7 @@ import { useAuthStore } from '@/store/useAuthStore';
 import { ChatContact, Lead, ChecklistItem } from '@/types';
 import { useToast } from '@/hooks/useToast';
 import { 
-  User, Save, CheckSquare, Brain, Trash2, Plus, X, DollarSign, UserPlus, Ban, Lock
+  User, Save, CheckSquare, Brain, Plus, X, DollarSign, UserPlus, Ban, Lock
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -43,10 +43,9 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
     const loadData = async () => {
         if(!user?.company_id) return;
 
-        // Reset states when contact changes
         setChecklist([]);
         
-        // Load Contact Ignored Status directly
+        // Verifica status de ignorado diretamente
         const { data: contactData } = await supabase
             .from('contacts')
             .select('is_ignored')
@@ -56,14 +55,13 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
         
         if (contactData) setIsIgnored(contactData.is_ignored || false);
 
-        // Load Lead Data (if exists)
+        // Se tiver lead, carrega dados
         if (lead) {
             setName(lead.name);
             setValue(lead.value_potential || 0);
             setTags(lead.tags || []);
             setBotStatus(lead.bot_status || 'active');
 
-            // Load Checklist
             const { data: list } = await supabase
                 .from('lead_checklists')
                 .select('*')
@@ -71,7 +69,6 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
                 .order('created_at');
             setChecklist(list || []);
         } else {
-            // Se não tem lead, preenche com dados do contato
             setName(contact.name || contact.push_name || '');
             setValue(0);
             setTags([]);
@@ -80,11 +77,10 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
     loadData();
   }, [contact.remote_jid, lead, user?.company_id]);
 
-  // FUNÇÃO DE SEGURANÇA: Garante que exista um funil e um estágio
+  // Ensure Pipeline
   const ensurePipelineExists = async () => {
       if (!user?.company_id) throw new Error("Usuário sem empresa.");
 
-      // 1. Tenta achar qualquer estágio válido
       const { data: existingStage } = await supabase
           .from('pipeline_stages')
           .select('id')
@@ -94,7 +90,6 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
 
       if (existingStage) return existingStage.id;
 
-      // 2. Se não achou estágio, verifica se tem pipeline
       let { data: pipe } = await supabase
           .from('pipelines')
           .select('id')
@@ -102,46 +97,31 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
           .limit(1)
           .maybeSingle();
 
-      // 3. Se não tem pipeline, cria um "Padrão"
       if (!pipe) {
           const { data: newPipe, error: pipeError } = await supabase
               .from('pipelines')
-              .insert({ 
-                  company_id: user.company_id, 
-                  name: 'Funil Padrão', 
-                  is_default: true 
-              })
-              .select()
-              .single();
-          
+              .insert({ company_id: user.company_id, name: 'Funil Padrão', is_default: true })
+              .select().single();
           if (pipeError) throw pipeError;
           pipe = newPipe;
       }
 
-      // 4. Cria estágio "Novo" no pipeline
       const { data: newStage, error: stageError } = await supabase
           .from('pipeline_stages')
-          .insert({
-              company_id: user.company_id,
-              pipeline_id: pipe.id,
-              name: 'Novo Lead',
-              position: 0,
-              color: '#3b82f6'
-          })
-          .select()
-          .single();
+          .insert({ company_id: user.company_id, pipeline_id: pipe.id, name: 'Novo Lead', position: 0, color: '#3b82f6' })
+          .select().single();
 
       if (stageError) throw stageError;
       return newStage.id;
   };
 
-  // 2. Actions: Adicionar ao CRM
+  // ADD TO CRM
   const handleAddToCRM = async () => {
       if (!user?.company_id) return;
       setLoading(true);
       
       try {
-          // 1. Lógica Manual de Upsert para evitar 409
+          // 1. Atualiza/Cria Contato e remove flag de ignorado
           const { data: existingContact } = await supabase
             .from('contacts')
             .select('jid')
@@ -166,16 +146,13 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
           }
           
           if (!lead) {
-              // 2. Garante Pipeline/Estágio (Self-Healing)
               const stageId = await ensurePipelineExists();
-
-              // 3. Insere o Lead com telefone limpo (apenas números)
               const cleanPhone = contact.remote_jid.split('@')[0].replace(/\D/g, '');
               
               const { error: insertError } = await supabase.from('leads').insert({
                   company_id: user.company_id,
                   pipeline_stage_id: stageId,
-                  name: name || contact.push_name || contact.name || 'Novo Lead',
+                  name: name || contact.push_name || 'Novo Lead',
                   phone: cleanPhone,
                   status: 'new',
                   owner_id: user.id,
@@ -185,34 +162,28 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
               });
 
               if (insertError) throw insertError;
-              
               addToast({ type: 'success', title: 'Sucesso', message: 'Lead criado no CRM.' });
           }
           
           setIsIgnored(false);
-          
-          // Delay para garantir que o banco processou antes de dar refresh
-          setTimeout(async () => {
-              await refreshLead();
-          }, 800);
+          setTimeout(() => refreshLead(), 500);
 
       } catch (e: any) {
           console.error("Erro Add CRM:", e);
-          addToast({ type: 'error', title: 'Erro ao salvar', message: e.message || 'Verifique as permissões.' });
+          addToast({ type: 'error', title: 'Erro', message: e.message });
       } finally {
           setLoading(false);
       }
   };
 
-  // 3. Actions: Remover do CRM
+  // REMOVE FROM CRM (BLINDADO)
   const handleRemoveFromCRM = async () => {
       if (!user?.company_id) return;
-      if (!confirm("Isso removerá o lead do CRM e bloqueará a IA para este contato. Continuar?")) return;
+      if (!confirm("Isso removerá o lead e bloqueará a IA. Continuar?")) return;
       
       setLoading(true);
       try {
-          // 1. Lógica Manual Check -> Insert/Update para evitar erro 409
-          // Isso garante que o is_ignored: true SEJA SALVO, impedindo a recriação do lead
+          // 1. Marca contato como ignorado (Dispara Trigger no Banco)
           const { data: existingContact } = await supabase
             .from('contacts')
             .select('jid')
@@ -224,11 +195,11 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
               const { error: updErr } = await supabase.from('contacts')
                 .update({ 
                     is_ignored: true,
-                    name: contact.name || contact.push_name,
                     updated_at: new Date().toISOString()
                 })
                 .eq('jid', contact.remote_jid)
                 .eq('company_id', user.company_id);
+                
               if (updErr) throw updErr;
           } else {
               const { error: insErr } = await supabase.from('contacts')
@@ -242,27 +213,26 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
               if (insErr) throw insErr;
           }
           
-          // 2. Remove Lead da tabela leads (Força bruta para garantir limpeza visual)
+          // 2. Garante exclusão manual caso Trigger falhe ou tenha delay
           const cleanPhone = contact.remote_jid.split('@')[0].replace(/\D/g, '');
-          
-          const { error: deleteError } = await supabase.from('leads')
+          await supabase.from('leads')
             .delete()
             .eq('company_id', user.company_id)
             .ilike('phone', `%${cleanPhone}%`); 
 
-          if (deleteError) throw deleteError;
-          
-          addToast({ type: 'info', title: 'Removido', message: 'Lead excluído e contato pausado.' });
+          addToast({ type: 'info', title: 'Removido', message: 'Lead removido e contato pausado.' });
           setIsIgnored(true);
           
-          // Força refresh para atualizar a UI
-          setTimeout(async () => {
-              await refreshLead();
-          }, 500);
+          setTimeout(() => refreshLead(), 500);
 
       } catch (e: any) {
           console.error("Erro Remove CRM:", e);
-          addToast({ type: 'error', title: 'Erro', message: e.message });
+          // Tratamento amigável para erro de FK, caso o SQL não tenha sido rodado
+          if (e.message?.includes('foreign key constraint')) {
+              addToast({ type: 'error', title: 'Erro de Banco de Dados', message: 'Faltou rodar o script SQL de correção de FK.' });
+          } else {
+              addToast({ type: 'error', title: 'Erro', message: e.message });
+          }
       } finally {
           setLoading(false);
       }
@@ -280,8 +250,7 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
           }).eq('id', lead.id);
           
           if (error) throw error;
-
-          addToast({ type: 'success', title: 'Salvo', message: 'Dados do lead atualizados.' });
+          addToast({ type: 'success', title: 'Salvo', message: 'Dados atualizados.' });
           refreshLead();
       } catch (e: any) {
           addToast({ type: 'error', title: 'Erro', message: e.message });
@@ -295,9 +264,7 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
 
       if (action === 'add' && newItemText.trim()) {
           const { data, error } = await supabase.from('lead_checklists').insert({
-              lead_id: lead.id,
-              text: newItemText,
-              is_completed: false
+              lead_id: lead.id, text: newItemText, is_completed: false
           }).select().single();
           
           if (data && !error) {
@@ -359,7 +326,6 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
         {!isIgnored && lead ? (
             <div className="p-4 space-y-6">
                 
-                {/* 1. Bot Control */}
                 <div className="bg-zinc-950/50 p-3 rounded-lg border border-zinc-800">
                     <label className="text-[10px] text-zinc-500 uppercase font-bold flex items-center gap-2 mb-2">
                         <Brain className="w-3 h-3 text-purple-500" /> Automação (Sentinela)
@@ -382,7 +348,6 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
                     </div>
                 </div>
 
-                {/* 2. CRM Data */}
                 <div className="space-y-3">
                     <label className="text-xs font-bold text-zinc-400 flex items-center gap-2">
                         <User className="w-3 h-3" /> Dados do Lead
@@ -406,7 +371,6 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
                     <TagSelector tags={tags} onChange={setTags} />
                 </div>
 
-                {/* 3. Checklist */}
                 <div>
                     <label className="text-xs font-bold text-zinc-400 flex items-center gap-2 mb-2">
                         <CheckSquare className="w-3 h-3" /> Tarefas ({checklist.filter(i => i.is_completed).length}/{checklist.length})
@@ -460,7 +424,6 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
                         Adicione este contato ao CRM para habilitar o robô, checklist e edição de dados.
                     </p>
                 </div>
-                {/* Botão Salvar Desativado Visualmente */}
                 <Button disabled className="w-full opacity-50 cursor-not-allowed bg-zinc-800 text-zinc-500 border border-zinc-700">
                     <Save className="w-4 h-4 mr-2" /> Salvar (Bloqueado)
                 </Button>
