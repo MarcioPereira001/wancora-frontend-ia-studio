@@ -7,7 +7,7 @@ import { ChatContact, Message, Instance, Lead } from '@/types';
 import { cleanJid, cn } from '@/lib/utils';
 import { 
     Loader2, Search, Send, Paperclip, Sparkles, Mic, 
-    Image as IconImage, FileText, BarChart2, X, Trash2, ArrowLeft, User, Smartphone, Wifi, Clock, MoreVertical, CheckSquare, BellOff, Bell, Users, Check, MapPin, DollarSign, List, Calendar, Plus, Copy, Crosshair, StopCircle
+    Image as IconImage, FileText, BarChart2, X, Trash2, ArrowLeft, User, Smartphone, Wifi, Clock, MoreVertical, CheckSquare, BellOff, Bell, Users, Check, MapPin, DollarSign, List, Calendar, Plus, Copy, Crosshair, StopCircle, ShoppingBag, Music
 } from 'lucide-react';
 import { MessageBubble } from '@/components/chat/MessageBubble';
 import { ChatSidebar } from '@/components/chat/ChatSidebar';
@@ -97,7 +97,7 @@ export default function ChatPage() {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // -- MODALS STATE --
-  const [activeModal, setActiveModal] = useState<'poll'|'pix'|'contact'|'location'|null>(null);
+  const [activeModal, setActiveModal] = useState<'poll'|'pix'|'contact'|'location'|'catalog'|'event'|null>(null);
   
   // Poll Data
   const [pollQuestion, setPollQuestion] = useState("");
@@ -121,6 +121,7 @@ export default function ChatPage() {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const mediaMenuRef = useRef<HTMLDivElement>(null); // Ref para click outside
   const fileInputRef = useRef<HTMLInputElement>(null); // Added missing ref
+  const audioInputRef = useRef<HTMLInputElement>(null); // Ref separado para Audio File
   
   const scrollToBottom = (behavior: 'auto' | 'smooth' = 'smooth') => {
       messagesEndRef.current?.scrollIntoView({ behavior });
@@ -153,7 +154,7 @@ export default function ChatPage() {
       // Zera LOCALMENTE para UX instantânea
       contact.unread_count = 0;
       
-      // Tenta zerar no banco (Agende agora que a coluna existe, isso deve funcionar)
+      // Tenta zerar no banco
       try {
           await supabase.from('contacts')
             .update({ unread_count: 0 })
@@ -170,7 +171,6 @@ export default function ChatPage() {
   const fetchMessages = async (offset: number) => {
       if(!activeContact || !selectedInstance) return [];
       
-      // Importante: Filtramos por company_id para segurança e remote_jid para contexto
       const { data, error } = await supabase
         .from('messages')
         .select(`*, contacts (push_name)`)
@@ -221,8 +221,6 @@ export default function ChatPage() {
 
       initChat();
 
-      // REALTIME CRÍTICO: Canal global para pegar qualquer mensagem nova desta empresa
-      // Isso resolve o problema de mensagens de outros dispositivos não aparecerem se o session_id do filtro estiver errado.
       const channel = supabase
         .channel(`chat-room:${activeContact.remote_jid}`)
         .on('postgres_changes', { 
@@ -273,7 +271,7 @@ export default function ChatPage() {
       if(!activeContact || !user?.company_id || !selectedInstance) return;
       
       const tempId = `temp-${Date.now()}`;
-      let contentDisplay = payload.text;
+      let contentDisplay = payload.text || "Mídia";
       
       // Formata display otimista
       if (payload.type === 'pix') contentDisplay = `Chave Pix: ${payload.text}`;
@@ -315,7 +313,7 @@ export default function ChatPage() {
               contact: payload.type === 'contact' ? payload.content : undefined,
               mimetype: payload.mimetype, // Para Audio/Doc
               fileName: payload.fileName,
-              ptt: payload.ptt // Flag de áudio gravado
+              ptt: payload.ptt // Flag de áudio gravado (boolean)
           });
       } catch (error) { 
           addToast({ type: 'error', title: 'Falha', message: 'Erro ao enviar mensagem.' });
@@ -325,6 +323,7 @@ export default function ChatPage() {
 
   const handleSendText = () => { if(input.trim()) { dispatchMessage({ type: 'text', text: input }); setInput(""); }};
   
+  // Upload Genérico (Img, Video, Doc, Audio FILE)
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file || !user?.company_id) return;
@@ -346,8 +345,7 @@ export default function ChatPage() {
           else if (file.type.startsWith('video/')) type = 'video';
           else if (file.type.startsWith('audio/')) {
               type = 'audio';
-              // Se for upload de arquivo de áudio, não é PTT (nota de voz), é áudio normal
-              ptt = false; 
+              ptt = false; // Áudio de arquivo NÃO é PTT
           }
           
           await dispatchMessage({ 
@@ -363,6 +361,7 @@ export default function ChatPage() {
           addToast({ type: 'error', title: 'Erro', message: e.message });
       } finally {
           if (fileInputRef.current) fileInputRef.current.value = ''; 
+          if (audioInputRef.current) audioInputRef.current.value = ''; 
       }
   };
 
@@ -379,8 +378,7 @@ export default function ChatPage() {
           };
 
           mediaRecorder.onstop = async () => {
-              // Quando parar, cria o blob e envia
-              const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/mp3' }); // Tenta forçar mp3 container
+              const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/mp3' });
               const audioFile = new File([audioBlob], `voice_${Date.now()}.mp3`, { type: 'audio/mp3' });
               
               if (audioFile.size > 0 && user?.company_id) {
@@ -389,15 +387,13 @@ export default function ChatPage() {
                       await dispatchMessage({ 
                           type: 'audio', 
                           url: publicUrl, 
-                          mimetype: 'audio/mp4', // WhatsApp gosta de audio/mp4 para PTT
-                          ptt: true // Flag crucial para ser nota de voz (verde)
+                          mimetype: 'audio/mp4', // WhatsApp prefere mp4 para PTT
+                          ptt: true // É nota de voz
                       });
                   } catch (e) {
                       addToast({ type: 'error', title: 'Erro', message: 'Falha ao enviar áudio.' });
                   }
               }
-              
-              // Limpeza
               stream.getTracks().forEach(track => track.stop());
           };
 
@@ -414,7 +410,6 @@ export default function ChatPage() {
   const stopRecording = (cancel = false) => {
       if (mediaRecorderRef.current && isRecording) {
           if (cancel) {
-              // Se cancelar, apenas para e não faz nada no onstop (precisaria refatorar para ser perfeito, mas aqui limpamos tracks)
               mediaRecorderRef.current.stream.getTracks().forEach(t => t.stop());
               mediaRecorderRef.current = null;
           } else {
@@ -434,10 +429,13 @@ export default function ChatPage() {
 
   // --- SPECIAL SEND HANDLERS ---
   const handleCreatePoll = () => {
-      if(!pollQuestion.trim() || pollOptions.length < 2) return;
-      const validOptions = pollOptions.filter(o => o.trim());
+      if(!pollQuestion.trim()) return;
+      
+      // Validação rigorosa: Remove vazios
+      const validOptions = pollOptions.filter(o => o.trim().length > 0);
+      
       if (validOptions.length < 2) {
-          addToast({type: 'warning', title: 'Enquete', message: 'Mínimo 2 opções.'});
+          addToast({type: 'warning', title: 'Enquete Inválida', message: 'Preencha pelo menos 2 opções.'});
           return;
       }
 
@@ -454,7 +452,6 @@ export default function ChatPage() {
 
   const handleSendPix = () => {
       if(!pixKey.trim()) return;
-      // Envia como texto formatado, mas com tipo 'pix' para o frontend reconhecer
       dispatchMessage({ type: 'pix', text: pixKey });
       setPixKey(""); setActiveModal(null);
   };
@@ -464,7 +461,7 @@ export default function ChatPage() {
       const vcard = `BEGIN:VCARD\nVERSION:3.0\nFN:${contactName}\nTEL;type=CELL:${contactPhone}\nEND:VCARD`;
       dispatchMessage({ 
           type: 'contact', 
-          content: { displayName: contactName, vcard } 
+          content: { displayName: contactName, vcard, phone: contactPhone } 
       });
       setContactName(""); setContactPhone(""); setActiveModal(null);
   };
@@ -482,7 +479,6 @@ export default function ChatPage() {
               setLocLoading(false);
           },
           (err) => {
-              console.error(err);
               addToast({ type: 'error', title: 'Erro GPS', message: 'Não foi possível obter localização.' });
               setLocLoading(false);
           },
@@ -499,6 +495,17 @@ export default function ChatPage() {
           setActiveModal(null);
           setLocLat(null); setLocLng(null);
       }
+  };
+
+  // Simulação de Catálogo/Eventos (Frontend Only por enquanto)
+  const handleSendCatalog = () => {
+      addToast({ type: 'info', title: 'Em breve', message: 'Envio de catálogo completo em desenvolvimento.' });
+      setActiveModal(null);
+  };
+
+  const handleSendEvent = () => {
+      addToast({ type: 'info', title: 'Em breve', message: 'Agendamento de eventos em desenvolvimento.' });
+      setActiveModal(null);
   };
 
   // --- UTILS ---
@@ -714,18 +721,22 @@ export default function ChatPage() {
                 ) : (
                     <div className="p-3 md:p-4 border-t border-zinc-800 bg-zinc-900/30 backdrop-blur relative">
                         <div className="flex items-end gap-2 bg-zinc-950/80 border border-zinc-800 rounded-xl p-2 focus-within:ring-1 focus-within:ring-primary/50 transition-all shadow-inner relative">
-                            {/* Anexo Menu */}
+                            {/* Anexo Menu (Full Expansion) */}
                             <div className="relative" ref={mediaMenuRef}>
                                 <Button variant="ghost" size="icon" className="h-9 w-9 text-zinc-400 hover:text-zinc-100" onClick={() => setMediaMenuOpen(!mediaMenuOpen)}><Paperclip className="h-5 w-5" /></Button>
                                 {mediaMenuOpen && (
-                                    <div className="absolute bottom-12 left-0 bg-zinc-900 border border-zinc-800 rounded-xl shadow-xl p-2 w-56 z-50 grid grid-cols-2 gap-2 animate-in slide-in-from-bottom-2">
+                                    <div className="absolute bottom-12 left-0 bg-zinc-900 border border-zinc-800 rounded-xl shadow-xl p-2 w-64 z-50 grid grid-cols-2 gap-2 animate-in slide-in-from-bottom-2">
                                         <label className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
                                             <IconImage className="w-5 h-5 text-purple-400" /> Galeria
                                             <input type="file" className="hidden" accept="image/*,video/*" onChange={handleFileUpload} />
                                         </label>
                                         <label className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
                                             <FileText className="w-5 h-5 text-blue-400" /> Documento
-                                            <input type="file" className="hidden" accept="*" onChange={handleFileUpload} />
+                                            <input type="file" className="hidden" accept="*" onChange={handleFileUpload} ref={fileInputRef} />
+                                        </label>
+                                        <label className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
+                                            <Music className="w-5 h-5 text-pink-400" /> Arquivo Áudio
+                                            <input type="file" className="hidden" accept="audio/*" onChange={handleFileUpload} ref={audioInputRef} />
                                         </label>
                                         <button onClick={() => { setMediaMenuOpen(false); setActiveModal('location'); }} className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
                                             <MapPin className="w-5 h-5 text-red-400" /> Localização
@@ -738,6 +749,12 @@ export default function ChatPage() {
                                         </button>
                                         <button onClick={() => { setMediaMenuOpen(false); setActiveModal('pix'); }} className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
                                             <DollarSign className="w-5 h-5 text-green-400" /> Pix
+                                        </button>
+                                        <button onClick={() => { setMediaMenuOpen(false); setActiveModal('catalog'); }} className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
+                                            <ShoppingBag className="w-5 h-5 text-orange-400" /> Catálogo
+                                        </button>
+                                        <button onClick={() => { setMediaMenuOpen(false); setActiveModal('event'); }} className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
+                                            <Calendar className="w-5 h-5 text-cyan-400" /> Evento
                                         </button>
                                     </div>
                                 )}
@@ -900,6 +917,23 @@ export default function ChatPage() {
               <p className="text-[10px] text-zinc-500 text-center">
                   Usamos o GPS do seu navegador para alta precisão.
               </p>
+          </div>
+      </Modal>
+
+      {/* 5. PLACEHOLDERS FOR MISSING FEATURES */}
+      <Modal isOpen={activeModal === 'catalog'} onClose={() => setActiveModal(null)} title="Enviar Catálogo">
+          <div className="p-4 text-center">
+              <ShoppingBag className="w-12 h-12 text-orange-500 mx-auto mb-3" />
+              <p className="text-sm text-zinc-400 mb-4">Selecione os produtos do seu catálogo WhatsApp Business.</p>
+              <Button onClick={handleSendCatalog} className="w-full">Enviar Catálogo Padrão</Button>
+          </div>
+      </Modal>
+
+      <Modal isOpen={activeModal === 'event'} onClose={() => setActiveModal(null)} title="Criar Evento">
+          <div className="p-4 text-center">
+              <Calendar className="w-12 h-12 text-cyan-500 mx-auto mb-3" />
+              <p className="text-sm text-zinc-400 mb-4">Agende um evento ou reunião direto no chat.</p>
+              <Button onClick={handleSendEvent} className="w-full">Criar Convite</Button>
           </div>
       </Modal>
 
