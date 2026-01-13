@@ -1,20 +1,27 @@
 "use client";
 
-import { FileText, MapPin, Download, PlayCircle, Image as ImageIcon, Film, BarChart2 } from "lucide-react";
+import { FileText, MapPin, Download, PlayCircle, Image as ImageIcon, Film, BarChart2, User, Copy, QrCode, DollarSign } from "lucide-react";
 import { Message } from "@/types";
 import { cn } from "@/lib/utils";
+import { useToast } from "@/hooks/useToast";
 
 interface MessageContentProps {
   message: Message;
 }
 
 export function MessageContent({ message }: MessageContentProps) {
+  const { addToast } = useToast();
   // O Backend agora salva a URL pública do Supabase Storage em `media_url`.
   // `content` geralmente contém a legenda (caption) para mídias, ou o texto da mensagem.
   const mediaUrl = message.media_url; 
-  const content = message.content || message.body || "";
+  let content = message.content || message.body || "";
   const type = message.message_type || 'text';
   const isMe = message.from_me;
+
+  const handleCopy = (text: string) => {
+      navigator.clipboard.writeText(text);
+      addToast({ type: 'success', title: 'Copiado!', message: 'Texto copiado para a área de transferência.' });
+  };
 
   // --- 1. IMAGEM ---
   if (type === 'image') {
@@ -120,22 +127,136 @@ export function MessageContent({ message }: MessageContentProps) {
 
   // --- 5. LOCALIZAÇÃO ---
   if (type === 'location') {
-    const cleanCoords = content.replace('Loc:', '').trim();
-    const mapsUrl = `https://www.google.com/maps?q=${cleanCoords}`;
+    // Tenta parsear se for JSON ou string simples
+    let coords = content;
+    try {
+        const parsed = JSON.parse(content);
+        if(parsed.latitude && parsed.longitude) {
+            coords = `${parsed.latitude},${parsed.longitude}`;
+        }
+    } catch(e) {
+        coords = content.replace('Loc:', '').trim();
+    }
+    
+    const mapsUrl = `https://www.google.com/maps?q=${coords}`;
     
     return (
-      <a href={mapsUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 p-2 mt-1 rounded bg-zinc-950/30 hover:bg-zinc-950/50 transition-colors group border border-white/10">
-        <div className="p-2 bg-red-500/10 rounded-full">
-            <MapPin className="w-4 h-4 text-red-500 group-hover:animate-bounce" />
-        </div>
-        <span className="text-sm underline decoration-dotted underline-offset-4">
-            Ver localização no Maps
-        </span>
-      </a>
+      <div className="mt-1">
+          <a href={mapsUrl} target="_blank" rel="noopener noreferrer" className="block relative overflow-hidden rounded-lg border border-white/10 group">
+            {/* Mapa Estático Fake (Placeholder Visual) */}
+            <div className="bg-zinc-800 h-32 w-64 flex items-center justify-center relative">
+                <div className="absolute inset-0 opacity-50 bg-[url('https://maps.googleapis.com/maps/api/staticmap?center=0,0&zoom=1&size=600x300')] bg-cover bg-center filter grayscale group-hover:grayscale-0 transition-all"></div>
+                <div className="bg-red-500/20 p-3 rounded-full animate-ping absolute"></div>
+                <MapPin className="w-8 h-8 text-red-500 relative z-10 drop-shadow-lg" />
+            </div>
+            <div className={cn("p-2 text-xs flex items-center gap-2", isMe ? "bg-primary/20" : "bg-zinc-900")}>
+                <MapPin className="w-3 h-3" />
+                <span className="underline decoration-dotted underline-offset-2">Ver no Google Maps</span>
+            </div>
+          </a>
+      </div>
     );
   }
 
-  // --- 6. ENQUETE ---
+  // --- 6. CONTATO ---
+  if (type === 'contact') {
+      let contactData = { displayName: 'Contato', vcard: '' };
+      try {
+          // Se vier como JSON string
+          if(content.startsWith('{')) {
+             const parsed = JSON.parse(content);
+             contactData.displayName = parsed.displayName || parsed.name || 'Contato';
+             contactData.vcard = parsed.vcard || '';
+          } else {
+             // Formato simples "Nome|Vcard" ou apenas Vcard
+             const parts = content.split('|');
+             if(parts.length > 1) {
+                 contactData.displayName = parts[0];
+                 contactData.vcard = parts[1];
+             } else {
+                 contactData.displayName = 'Contato';
+                 contactData.vcard = content;
+             }
+          }
+      } catch(e) {}
+
+      // Extrai telefone do vcard se possível
+      const phoneMatch = contactData.vcard.match(/TEL.*:(.*)/);
+      const phone = phoneMatch ? phoneMatch[1] : 'Ver detalhes';
+
+      return (
+          <div className={cn(
+              "flex items-center gap-3 p-3 mt-1 rounded-lg border min-w-[240px]",
+              isMe ? "bg-primary/10 border-primary/20" : "bg-zinc-800 border-zinc-700"
+          )}>
+              <div className="w-10 h-10 rounded-full bg-zinc-500/20 flex items-center justify-center text-zinc-300">
+                  <User className="w-5 h-5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                  <p className="font-bold text-sm truncate">{contactData.displayName}</p>
+                  <p className="text-xs opacity-70 truncate">{phone}</p>
+              </div>
+              <button 
+                onClick={() => {
+                    // Download VCard Logic
+                    const blob = new Blob([contactData.vcard], { type: 'text/vcard' });
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.style.display = 'none';
+                    a.href = url;
+                    a.download = `${contactData.displayName}.vcf`;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                }}
+                className="p-2 hover:bg-white/10 rounded-full transition-colors"
+                title="Salvar Contato"
+              >
+                  <Download className="w-4 h-4" />
+              </button>
+          </div>
+      );
+  }
+
+  // --- 7. PIX (Custom Type) ---
+  if (type === 'pix' || (type === 'text' && content.includes('Chave Pix:'))) {
+      // Tenta extrair a chave se for texto formatado, ou usa o content direto se for type 'pix'
+      const pixKey = content.replace('Chave Pix:', '').trim();
+      
+      return (
+          <div className={cn(
+              "p-4 mt-1 rounded-xl border space-y-3 min-w-[260px]",
+              isMe ? "bg-emerald-900/40 border-emerald-500/30" : "bg-zinc-900 border-zinc-700"
+          )}>
+              <div className="flex items-center gap-2 border-b border-white/10 pb-2">
+                  <div className="p-1.5 bg-emerald-500/20 rounded text-emerald-400">
+                      <QrCode className="w-4 h-4" />
+                  </div>
+                  <span className="font-bold text-sm text-emerald-400">Pagamento via Pix</span>
+              </div>
+              
+              <div className="space-y-1">
+                  <p className="text-[10px] text-zinc-400 uppercase tracking-wider font-bold">Chave Pix</p>
+                  <div className="flex items-center gap-2 bg-black/20 p-2 rounded border border-white/5">
+                      <code className="text-xs font-mono flex-1 break-all text-zinc-200">{pixKey}</code>
+                      <button 
+                        onClick={() => handleCopy(pixKey)} 
+                        className="p-1.5 hover:bg-white/10 rounded text-zinc-400 hover:text-white transition-colors"
+                      >
+                          <Copy className="w-3.5 h-3.5" />
+                      </button>
+                  </div>
+              </div>
+              
+              <div className="flex items-center gap-1 text-[10px] text-zinc-500">
+                  <DollarSign className="w-3 h-3" />
+                  <span>Envie o comprovante após pagar.</span>
+              </div>
+          </div>
+      );
+  }
+
+  // --- 8. ENQUETE ---
   if (type === 'poll') {
     let pollData = { name: 'Enquete', options: [] };
     try {
@@ -153,11 +274,14 @@ export function MessageContent({ message }: MessageContentProps) {
             </div>
             <div className="space-y-2">
                 {pollData.options?.map((opt: string, idx: number) => (
-                    <div key={idx} className="flex items-center justify-between p-2 rounded bg-black/20 border border-white/5 text-xs hover:bg-white/5 cursor-pointer transition-colors">
-                        <span>{opt}</span>
-                        <div className="w-4 h-4 rounded-full border border-zinc-500"></div>
+                    <div key={idx} className="flex items-center justify-between p-2 rounded bg-black/20 border border-white/5 text-xs hover:bg-white/5 cursor-pointer transition-colors group">
+                        <span className="font-medium text-zinc-300">{opt}</span>
+                        <div className="w-4 h-4 rounded-full border border-zinc-600 group-hover:border-primary/50"></div>
                     </div>
                 ))}
+            </div>
+            <div className="text-center">
+                <span className="text-[10px] text-zinc-500 italic">Selecione uma opção para votar</span>
             </div>
         </div>
     );

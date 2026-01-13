@@ -24,12 +24,12 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
-  // Status Icon Logic
+  // Status Icon Logic (Blue Ticks)
   const renderStatusIcon = () => {
     if (!isMe) return null;
 
     const status = message.status;
-    const iconClass = "w-[14px] h-[14px]";
+    const iconClass = "w-[15px] h-[15px]"; // Um pouco maior para visibilidade
 
     if (status === 'sending') {
         return <Clock className={cn(iconClass, "text-zinc-400")} />;
@@ -44,7 +44,7 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
     }
 
     if (status === 'read') {
-        return <CheckCheck className={cn(iconClass, "text-cyan-400")} />;
+        return <CheckCheck className={cn(iconClass, "text-blue-400")} />; // AZUL
     }
 
     // Default Fallback
@@ -54,7 +54,7 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
   return (
     <div className={cn("flex items-center gap-3 w-full", isMe ? "justify-end" : "justify-start")}>
         
-        {/* Checkbox de Seleção (Aparece à esquerda para todos no modo de seleção) */}
+        {/* Checkbox de Seleção */}
         {isSelectionMode && (
             <div className="animate-in fade-in zoom-in duration-200">
                 <Checkbox 
@@ -70,34 +70,33 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
             onClick={() => isSelectionMode && onSelect && onSelect()}
             className={cn(
                 "relative shadow-sm flex flex-col min-w-[120px] max-w-[85%] md:max-w-[75%] break-words rounded-lg p-1.5 cursor-pointer",
-                // WhatsApp Dark Mode Colors
+                // Cores Oficiais
                 isMe 
-                    ? "bg-[#005c4b] text-white rounded-tr-none" // Verde Oficial WhatsApp
-                    : "bg-zinc-800 text-zinc-100 rounded-tl-none", // Cinza Dark
-                // Selection Style
+                    ? "bg-[#005c4b] text-white rounded-tr-none" 
+                    : "bg-zinc-800 text-zinc-100 rounded-tl-none",
+                // Estilo Seleção
                 isSelectionMode && isSelected ? "ring-2 ring-primary ring-offset-2 ring-offset-zinc-950 bg-opacity-80" : "",
-                // Micro-interações
+                // Hover
                 !isSelectionMode && "group transition-all duration-200 hover:shadow-md"
             )}
         >
-            {/* Nome do Contato (Opcional, útil em grupos, apenas para recebidas) */}
+            {/* Nome em Grupos (Apenas recebidas) */}
             {!isMe && message.contact?.push_name && (
-                <span className="text-[10px] font-bold text-orange-400 px-1 mb-0.5 truncate">
+                <span className="text-[10px] font-bold text-orange-400 px-1 mb-0.5 truncate max-w-[200px] block">
                     {message.contact.push_name}
                 </span>
             )}
 
-            {/* Conteúdo da Mensagem */}
+            {/* Conteúdo */}
             <div className="px-1.5 pb-1">
                 <MessageContent message={message} />
             </div>
 
-            {/* Rodapé de Metadados (Hora + Status) */}
+            {/* Rodapé Metadados */}
             <div className={cn(
                 "flex justify-end items-end gap-1 px-1 mt-auto select-none",
-                "-mt-1" // Puxa um pouco para cima se o conteúdo for texto curto
+                "-mt-1" 
             )}>
-                {/* Horário */}
                 <span className={cn(
                     "text-[10px] leading-none mb-0.5",
                     isMe ? "text-emerald-100/70" : "text-zinc-400"
@@ -105,7 +104,6 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
                     {formatTime(message.created_at)}
                 </span>
 
-                {/* Ícone de Status (Apenas enviadas) */}
                 {isMe && (
                     <div className="mb-[1px]">
                         {renderStatusIcon()}
@@ -113,7 +111,7 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
                 )}
             </div>
             
-            {/* Tail (Pontinha da bolha) - Ocultar em modo de seleção para visual mais limpo */}
+            {/* Pontinha da Bolha */}
             {!isSelectionMode && (
                 <div className={cn(
                     "absolute top-0 w-3 h-3 -z-10",

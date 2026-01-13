@@ -1,3 +1,4 @@
+
 // --- AUTH & COMPANY ---
 export interface Company {
   id: string;
@@ -185,7 +186,7 @@ export interface Message {
   remote_jid: string;
   from_me: boolean;
   content: string;
-  message_type: 'text' | 'image' | 'video' | 'audio' | 'ptt' | 'voice' | 'document' | 'sticker' | 'location' | 'poll' | 'contact';
+  message_type: 'text' | 'image' | 'video' | 'audio' | 'ptt' | 'voice' | 'document' | 'sticker' | 'location' | 'poll' | 'contact' | 'pix';
   status: 'sent' | 'delivered' | 'read' | 'failed' | 'sending';
   created_at: string;
   has_media?: boolean;
