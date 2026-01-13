@@ -7,7 +7,7 @@ import { ChatContact, Message, Instance, Lead } from '@/types';
 import { cleanJid, cn } from '@/lib/utils';
 import { 
     Loader2, Search, Send, Paperclip, Sparkles, Mic, 
-    Image as IconImage, FileText, BarChart2, X, Trash2, ArrowLeft, User, Smartphone, Wifi, Clock, MoreVertical, CheckSquare, BellOff, Bell, Users, Check, MapPin, DollarSign, List, Calendar, Plus, Copy, Crosshair, StopCircle, ShoppingBag, Music
+    Image as IconImage, FileText, BarChart2, X, Trash2, ArrowLeft, User, Smartphone, Wifi, Clock, MoreVertical, CheckSquare, BellOff, Bell, Users, Check, MapPin, DollarSign, List, Plus, Copy, Crosshair, StopCircle, Music
 } from 'lucide-react';
 import { MessageBubble } from '@/components/chat/MessageBubble';
 import { ChatSidebar } from '@/components/chat/ChatSidebar';
@@ -97,7 +97,7 @@ export default function ChatPage() {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // -- MODALS STATE --
-  const [activeModal, setActiveModal] = useState<'poll'|'pix'|'contact'|'location'|'catalog'|'event'|null>(null);
+  const [activeModal, setActiveModal] = useState<'poll'|'pix'|'contact'|'location'|null>(null);
   
   // Poll Data
   const [pollQuestion, setPollQuestion] = useState("");
@@ -171,6 +171,8 @@ export default function ChatPage() {
   const fetchMessages = async (offset: number) => {
       if(!activeContact || !selectedInstance) return [];
       
+      // FIX: Removido filtro de session_id para mostrar histórico completo do Lead/Empresa
+      // O histórico pertence ao Lead, não à sessão específica.
       const { data, error } = await supabase
         .from('messages')
         .select(`*, contacts (push_name)`)
@@ -209,14 +211,22 @@ export default function ChatPage() {
       }
       
       const initChat = async () => {
-          setLoadingMessages(true);
-          setMessages([]);
-          setHasMoreMessages(true);
-          const initialMsgs = await fetchMessages(0);
-          setMessages(initialMsgs);
-          await refreshLeadData();
-          setLoadingMessages(false);
-          setTimeout(() => scrollToBottom('auto'), 100);
+          try {
+            setLoadingMessages(true);
+            setMessages([]);
+            setHasMoreMessages(true);
+            
+            const initialMsgs = await fetchMessages(0);
+            setMessages(initialMsgs);
+            
+            await refreshLeadData();
+          } catch (error) {
+            console.error("Erro ao iniciar chat:", error);
+          } finally {
+            // FIX: Garantir que loading sempre termina, evitando loop infinito visual
+            setLoadingMessages(false);
+            setTimeout(() => scrollToBottom('auto'), 100);
+          }
       };
 
       initChat();
@@ -231,14 +241,12 @@ export default function ChatPage() {
         }, (payload) => {
             const newMessage = payload.new as Message;
             
-            // Verifica se pertence à empresa atual (segurança extra frontend)
             if (newMessage.company_id !== user?.company_id) return;
 
             setMessages(prev => {
                 const exists = prev.some(m => m.id === newMessage.id);
                 if (exists) return prev;
 
-                // De-duplication lógica para mensagens enviadas por mim (Optimistic UI replacement)
                 if (newMessage.from_me) {
                     const tempIndex = prev.findIndex(m => 
                         m.status === 'sending' && 
@@ -256,7 +264,6 @@ export default function ChatPage() {
 
             setTimeout(() => scrollToBottom('smooth'), 100);
             
-            // Marca como lida se recebida na janela aberta
             if (!newMessage.from_me) {
                 supabase.from('contacts').update({ unread_count: 0 }).eq('jid', activeContact.remote_jid);
             }
@@ -271,9 +278,8 @@ export default function ChatPage() {
       if(!activeContact || !user?.company_id || !selectedInstance) return;
       
       const tempId = `temp-${Date.now()}`;
-      let contentDisplay = payload.text || "Mídia";
+      let contentDisplay = payload.text;
       
-      // Formata display otimista
       if (payload.type === 'pix') contentDisplay = `Chave Pix: ${payload.text}`;
       if (payload.type === 'poll') contentDisplay = payload.content?.name || 'Enquete';
       if (payload.type === 'location') contentDisplay = 'Localização';
@@ -307,13 +313,12 @@ export default function ChatPage() {
               text: payload.text,       
               url: payload.url,         
               caption: payload.caption, 
-              // IMPORTANTE: Mapeamento correto para o backend
               poll: payload.type === 'poll' ? payload.content : undefined,
               location: payload.type === 'location' ? payload.content : undefined,
               contact: payload.type === 'contact' ? payload.content : undefined,
-              mimetype: payload.mimetype, // Para Audio/Doc
+              mimetype: payload.mimetype,
               fileName: payload.fileName,
-              ptt: payload.ptt // Flag de áudio gravado (boolean)
+              ptt: payload.ptt
           });
       } catch (error) { 
           addToast({ type: 'error', title: 'Falha', message: 'Erro ao enviar mensagem.' });
@@ -323,7 +328,6 @@ export default function ChatPage() {
 
   const handleSendText = () => { if(input.trim()) { dispatchMessage({ type: 'text', text: input }); setInput(""); }};
   
-  // Upload Genérico (Img, Video, Doc, Audio FILE)
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file || !user?.company_id) return;
@@ -345,7 +349,7 @@ export default function ChatPage() {
           else if (file.type.startsWith('video/')) type = 'video';
           else if (file.type.startsWith('audio/')) {
               type = 'audio';
-              ptt = false; // Áudio de arquivo NÃO é PTT
+              ptt = false; 
           }
           
           await dispatchMessage({ 
@@ -387,8 +391,8 @@ export default function ChatPage() {
                       await dispatchMessage({ 
                           type: 'audio', 
                           url: publicUrl, 
-                          mimetype: 'audio/mp4', // WhatsApp prefere mp4 para PTT
-                          ptt: true // É nota de voz
+                          mimetype: 'audio/mp4',
+                          ptt: true
                       });
                   } catch (e) {
                       addToast({ type: 'error', title: 'Erro', message: 'Falha ao enviar áudio.' });
@@ -430,8 +434,6 @@ export default function ChatPage() {
   // --- SPECIAL SEND HANDLERS ---
   const handleCreatePoll = () => {
       if(!pollQuestion.trim()) return;
-      
-      // Validação rigorosa: Remove vazios
       const validOptions = pollOptions.filter(o => o.trim().length > 0);
       
       if (validOptions.length < 2) {
@@ -495,17 +497,6 @@ export default function ChatPage() {
           setActiveModal(null);
           setLocLat(null); setLocLng(null);
       }
-  };
-
-  // Simulação de Catálogo/Eventos (Frontend Only por enquanto)
-  const handleSendCatalog = () => {
-      addToast({ type: 'info', title: 'Em breve', message: 'Envio de catálogo completo em desenvolvimento.' });
-      setActiveModal(null);
-  };
-
-  const handleSendEvent = () => {
-      addToast({ type: 'info', title: 'Em breve', message: 'Agendamento de eventos em desenvolvimento.' });
-      setActiveModal(null);
   };
 
   // --- UTILS ---
@@ -750,12 +741,6 @@ export default function ChatPage() {
                                         <button onClick={() => { setMediaMenuOpen(false); setActiveModal('pix'); }} className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
                                             <DollarSign className="w-5 h-5 text-green-400" /> Pix
                                         </button>
-                                        <button onClick={() => { setMediaMenuOpen(false); setActiveModal('catalog'); }} className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
-                                            <ShoppingBag className="w-5 h-5 text-orange-400" /> Catálogo
-                                        </button>
-                                        <button onClick={() => { setMediaMenuOpen(false); setActiveModal('event'); }} className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
-                                            <Calendar className="w-5 h-5 text-cyan-400" /> Evento
-                                        </button>
                                     </div>
                                 )}
                             </div>
@@ -917,23 +902,6 @@ export default function ChatPage() {
               <p className="text-[10px] text-zinc-500 text-center">
                   Usamos o GPS do seu navegador para alta precisão.
               </p>
-          </div>
-      </Modal>
-
-      {/* 5. PLACEHOLDERS FOR MISSING FEATURES */}
-      <Modal isOpen={activeModal === 'catalog'} onClose={() => setActiveModal(null)} title="Enviar Catálogo">
-          <div className="p-4 text-center">
-              <ShoppingBag className="w-12 h-12 text-orange-500 mx-auto mb-3" />
-              <p className="text-sm text-zinc-400 mb-4">Selecione os produtos do seu catálogo WhatsApp Business.</p>
-              <Button onClick={handleSendCatalog} className="w-full">Enviar Catálogo Padrão</Button>
-          </div>
-      </Modal>
-
-      <Modal isOpen={activeModal === 'event'} onClose={() => setActiveModal(null)} title="Criar Evento">
-          <div className="p-4 text-center">
-              <Calendar className="w-12 h-12 text-cyan-500 mx-auto mb-3" />
-              <p className="text-sm text-zinc-400 mb-4">Agende um evento ou reunião direto no chat.</p>
-              <Button onClick={handleSendEvent} className="w-full">Criar Convite</Button>
           </div>
       </Modal>
 
