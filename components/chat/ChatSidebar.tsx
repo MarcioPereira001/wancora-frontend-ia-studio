@@ -141,14 +141,29 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
       setLoading(true);
       
       try {
-          // 1. Garante que o contato existe e NÃO está ignorado
-          await supabase.from('contacts').upsert({
-              jid: contact.remote_jid,
-              company_id: user.company_id,
-              is_ignored: false, // IMPORTANTE: Desmarca ignorado
-              name: contact.name || contact.push_name,
-              updated_at: new Date().toISOString()
-          }, { onConflict: 'jid' });
+          // 1. Lógica Manual de Upsert para evitar 409
+          const { data: existingContact } = await supabase
+            .from('contacts')
+            .select('jid')
+            .eq('jid', contact.remote_jid)
+            .eq('company_id', user.company_id)
+            .maybeSingle();
+
+          if (existingContact) {
+              await supabase.from('contacts').update({
+                  is_ignored: false,
+                  name: contact.name || contact.push_name,
+                  updated_at: new Date().toISOString()
+              }).eq('jid', contact.remote_jid).eq('company_id', user.company_id);
+          } else {
+              await supabase.from('contacts').insert({
+                  jid: contact.remote_jid,
+                  company_id: user.company_id,
+                  is_ignored: false,
+                  name: contact.name || contact.push_name,
+                  updated_at: new Date().toISOString()
+              });
+          }
           
           if (!lead) {
               // 2. Garante Pipeline/Estágio (Self-Healing)
@@ -196,26 +211,44 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
       
       setLoading(true);
       try {
-          // 1. Marca contato como ignorado (Anti-Ghost ON)
-          // USAMOS UPSERT: Se o contato não existir na tabela contacts, ele CRIA e já marca como ignorado.
-          const { error: contactError } = await supabase.from('contacts').upsert({
-              jid: contact.remote_jid,
-              company_id: user.company_id,
-              is_ignored: true, // VITAL: Marca como ignorado
-              name: contact.name || contact.push_name,
-              updated_at: new Date().toISOString()
-          }, { onConflict: 'jid' });
+          // 1. Lógica Manual Check -> Insert/Update para evitar erro 409
+          // Isso garante que o is_ignored: true SEJA SALVO, impedindo a recriação do lead
+          const { data: existingContact } = await supabase
+            .from('contacts')
+            .select('jid')
+            .eq('jid', contact.remote_jid)
+            .eq('company_id', user.company_id)
+            .maybeSingle();
 
-          if (contactError) throw contactError;
+          if (existingContact) {
+              const { error: updErr } = await supabase.from('contacts')
+                .update({ 
+                    is_ignored: true,
+                    name: contact.name || contact.push_name,
+                    updated_at: new Date().toISOString()
+                })
+                .eq('jid', contact.remote_jid)
+                .eq('company_id', user.company_id);
+              if (updErr) throw updErr;
+          } else {
+              const { error: insErr } = await supabase.from('contacts')
+                .insert({
+                    jid: contact.remote_jid,
+                    company_id: user.company_id,
+                    is_ignored: true,
+                    name: contact.name || contact.push_name,
+                    updated_at: new Date().toISOString()
+                });
+              if (insErr) throw insErr;
+          }
           
-          // 2. Remove Lead da tabela leads
-          // O Trigger SQL que criamos também fará isso, mas fazemos aqui para feedback imediato
+          // 2. Remove Lead da tabela leads (Força bruta para garantir limpeza visual)
           const cleanPhone = contact.remote_jid.split('@')[0].replace(/\D/g, '');
           
           const { error: deleteError } = await supabase.from('leads')
             .delete()
             .eq('company_id', user.company_id)
-            .ilike('phone', `%${cleanPhone}%`); // Remove qualquer lead com esse numero
+            .ilike('phone', `%${cleanPhone}%`); 
 
           if (deleteError) throw deleteError;
           
