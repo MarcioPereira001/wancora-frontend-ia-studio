@@ -44,7 +44,10 @@ export function useChatList(selectedSessionId: string | null) {
 
       if (error) throw error;
 
-      const mappedContacts: ChatContact[] = (data || []).map((row: any) => {
+      const mappedContacts: ChatContact[] = (data || [])
+        // FILTRO CRÍTICO: Remove duplicatas de LID (@lid) visualmente
+        .filter((row: any) => !row.remote_jid.includes('@lid'))
+        .map((row: any) => {
           const displayPic = row.contact_pic || row.lead_pic;
           
           // Usa a função centralizada de hierarquia
@@ -73,9 +76,16 @@ export function useChatList(selectedSessionId: string | null) {
           };
       });
 
-      // Deduplicação Frontend
+      // Deduplicação Frontend Adicional (Safety Net)
       const uniqueMap = new Map();
-      mappedContacts.forEach(c => uniqueMap.set(c.remote_jid, c));
+      mappedContacts.forEach(c => {
+          // Se já existe um contato com esse número (mesmo que JID diferente), preserva o mais recente
+          // Isso ajuda caso o filtro de LID falhe ou venha outro formato
+          const key = c.phone_number; 
+          if (!uniqueMap.has(key)) {
+              uniqueMap.set(key, c);
+          }
+      });
       const uniqueList = Array.from(uniqueMap.values());
 
       setRawContacts(uniqueList);
