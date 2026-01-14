@@ -32,19 +32,26 @@ export function formatPhone(jid: string): string {
   return `+${clean}`;
 }
 
+// LÓGICA DE OURO: HIERARQUIA DE NOMES
+// 1. Nome Salvo na Agenda (contact.name)
+// 2. Nome do Perfil (contact.push_name)
+// 3. Telefone Formatado
 export function getDisplayName(contact: any): string {
     if (contact.is_group) {
-        return contact.name || contact.push_name || "Grupo Desconhecido";
+        return contact.name || contact.push_name || "Grupo";
     }
-    // 1. Nome Salvo no CRM
-    if (contact.name && contact.name !== contact.remote_jid && contact.name !== cleanJid(contact.remote_jid)) {
+    
+    // Verifica se contact.name é válido e não é o próprio número
+    if (contact.name && contact.name !== contact.remote_jid && !contact.name.includes('@')) {
         return contact.name;
     }
-    // 2. Nome do Perfil WhatsApp (Push Name)
+    
+    // Fallback para Push Name
     if (contact.push_name) {
         return contact.push_name;
     }
-    // 3. Número Formatado
+    
+    // Último caso: Número
     return formatPhone(contact.remote_jid);
 }
 

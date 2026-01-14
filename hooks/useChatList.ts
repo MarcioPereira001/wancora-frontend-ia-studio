@@ -10,7 +10,6 @@ export function useChatList(selectedSessionId: string | null) {
   const [rawContacts, setRawContacts] = useState<ChatContact[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Helper para formatar preview da mensagem na lista
   const formatMessagePreview = (content: string, type: string) => {
     if (!content && type !== 'text') {
         const typeMap: Record<string, string> = {
@@ -38,32 +37,26 @@ export function useChatList(selectedSessionId: string | null) {
     }
 
     try {
-      // 1. Chamada RPC (Fonte da Verdade)
-      // Substitui o SELECT direto na tabela messages que causava duplicidade
       const { data, error } = await supabase.rpc('get_my_chat_list', {
           p_company_id: user.company_id,
-          p_session_id: selectedSessionId || null // Passa NULL explícito se não houver sessão selecionada
+          p_session_id: selectedSessionId || null 
       });
 
-      if (error) {
-          console.error('CRITICAL: Erro ao buscar lista de chats via RPC:', error);
-          throw error;
-      }
+      if (error) throw error;
 
-      // 2. Mapeamento de Dados
       const mappedContacts: ChatContact[] = (data || []).map((row: any) => {
           const displayPic = row.contact_pic || row.lead_pic;
           
-          // Lógica de Display Name robusta
+          // Usa a função centralizada de hierarquia
           const finalName = getDisplayName({
               is_group: row.is_group,
-              name: row.contact_name || row.lead_name,
-              push_name: row.contact_push_name,
+              name: row.contact_name, // Nome salvo na agenda (contacts.name)
+              push_name: row.contact_push_name, // Nome do perfil
               remote_jid: row.remote_jid
           });
 
           return {
-              id: row.remote_jid, // ID único para a chave do React
+              id: row.remote_jid, 
               company_id: user.company_id,
               jid: row.remote_jid,
               remote_jid: row.remote_jid,
@@ -80,9 +73,7 @@ export function useChatList(selectedSessionId: string | null) {
           };
       });
 
-      // 3. DEDUPLICAÇÃO "FIREWALL" (Frontend)
-      // Garante matematicamente que nunca haverá JIDs duplicados na lista,
-      // mesmo que a RPC ou o banco retornem linhas sujas por joins complexos.
+      // Deduplicação Frontend
       const uniqueMap = new Map();
       mappedContacts.forEach(c => uniqueMap.set(c.remote_jid, c));
       const uniqueList = Array.from(uniqueMap.values());
@@ -90,16 +81,15 @@ export function useChatList(selectedSessionId: string | null) {
       setRawContacts(uniqueList);
 
     } catch (err) {
-      console.error('Erro no fluxo de chat list:', err);
+      console.error('Erro chat list:', err);
     } finally {
       setLoading(false);
     }
-  }, [user?.company_id, selectedSessionId]); // Dependências do useCallback
+  }, [user?.company_id, selectedSessionId]);
 
   useEffect(() => {
     fetchChats();
 
-    // Realtime Listener Otimizado
     const channel = supabase
       .channel(`chat-list-global:${user?.company_id}`)
       .on('postgres_changes', { 
