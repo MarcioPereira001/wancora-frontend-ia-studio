@@ -171,9 +171,6 @@ export default function ChatPage() {
   const fetchMessages = async (offset: number) => {
       if(!activeContact || !user?.company_id) return [];
       
-      // FIX CRÍTICO: Removido ", contacts (push_name)"
-      // A tabela 'messages' NÃO tem FK para 'contacts' (ver Schema Rule 1).
-      // Isso causava erro 400.
       const { data, error } = await supabase
         .from('messages')
         .select(`*`) 
@@ -234,41 +231,57 @@ export default function ChatPage() {
 
       initChat();
 
+      // REALTIME FIX: Escuta por Company ID em vez de remote_jid específico
+      // Isso resolve problemas onde o ID da mensagem (ex: LID) difere do ID do contato (Phone)
       const channel = supabase
-        .channel(`chat-room:${activeContact.remote_jid}`)
+        .channel(`chat-room:${user?.company_id}:${activeContact.remote_jid}`)
         .on('postgres_changes', { 
             event: 'INSERT', 
             schema: 'public', 
             table: 'messages', 
-            filter: `remote_jid=eq.${activeContact.remote_jid}` // Filtra apenas pelo contato atual
+            filter: `company_id=eq.${user?.company_id}` // Filtro Global da Empresa
         }, (payload) => {
             const newMessage = payload.new as Message;
             
+            // Segurança: Garante que é da empresa certa (redundante com o filtro, mas boa prática)
             if (newMessage.company_id !== user?.company_id) return;
 
-            setMessages(prev => {
-                const exists = prev.some(m => m.id === newMessage.id);
-                if (exists) return prev;
+            // 1. Atualiza a Sidebar (Contadores e Last Message)
+            refreshChats();
 
-                if (newMessage.from_me) {
-                    const tempIndex = prev.findIndex(m => 
-                        m.status === 'sending' && 
-                        (m.content === newMessage.content || m.message_type === newMessage.message_type)
-                    );
-                    if (tempIndex !== -1) {
-                        const newArr = [...prev];
-                        newArr[tempIndex] = newMessage;
-                        return newArr;
+            // 2. Verifica se a mensagem pertence ao chat ABERTO atualmente
+            // Compara os JIDs ou se é um LID do mesmo contato (simplificação via split)
+            const isForCurrentChat = 
+                newMessage.remote_jid === activeContact.remote_jid ||
+                newMessage.remote_jid.includes(activeContact.remote_jid.split('@')[0]);
+
+            if (isForCurrentChat) {
+                setMessages(prev => {
+                    const exists = prev.some(m => m.id === newMessage.id);
+                    if (exists) return prev;
+
+                    // Remove mensagem otimista (sending) se houver
+                    if (newMessage.from_me) {
+                        const tempIndex = prev.findIndex(m => 
+                            m.status === 'sending' && 
+                            (m.content === newMessage.content || m.message_type === newMessage.message_type)
+                        );
+                        if (tempIndex !== -1) {
+                            const newArr = [...prev];
+                            newArr[tempIndex] = newMessage;
+                            return newArr;
+                        }
                     }
+
+                    return [...prev, newMessage];
+                });
+
+                setTimeout(() => scrollToBottom('smooth'), 100);
+                
+                // Marca como lida instantaneamente se estiver com o chat aberto
+                if (!newMessage.from_me) {
+                    supabase.from('contacts').update({ unread_count: 0 }).eq('jid', activeContact.remote_jid);
                 }
-
-                return [...prev, newMessage];
-            });
-
-            setTimeout(() => scrollToBottom('smooth'), 100);
-            
-            if (!newMessage.from_me) {
-                supabase.from('contacts').update({ unread_count: 0 }).eq('jid', activeContact.remote_jid);
             }
         })
         .subscribe();
