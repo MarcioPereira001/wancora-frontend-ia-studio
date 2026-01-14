@@ -168,7 +168,8 @@ export default function ChatPage() {
   };
 
   // --- FETCH MESSAGES ---
-  const fetchMessages = async (offset: number) => {
+  // Função extraída para poder ser chamada pelo Realtime também
+  const loadMessages = async (offset: number) => {
       if(!activeContact || !user?.company_id) return [];
       
       const { data, error } = await supabase
@@ -217,7 +218,7 @@ export default function ChatPage() {
             setMessages([]);
             setHasMoreMessages(true);
             
-            const initialMsgs = await fetchMessages(0);
+            const initialMsgs = await loadMessages(0);
             setMessages(initialMsgs);
             
             await refreshLeadData();
@@ -231,54 +232,62 @@ export default function ChatPage() {
 
       initChat();
 
-      // REALTIME FIX: Escuta por Company ID em vez de remote_jid específico
-      // Isso resolve problemas onde o ID da mensagem (ex: LID) difere do ID do contato (Phone)
+      // REALTIME STRATEGY "THE HAMMER":
+      // 1. Escuta TUDO da tabela messages (sem filtro no canal para evitar bugs de UUID).
+      // 2. Filtra no cliente por company_id.
+      // 3. Se for mensagem da empresa -> refreshChats() (Sidebar).
+      // 4. Se for mensagem do contato ativo (ou suspeita de ser) -> RE-FETCH completo.
+      // Isso contorna problemas de LIDs, payloads parciais ou JIDs mal formatados no evento.
       const channel = supabase
-        .channel(`chat-room:${user?.company_id}:${activeContact.remote_jid}`)
+        .channel(`chat-room-global`)
         .on('postgres_changes', { 
             event: 'INSERT', 
             schema: 'public', 
-            table: 'messages', 
-            filter: `company_id=eq.${user?.company_id}` // Filtro Global da Empresa
-        }, (payload) => {
+            table: 'messages'
+        }, async (payload) => {
             const newMessage = payload.new as Message;
             
-            // Segurança: Garante que é da empresa certa (redundante com o filtro, mas boa prática)
+            // Filtro de Segurança Client-Side
             if (newMessage.company_id !== user?.company_id) return;
 
-            // 1. Atualiza a Sidebar (Contadores e Last Message)
+            // 1. Atualiza a Sidebar (Sempre)
             refreshChats();
 
-            // 2. Verifica se a mensagem pertence ao chat ABERTO atualmente
-            // Compara os JIDs ou se é um LID do mesmo contato (simplificação via split)
-            const isForCurrentChat = 
+            // 2. Atualiza o Chat Aberto (Estratégia Híbrida: Optimistic + Re-fetch)
+            const cleanRemote = newMessage.remote_jid.split('@')[0];
+            const cleanActive = activeContact.remote_jid.split('@')[0];
+            
+            // Verifica se pertence ao chat (match exato, match parcial ou se é LID/Device Link)
+            // Se for 'from_me', assumimos que pode ser sync de outro device e atualizamos
+            const isRelevant = 
                 newMessage.remote_jid === activeContact.remote_jid ||
-                newMessage.remote_jid.includes(activeContact.remote_jid.split('@')[0]);
+                newMessage.remote_jid.includes(cleanActive) ||
+                (newMessage.from_me && newMessage.remote_jid.includes('@lid'));
 
-            if (isForCurrentChat) {
+            if (isRelevant) {
+                // Adiciona otimisticamente (para feedback visual imediato se o payload for bom)
                 setMessages(prev => {
-                    const exists = prev.some(m => m.id === newMessage.id);
-                    if (exists) return prev;
-
-                    // Remove mensagem otimista (sending) se houver
-                    if (newMessage.from_me) {
-                        const tempIndex = prev.findIndex(m => 
-                            m.status === 'sending' && 
-                            (m.content === newMessage.content || m.message_type === newMessage.message_type)
-                        );
-                        if (tempIndex !== -1) {
-                            const newArr = [...prev];
-                            newArr[tempIndex] = newMessage;
-                            return newArr;
-                        }
-                    }
-
+                    if (prev.some(m => m.id === newMessage.id)) return prev;
                     return [...prev, newMessage];
                 });
+                
+                // FORCE REFRESH: Busca a versão "oficial" do banco para garantir consistência
+                // Isso resolve o problema onde o payload vem com LID mas o banco tem Phone JID
+                const freshMsgs = await loadMessages(0);
+                if (freshMsgs.length > 0) {
+                    setMessages(prev => {
+                        // Merge inteligente: Mantém mensagens antigas, substitui as novas
+                        // Na prática, como loadMessages traz as últimas 30, substituimos o final da lista
+                        // Mas para evitar flicker, vamos apenas garantir que as novas estejam lá
+                        const existingIds = new Set(prev.map(m => m.id));
+                        const uniqueNew = freshMsgs.filter(m => !existingIds.has(m.id));
+                        return [...prev, ...uniqueNew].sort((a,b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+                    });
+                }
 
                 setTimeout(() => scrollToBottom('smooth'), 100);
                 
-                // Marca como lida instantaneamente se estiver com o chat aberto
+                // Marca lido
                 if (!newMessage.from_me) {
                     supabase.from('contacts').update({ unread_count: 0 }).eq('jid', activeContact.remote_jid);
                 }
@@ -521,7 +530,7 @@ export default function ChatPage() {
       if (container.scrollTop < 50 && hasMoreMessages && !fetchingMore && !loadingMessages) {
           setFetchingMore(true);
           const currentHeight = container.scrollHeight; 
-          const olderMessages = await fetchMessages(messages.length);
+          const olderMessages = await loadMessages(messages.length);
           if (olderMessages.length > 0) {
               setMessages(prev => [...olderMessages, ...prev]);
               setTimeout(() => {
