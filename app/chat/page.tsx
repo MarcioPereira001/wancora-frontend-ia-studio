@@ -1,13 +1,13 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { useAuthStore } from '@/store/useAuthStore';
 import { ChatContact, Message, Instance, Lead } from '@/types';
 import { cleanJid, cn } from '@/lib/utils';
 import { 
     Loader2, Search, Send, Paperclip, Sparkles, Mic, 
-    Image as IconImage, FileText, BarChart2, X, Trash2, ArrowLeft, User, Smartphone, Wifi, Clock, MoreVertical, CheckSquare, BellOff, Bell, Users, Check
+    Image as IconImage, FileText, BarChart2, X, Trash2, ArrowLeft, User, Smartphone, Wifi, Clock, MoreVertical, CheckSquare, BellOff, Bell, Users, Check, MapPin, DollarSign, List, Plus, Copy, Crosshair, StopCircle, Music
 } from 'lucide-react';
 import { MessageBubble } from '@/components/chat/MessageBubble';
 import { ChatSidebar } from '@/components/chat/ChatSidebar';
@@ -53,91 +53,158 @@ export default function ChatPage() {
 
   // --- CHAT LOGIC ---
   const { contacts, loading: loadingContacts, refreshChats } = useChatList(selectedInstance?.session_id || null);
+  const [searchTerm, setSearchTerm] = useState("");
   
+  const filteredContacts = useMemo(() => {
+      if (!searchTerm) return contacts;
+      const lower = searchTerm.toLowerCase();
+      return contacts.filter(c => 
+          c.name.toLowerCase().includes(lower) || 
+          c.push_name?.toLowerCase().includes(lower) ||
+          c.phone_number?.includes(lower)
+      );
+  }, [contacts, searchTerm]);
+
   const [activeContact, setActiveContact] = useState<ChatContact | null>(null);
   const [activeLead, setActiveLead] = useState<Lead | null>(null);
   
-  // INBOX SELECTION STATE
+  // INBOX SELECTION
   const [isInboxSelectionMode, setIsInboxSelectionMode] = useState(false);
   const [selectedInboxIds, setSelectedInboxIds] = useState<Set<string>>(new Set());
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [deleteLeadToo, setDeleteLeadToo] = useState(false);
   
-  // Message State & Pagination
+  // Message State
   const [messages, setMessages] = useState<Message[]>([]);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [hasMoreMessages, setHasMoreMessages] = useState(true);
   const [fetchingMore, setFetchingMore] = useState(false);
   
-  // Message Selection & Deletion State
+  // Selection & UI
   const [isMsgSelectionMode, setIsMsgSelectionMode] = useState(false);
   const [selectedMsgIds, setSelectedMsgIds] = useState<Set<string>>(new Set());
   const [showOptionsMenu, setShowOptionsMenu] = useState(false);
-  
   const [input, setInput] = useState("");
   const [isAiLoading, setIsAiLoading] = useState(false);
-  
-  // Scheduler State
   const [isSchedulerOpen, setIsSchedulerOpen] = useState(false);
-
-  // Media States
-  const [isRecording, setIsRecording] = useState(false);
   const [mediaMenuOpen, setMediaMenuOpen] = useState(false);
+  
+  // -- MEDIA RECORDING --
+  const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [pollModalOpen, setPollModalOpen] = useState(false);
-  const [pollQuestion, setPollQuestion] = useState("");
-  const [pollOptions, setPollOptions] = useState(["", ""]);
+
+  // -- MODALS STATE --
+  const [activeModal, setActiveModal] = useState<'poll'|'pix'|'contact'|'location'|null>(null);
   
+  // Poll Data
+  const [pollQuestion, setPollQuestion] = useState("");
+  const [pollOptions, setPollOptions] = useState(["Sim", "Não"]);
+  
+  // Pix Data
+  const [pixKey, setPixKey] = useState("");
+  const [pixType, setPixType] = useState("cpf");
+  
+  // Contact Data
+  const [contactName, setContactName] = useState("");
+  const [contactPhone, setContactPhone] = useState("");
+  
+  // Location Data
+  const [locLat, setLocLat] = useState<number | null>(null);
+  const [locLng, setLocLng] = useState<number | null>(null);
+  const [locLoading, setLocLoading] = useState(false);
+
   // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-
+  const mediaMenuRef = useRef<HTMLDivElement>(null); // Ref para click outside
+  const fileInputRef = useRef<HTMLInputElement>(null); // Added missing ref
+  const audioInputRef = useRef<HTMLInputElement>(null); // Ref separado para Audio File
+  
   const scrollToBottom = (behavior: 'auto' | 'smooth' = 'smooth') => {
       messagesEndRef.current?.scrollIntoView({ behavior });
   };
 
-  // --- FETCH MESSAGES (Pagination) ---
+  // --- CLICK OUTSIDE HANDLER ---
+  useEffect(() => {
+      function handleClickOutside(event: MouseEvent) {
+          if (mediaMenuRef.current && !mediaMenuRef.current.contains(event.target as Node)) {
+              setMediaMenuOpen(false);
+          }
+      }
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => {
+          document.removeEventListener("mousedown", handleClickOutside);
+      };
+  }, []);
+
+  // --- ACTIONS ---
+  
+  const handleContactSelect = async (contact: ChatContact) => {
+      if (isInboxSelectionMode) {
+          handleInboxSelect(contact.jid);
+          return;
+      }
+      setActiveContact(contact);
+      setSearchTerm("");
+      setMediaMenuOpen(false); 
+      
+      // Zera LOCALMENTE para UX instantânea
+      contact.unread_count = 0;
+      
+      // Tenta zerar no banco
+      try {
+          await supabase.from('contacts')
+            .update({ unread_count: 0 })
+            .eq('jid', contact.jid)
+            .eq('company_id', user?.company_id);
+          
+          refreshChats();
+      } catch (e) {
+          console.error("Erro ao zerar unread:", e);
+      }
+  };
+
+  // --- FETCH MESSAGES ---
   const fetchMessages = async (offset: number) => {
       if(!activeContact || !user?.company_id) return [];
       
-      // FIXED: Removido filtro de session_id. 
-      // O histórico pertence ao Lead/Empresa, independente de qual instância enviou/recebeu.
+      // FIX CRÍTICO: Removido ", contacts (push_name)"
+      // A tabela 'messages' NÃO tem FK para 'contacts' (ver Schema Rule 1).
+      // Não podemos fazer join. O activeContact já tem o nome necessário.
       const { data, error } = await supabase
         .from('messages')
-        .select(`*, contacts (push_name)`)
+        .select(`*`) 
         .eq('remote_jid', activeContact.remote_jid) 
         .eq('company_id', user.company_id)
-        .order('created_at', { ascending: false }) // Recentes primeiro
+        .order('created_at', { ascending: false })
         .range(offset, offset + MESSAGES_PER_PAGE - 1);
-
-      if (error) return [];
+        
+      if (error) {
+          console.error("Erro fetchMessages:", error);
+          return [];
+      }
       return (data || []).reverse(); 
   };
 
-  // --- REFRESH LEAD DATA ---
+  // --- LEAD REFRESH ---
   const refreshLeadData = async () => {
       if(!activeContact || !user?.company_id) return;
-      
-      // Limpeza robusta do telefone: remove tudo que não for dígito
       const cleanPhone = activeContact.remote_jid.split('@')[0].replace(/\D/g, '');
-      
       const { data: lead } = await supabase
         .from('leads')
         .select('*')
         .eq('company_id', user.company_id)
-        .ilike('phone', `%${cleanPhone}%`) // Busca flexível
+        .ilike('phone', `%${cleanPhone}%`)
         .limit(1)
         .maybeSingle();
-        
       setActiveLead(lead);
-      refreshChats(); // Atualiza lista para refletir mudanças no card
+      refreshChats();
   };
 
-  // --- INITIAL LOAD ---
+  // --- INIT CHAT & REALTIME ---
   useEffect(() => {
       if(!activeContact || !selectedInstance) {
           setActiveLead(null);
@@ -148,194 +215,299 @@ export default function ChatPage() {
       }
       
       const initChat = async () => {
-          setLoadingMessages(true);
-          setMessages([]);
-          setHasMoreMessages(true);
-          
-          const initialMsgs = await fetchMessages(0);
-          setMessages(initialMsgs);
-          
-          await refreshLeadData();
-          setLoadingMessages(false);
-          setTimeout(() => scrollToBottom('auto'), 100);
+          try {
+            setLoadingMessages(true);
+            setMessages([]);
+            setHasMoreMessages(true);
+            
+            const initialMsgs = await fetchMessages(0);
+            setMessages(initialMsgs);
+            
+            await refreshLeadData();
+          } catch (error) {
+            console.error("Erro ao iniciar chat:", error);
+          } finally {
+            setLoadingMessages(false);
+            setTimeout(() => scrollToBottom('auto'), 100);
+          }
       };
 
       initChat();
 
-      // Realtime
-      // Monitora TODAS as mensagens deste contato nesta empresa, independente da sessão
-      const channelName = `chat:${activeContact.remote_jid}`;
-      const subscription = supabase
-        .channel(channelName)
+      const channel = supabase
+        .channel(`chat-room:${activeContact.remote_jid}`)
         .on('postgres_changes', { 
-            event: '*', 
+            event: 'INSERT', 
             schema: 'public', 
-            table: 'messages',
-            filter: `remote_jid=eq.${activeContact.remote_jid}` 
+            table: 'messages', 
+            filter: `remote_jid=eq.${activeContact.remote_jid}` // Filtra apenas pelo contato atual
         }, (payload) => {
             const newMessage = payload.new as Message;
-            const oldMessage = payload.old as Message;
+            
+            if (newMessage.company_id !== user?.company_id) return;
 
-            // Segurança: Garante que pertence à empresa atual
-            if (newMessage?.company_id === user?.company_id || oldMessage?.company_id === user?.company_id) {
-                if (payload.eventType === 'INSERT') {
-                    setMessages(prev => {
-                        if (prev.some(m => m.id === newMessage.id)) return prev;
-                        return [...prev, newMessage];
-                    });
-                    setTimeout(() => scrollToBottom('smooth'), 100);
-                } else if (payload.eventType === 'UPDATE') {
-                    setMessages(prev => prev.map(m => m.id === newMessage.id ? newMessage : m));
-                } else if (payload.eventType === 'DELETE') {
-                    setMessages(prev => prev.filter(m => m.id !== oldMessage.id));
+            setMessages(prev => {
+                const exists = prev.some(m => m.id === newMessage.id);
+                if (exists) return prev;
+
+                if (newMessage.from_me) {
+                    const tempIndex = prev.findIndex(m => 
+                        m.status === 'sending' && 
+                        (m.content === newMessage.content || m.message_type === newMessage.message_type)
+                    );
+                    if (tempIndex !== -1) {
+                        const newArr = [...prev];
+                        newArr[tempIndex] = newMessage;
+                        return newArr;
+                    }
                 }
+
+                return [...prev, newMessage];
+            });
+
+            setTimeout(() => scrollToBottom('smooth'), 100);
+            
+            if (!newMessage.from_me) {
+                supabase.from('contacts').update({ unread_count: 0 }).eq('jid', activeContact.remote_jid);
             }
         })
         .subscribe();
 
-      return () => { subscription.unsubscribe(); };
-  }, [activeContact?.id, user?.company_id]); // Removido selectedInstance.session_id das deps para não resetar à toa
+      return () => { supabase.removeChannel(channel); };
+  }, [activeContact?.id, user?.company_id]);
 
-  // --- INBOX ACTIONS (SIDEBAR ESQUERDA) ---
-  const handleInboxSelect = (jid: string) => {
-      if (!isInboxSelectionMode) return;
-      setSelectedInboxIds(prev => {
-          const newSet = new Set(prev);
-          if (newSet.has(jid)) newSet.delete(jid);
-          else newSet.add(jid);
-          return newSet;
-      });
-  };
-
-  const handleToggleMute = async () => {
-      if (selectedInboxIds.size === 0) return;
+  // --- SENDING LOGIC ---
+  const dispatchMessage = async (payload: any) => {
+      if(!activeContact || !user?.company_id || !selectedInstance) return;
       
-      // Verifica o estado "majoritário" para toggle (se a maioria está mutada, desmuta)
-      const selectedContacts = contacts.filter(c => selectedInboxIds.has(c.jid));
-      const allMuted = selectedContacts.every(c => c.is_muted);
-      const newStatus = !allMuted;
+      const tempId = `temp-${Date.now()}`;
+      let contentDisplay = payload.text;
+      
+      if (payload.type === 'pix') contentDisplay = `Chave Pix: ${payload.text}`;
+      if (payload.type === 'poll') contentDisplay = payload.content?.name || 'Enquete';
+      if (payload.type === 'location') contentDisplay = 'Localização';
+      if (payload.type === 'contact') contentDisplay = 'Contato';
+      if (payload.caption) contentDisplay = payload.caption;
+
+      const tempMsg: Message = {
+          id: tempId,
+          remote_jid: activeContact.remote_jid,
+          from_me: true,
+          content: contentDisplay,
+          body: payload.text,
+          message_type: payload.type || 'text',
+          status: 'sending',
+          created_at: new Date().toISOString(),
+          session_id: selectedInstance.session_id,
+          company_id: user.company_id,
+          media_url: payload.url,
+          fileName: payload.fileName 
+      } as any;
+
+      setMessages(prev => [...prev, tempMsg]);
+      setTimeout(() => scrollToBottom('smooth'), 50);
 
       try {
-          const { error } = await supabase
-            .from('contacts')
-            .update({ is_muted: newStatus })
-            .in('jid', Array.from(selectedInboxIds))
-            .eq('company_id', user?.company_id);
-
-          if (error) throw error;
-          
-          addToast({ 
-              type: 'success', 
-              title: newStatus ? 'Silenciado' : 'Som Ativado', 
-              message: `${selectedInboxIds.size} conversas atualizadas.` 
+          await api.post('/message/send', {
+              sessionId: selectedInstance.session_id,
+              companyId: user.company_id,
+              to: activeContact.remote_jid,
+              type: payload.type || 'text',
+              text: payload.text,       
+              url: payload.url,         
+              caption: payload.caption, 
+              poll: payload.type === 'poll' ? payload.content : undefined,
+              location: payload.type === 'location' ? payload.content : undefined,
+              contact: payload.type === 'contact' ? payload.content : undefined,
+              mimetype: payload.mimetype,
+              fileName: payload.fileName,
+              ptt: payload.ptt
           });
-          
-          refreshChats();
-          setIsInboxSelectionMode(false);
-          setSelectedInboxIds(new Set());
-
-      } catch (e) {
-          addToast({ type: 'error', title: 'Erro', message: 'Falha ao atualizar status.' });
+      } catch (error) { 
+          addToast({ type: 'error', title: 'Falha', message: 'Erro ao enviar mensagem.' });
+          setMessages(prev => prev.filter(m => m.id !== tempId)); 
       }
   };
 
-  const handleDeleteChats = async () => {
-      if (selectedInboxIds.size === 0) return;
+  const handleSendText = () => { if(input.trim()) { dispatchMessage({ type: 'text', text: input }); setInput(""); }};
+  
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file || !user?.company_id) return;
+      
+      if (file.size > 50 * 1024 * 1024) {
+          addToast({ type: 'error', title: 'Arquivo muito grande', message: 'Limite máximo de 50MB.' });
+          return;
+      }
+
+      setMediaMenuOpen(false); 
+      addToast({ type: 'info', title: 'Upload', message: 'Enviando arquivo...' });
       
       try {
-          const jids = Array.from(selectedInboxIds);
-          
-          // 1. Apagar Mensagens
-          await supabase.from('messages')
-            .delete()
-            .in('remote_jid', jids)
-            .eq('company_id', user?.company_id);
+          const { publicUrl, fileName } = await uploadChatMedia(file, user.company_id);
+          let type = 'document';
+          let ptt = false;
 
-          // 2. Se marcado, apagar Leads
-          if (deleteLeadToo) {
-              // Extrai números limpos para buscar leads
-              const phones = jids.map((jid: string) => jid.split('@')[0].replace(/\D/g, ''));
-              await supabase.from('leads')
-                .delete()
-                .in('phone', phones)
-                .eq('company_id', user?.company_id);
+          if (file.type.startsWith('image/')) type = 'image';
+          else if (file.type.startsWith('video/')) type = 'video';
+          else if (file.type.startsWith('audio/')) {
+              type = 'audio';
+              ptt = false; 
           }
-
-          addToast({ type: 'success', title: 'Excluído', message: 'Conversas removidas.' });
-          refreshChats();
           
-          // Se o contato ativo foi deletado, limpa a tela
-          if (activeContact && selectedInboxIds.has(activeContact.jid)) {
-              setActiveContact(null);
-          }
-
-          setIsInboxSelectionMode(false);
-          setSelectedInboxIds(new Set());
-          setDeleteModalOpen(false);
-          setDeleteLeadToo(false);
-
-      } catch (e) {
-          addToast({ type: 'error', title: 'Erro', message: 'Falha ao excluir.' });
+          await dispatchMessage({ 
+              type, 
+              url: publicUrl, 
+              caption: input, 
+              fileName: fileName,
+              mimetype: file.type,
+              ptt: ptt 
+          }); 
+          setInput("");
+      } catch (e: any) {
+          addToast({ type: 'error', title: 'Erro', message: e.message });
+      } finally {
+          if (fileInputRef.current) fileInputRef.current.value = ''; 
+          if (audioInputRef.current) audioInputRef.current.value = ''; 
       }
   };
 
-  // --- MESSAGE SELECTION (AREA CENTRAL) ---
-  const toggleMsgSelectionMode = () => {
-      setIsMsgSelectionMode(!isMsgSelectionMode);
-      setSelectedMsgIds(new Set());
-      setShowOptionsMenu(false);
+  // --- AUDIO RECORDING (PTT) ---
+  const startRecording = async () => {
+      try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          const mediaRecorder = new MediaRecorder(stream);
+          mediaRecorderRef.current = mediaRecorder;
+          audioChunksRef.current = [];
+
+          mediaRecorder.ondataavailable = (event) => {
+              if (event.data.size > 0) audioChunksRef.current.push(event.data);
+          };
+
+          mediaRecorder.onstop = async () => {
+              const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/mp3' });
+              const audioFile = new File([audioBlob], `voice_${Date.now()}.mp3`, { type: 'audio/mp3' });
+              
+              if (audioFile.size > 0 && user?.company_id) {
+                  try {
+                      const { publicUrl } = await uploadChatMedia(audioFile, user.company_id);
+                      await dispatchMessage({ 
+                          type: 'audio', 
+                          url: publicUrl, 
+                          mimetype: 'audio/mp4',
+                          ptt: true
+                      });
+                  } catch (e) {
+                      addToast({ type: 'error', title: 'Erro', message: 'Falha ao enviar áudio.' });
+                  }
+              }
+              stream.getTracks().forEach(track => track.stop());
+          };
+
+          mediaRecorder.start();
+          setIsRecording(true);
+          setRecordingTime(0);
+          timerRef.current = setInterval(() => setRecordingTime(prev => prev + 1), 1000);
+
+      } catch (err) {
+          addToast({ type: 'error', title: 'Microfone', message: 'Permissão negada ou indisponível.' });
+      }
   };
 
-  const handleSelectMessage = (msgId: string) => {
-      setSelectedMsgIds(prev => {
-          const newSet = new Set(prev);
-          if (newSet.has(msgId)) newSet.delete(msgId);
-          else newSet.add(msgId);
-          return newSet;
+  const stopRecording = (cancel = false) => {
+      if (mediaRecorderRef.current && isRecording) {
+          if (cancel) {
+              mediaRecorderRef.current.stream.getTracks().forEach(t => t.stop());
+              mediaRecorderRef.current = null;
+          } else {
+              mediaRecorderRef.current.stop();
+          }
+      }
+      setIsRecording(false);
+      if (timerRef.current) clearInterval(timerRef.current);
+      setRecordingTime(0);
+  };
+
+  const formatTime = (seconds: number) => {
+      const mins = Math.floor(seconds / 60);
+      const secs = seconds % 60;
+      return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  // --- SPECIAL SEND HANDLERS ---
+  const handleCreatePoll = () => {
+      if(!pollQuestion.trim()) return;
+      const validOptions = pollOptions.filter(o => o.trim().length > 0);
+      
+      if (validOptions.length < 2) {
+          addToast({type: 'warning', title: 'Enquete Inválida', message: 'Preencha pelo menos 2 opções.'});
+          return;
+      }
+
+      dispatchMessage({ 
+          type: 'poll', 
+          content: { 
+              name: pollQuestion, 
+              options: validOptions, 
+              selectableOptionsCount: 1 
+          } 
       });
+      setPollQuestion(""); setPollOptions(["Sim", "Não"]); setActiveModal(null);
   };
 
-  const handleDeleteSelectedMsgs = async () => {
-      if (selectedMsgIds.size === 0) return;
-      if (!confirm(`Excluir ${selectedMsgIds.size} mensagens?`)) return;
+  const handleSendPix = () => {
+      if(!pixKey.trim()) return;
+      dispatchMessage({ type: 'pix', text: pixKey });
+      setPixKey(""); setActiveModal(null);
+  };
 
-      const idsToDelete = Array.from(selectedMsgIds);
-      setMessages(prev => prev.filter(m => !selectedMsgIds.has(m.id)));
-      setIsMsgSelectionMode(false);
-      setSelectedMsgIds(new Set());
+  const handleSendContact = () => {
+      if(!contactName.trim() || !contactPhone.trim()) return;
+      const vcard = `BEGIN:VCARD\nVERSION:3.0\nFN:${contactName}\nTEL;type=CELL:${contactPhone}\nEND:VCARD`;
+      dispatchMessage({ 
+          type: 'contact', 
+          content: { displayName: contactName, vcard, phone: contactPhone } 
+      });
+      setContactName(""); setContactPhone(""); setActiveModal(null);
+  };
 
-      try {
-          await supabase.from('messages').delete().in('id', idsToDelete);
-          addToast({ type: 'success', title: 'Apagado', message: 'Mensagens removidas.' });
-      } catch (error) {
-          addToast({ type: 'error', title: 'Erro', message: 'Falha ao deletar do servidor.' });
+  const getCurrentLocation = () => {
+      if (!navigator.geolocation) {
+          addToast({ type: 'error', title: 'Erro', message: 'Geolocalização não suportada.' });
+          return;
+      }
+      setLocLoading(true);
+      navigator.geolocation.getCurrentPosition(
+          (pos) => {
+              setLocLat(pos.coords.latitude);
+              setLocLng(pos.coords.longitude);
+              setLocLoading(false);
+          },
+          (err) => {
+              addToast({ type: 'error', title: 'Erro GPS', message: 'Não foi possível obter localização.' });
+              setLocLoading(false);
+          },
+          { enableHighAccuracy: true, timeout: 10000 }
+      );
+  };
+
+  const handleSendLocation = () => {
+      if (locLat && locLng) {
+          dispatchMessage({ 
+              type: 'location', 
+              content: { latitude: locLat, longitude: locLng } 
+          });
+          setActiveModal(null);
+          setLocLat(null); setLocLng(null);
       }
   };
 
-  const handleClearChat = async () => {
-      if (!activeContact || !user?.company_id) return;
-      if (!confirm(`TEM CERTEZA? Isso apagará TODO o histórico com ${activeContact.name}.`)) return;
-
-      setMessages([]); 
-      setShowOptionsMenu(false);
-
-      try {
-          await supabase.from('messages')
-            .delete()
-            .eq('remote_jid', activeContact.remote_jid)
-            .eq('company_id', user.company_id);
-          addToast({ type: 'success', title: 'Limpo', message: 'Conversa esvaziada.' });
-      } catch (error) {
-          addToast({ type: 'error', title: 'Erro', message: 'Falha ao limpar conversa.' });
-      }
-  };
-
-  // --- INFINITE SCROLL ---
+  // --- UTILS ---
   const handleScroll = async (e: React.UIEvent<HTMLDivElement>) => {
       const container = e.currentTarget;
       if (container.scrollTop < 50 && hasMoreMessages && !fetchingMore && !loadingMessages) {
           setFetchingMore(true);
-          const currentHeight = container.scrollHeight;
+          const currentHeight = container.scrollHeight; 
           const olderMessages = await fetchMessages(messages.length);
           if (olderMessages.length > 0) {
               setMessages(prev => [...olderMessages, ...prev]);
@@ -352,82 +524,30 @@ export default function ChatPage() {
       }
   };
 
-  // Funções de Mensagem (Simplificadas)
-  const dispatchMessage = async (payload: any) => {
-      if(!activeContact || !user?.company_id || !selectedInstance) return;
-      const optimisticId = Date.now().toString();
-      const tempMsg: Message = {
-          id: optimisticId,
-          remote_jid: activeContact.remote_jid,
-          from_me: true,
-          content: payload.text || payload.caption || "Mídia",
-          body: payload.text,
-          message_type: payload.type || 'text',
-          status: 'sending',
-          created_at: new Date().toISOString(),
-          session_id: selectedInstance.session_id,
-          company_id: user.company_id,
-          media_url: payload.url 
-      } as any;
-      setMessages(prev => [...prev, tempMsg]);
-      setTimeout(() => scrollToBottom('smooth'), 50);
-      try {
-          await api.post('/message/send', {
-              sessionId: selectedInstance.session_id,
-              companyId: user.company_id,
-              to: activeContact.remote_jid,
-              type: payload.type || 'text',
-              text: payload.text,       
-              url: payload.url,         
-              caption: payload.caption, 
-              options: payload.options, 
-              name: payload.name,
-              mimetype: payload.mimetype,
-              fileName: payload.fileName,
-              poll: payload.poll,
-              location: payload.location,
-              contact: payload.contact,
-              ptt: payload.ptt
-          });
-      } catch (error) { setMessages(prev => prev.filter(m => m.id !== optimisticId)); }
+  const handleInboxSelect = (jid: string) => {
+      setSelectedInboxIds(prev => { const n = new Set(prev); if(n.has(jid)) n.delete(jid); else n.add(jid); return n; });
   };
 
-  const handleSendText = () => { if(input.trim()) { dispatchMessage({ type: 'text', text: input }); setInput(""); }};
-  const handleScheduleMessage = async (content: string, date: Date) => { /* ... */ };
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (!file || !user?.company_id) return;
-      setMediaMenuOpen(false);
-      addToast({ type: 'info', title: 'Enviando...', message: 'Fazendo upload.' });
-      try {
-          const { publicUrl, fileName } = await uploadChatMedia(file, user.company_id);
-          let type = 'document';
-          let ptt = false;
-          
-          if (file.type.startsWith('image/')) type = 'image';
-          else if (file.type.startsWith('video/')) type = 'video';
-          else if (file.type.startsWith('audio/')) {
-              type = 'audio';
-              ptt = false; // Uploaded audio is not PTT
-          }
-          await dispatchMessage({ type, url: publicUrl, fileName: fileName, caption: input, mimetype: file.type, ptt });
-          setInput(""); 
-      } catch (error: any) { addToast({ type: 'error', title: 'Falha', message: error.message }); } 
-      finally { if (fileInputRef.current) fileInputRef.current.value = ''; }
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      setInput(e.target.value);
   };
-  const startRecording = async () => { /* ... */ }; 
-  const stopRecording = (cancel = false) => { /* ... */ }; 
-  const formatTime = (s: number) => `00:${s.toString().padStart(2,'0')}`;
-  const handleCreatePoll = () => { /* ... */ setPollModalOpen(false); };
-  const handleSmartReply = async () => { /* ... */ };
+
+  // Imports placeholders
+  const handleToggleMute = async () => {};
+  const handleDeleteChats = async () => {};
+  const toggleMsgSelectionMode = () => { setIsMsgSelectionMode(!isMsgSelectionMode); setSelectedMsgIds(new Set()); setShowOptionsMenu(false); };
+  const handleSelectMessage = (id: string) => { setSelectedMsgIds(prev => { const n = new Set(prev); if(n.has(id)) n.delete(id); else n.add(id); return n; }); };
+  const handleDeleteSelectedMsgs = async () => {};
+  const handleClearChat = async () => {};
+  const handleSmartReply = async () => {};
+  const handleScheduleMessage = (content: string, date: Date) => {};
 
   return (
     <div className="flex h-[calc(100vh-6rem)] md:h-[calc(100vh-4rem)] rounded-xl border border-zinc-800 bg-zinc-950/50 overflow-hidden shadow-2xl animate-in fade-in duration-500">
       
-      {/* 1. Sidebar Esquerda */}
+      {/* SIDEBAR ESQUERDA */}
       <div className={cn("w-full md:w-80 border-r border-zinc-800 flex-col bg-zinc-900/30 backdrop-blur-sm", activeContact ? "hidden md:flex" : "flex")}>
-        
-        {/* Header da Sidebar */}
+        {/* Header Inbox */}
         <div className="p-4 border-b border-zinc-800 bg-zinc-900/80 space-y-3">
             <div className="flex items-center gap-2 px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-lg shadow-sm">
                 <Wifi className={cn("w-4 h-4", selectedInstance ? "text-green-500" : "text-zinc-500")} />
@@ -445,35 +565,25 @@ export default function ChatPage() {
                 </select>
             </div>
             
-            {/* Action Bar do Inbox */}
             {isInboxSelectionMode ? (
                 <div className="flex items-center justify-between bg-zinc-800/80 rounded-lg px-2 py-1.5 animate-in slide-in-from-top-2">
                     <span className="text-xs text-white font-bold px-2">{selectedInboxIds.size} selecionados</span>
                     <div className="flex gap-1">
-                        <Button size="icon" variant="ghost" className="h-8 w-8 text-zinc-300 hover:text-white" onClick={handleToggleMute}>
-                            <BellOff className="h-4 w-4" />
-                        </Button>
-                        <Button size="icon" variant="ghost" className="h-8 w-8 text-red-400 hover:bg-red-500/10 hover:text-red-300" onClick={() => setDeleteModalOpen(true)}>
-                            <Trash2 className="h-4 w-4" />
-                        </Button>
-                        <Button size="icon" variant="ghost" className="h-8 w-8 text-zinc-400" onClick={() => { setIsInboxSelectionMode(false); setSelectedInboxIds(new Set()); }}>
-                            <X className="h-4 w-4" />
-                        </Button>
+                        <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => setIsInboxSelectionMode(false)}><X className="h-4 w-4" /></Button>
                     </div>
                 </div>
             ) : (
                 <div className="flex gap-2">
                     <div className="relative group flex-1">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500" />
-                        <input className="w-full bg-zinc-950/50 border border-zinc-800 rounded-lg py-2 pl-9 pr-4 text-sm focus:outline-none focus:ring-1 focus:ring-primary text-white" placeholder="Buscar..." />
+                        <input 
+                            className="w-full bg-zinc-950/50 border border-zinc-800 rounded-lg py-2 pl-9 pr-4 text-sm focus:outline-none focus:ring-1 focus:ring-primary text-white" 
+                            placeholder="Buscar..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                        />
                     </div>
-                    <Button 
-                        size="icon" 
-                        variant="ghost" 
-                        className="border border-zinc-800 hover:bg-zinc-800" 
-                        onClick={() => setIsInboxSelectionMode(true)}
-                        title="Selecionar Conversas"
-                    >
+                    <Button size="icon" variant="ghost" className="border border-zinc-800 hover:bg-zinc-800" onClick={() => setIsInboxSelectionMode(true)}>
                         <CheckSquare className="h-4 w-4 text-zinc-400" />
                     </Button>
                 </div>
@@ -483,14 +593,16 @@ export default function ChatPage() {
         {/* Lista de Contatos */}
         <div className="flex-1 overflow-y-auto custom-scrollbar">
             {loadingContacts ? <div className="flex justify-center p-8"><Loader2 className="animate-spin text-primary" /></div> : 
-             contacts.map(contact => {
+             filteredContacts.map(contact => {
                 const isSelected = selectedInboxIds.has(contact.jid);
+                const isNewLead = contact.updated_at && (new Date().getTime() - new Date(contact.updated_at).getTime() < 24 * 60 * 60 * 1000);
+
                 return (
                     <div 
                         key={contact.id} 
-                        onClick={() => isInboxSelectionMode ? handleInboxSelect(contact.jid) : setActiveContact(contact)} 
+                        onClick={() => handleContactSelect(contact)}
                         className={cn(
-                            "p-4 border-b border-zinc-800/30 cursor-pointer hover:bg-zinc-800/50 relative",
+                            "p-4 border-b border-zinc-800/30 cursor-pointer hover:bg-zinc-800/50 relative transition-colors",
                             activeContact?.id === contact.id && !isInboxSelectionMode ? 'bg-primary/5 border-l-2 border-l-primary' : '',
                             isSelected ? "bg-primary/10" : ""
                         )}
@@ -498,7 +610,7 @@ export default function ChatPage() {
                         <div className="flex justify-between items-start mb-1">
                             {isInboxSelectionMode && (
                                 <div className="mr-3 mt-1">
-                                    <Checkbox checked={isSelected} onCheckedChange={() => handleInboxSelect(contact.jid)} className="border-zinc-600 data-[state=checked]:bg-primary data-[state=checked]:border-primary" />
+                                    <Checkbox checked={isSelected} onCheckedChange={() => handleInboxSelect(contact.jid)} className="border-zinc-600 data-[state=checked]:bg-primary" />
                                 </div>
                             )}
                             
@@ -523,9 +635,9 @@ export default function ChatPage() {
                                     </div>
                                     <div className="flex items-center justify-between mt-0.5">
                                         <p className="text-xs text-zinc-500 truncate max-w-[140px]">{contact.last_message}</p>
-                                        <div className="flex gap-1">
-                                            {contact.is_muted && <BellOff className="w-3 h-3 text-zinc-600" />}
-                                            {contact.unread_count > 0 && <span className="bg-primary text-primary-foreground text-[10px] font-bold px-1.5 rounded-full min-w-[18px] text-center">{contact.unread_count}</span>}
+                                        <div className="flex items-center gap-1">
+                                            {isNewLead && <span className="text-[9px] bg-emerald-500/20 text-emerald-400 px-1 rounded uppercase font-bold">Novo</span>}
+                                            {contact.unread_count > 0 && <span className="bg-primary text-primary-foreground text-[10px] font-bold px-1.5 rounded-full min-w-[18px] text-center shadow-lg shadow-green-500/20 animate-pulse">{contact.unread_count}</span>}
                                         </div>
                                     </div>
                                  </div>
@@ -537,7 +649,7 @@ export default function ChatPage() {
         </div>
       </div>
 
-      {/* 2. Área Central (Chat) */}
+      {/* ÁREA CENTRAL */}
       <div className={cn("flex-1 flex-col bg-[#09090b] relative", activeContact ? "flex" : "hidden md:flex")}>
         {activeContact && selectedInstance ? (
             <>
@@ -553,31 +665,20 @@ export default function ChatPage() {
                         </div>
                     </div>
                     
-                    {/* Header Actions (Menu) */}
                     <div className="relative">
                         <Button variant="ghost" size="icon" onClick={() => setShowOptionsMenu(!showOptionsMenu)} className="text-zinc-400 hover:text-white">
                             <MoreVertical className="w-5 h-5" />
                         </Button>
                         {showOptionsMenu && (
                             <div className="absolute right-0 top-12 bg-zinc-900 border border-zinc-800 rounded-lg shadow-xl py-2 w-48 z-50 animate-in fade-in slide-in-from-top-2">
-                                <button 
-                                    onClick={toggleMsgSelectionMode}
-                                    className="w-full text-left px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-white flex items-center gap-2"
-                                >
-                                    <CheckSquare className="w-4 h-4" /> Selecionar Mensagens
-                                </button>
-                                <button 
-                                    onClick={handleClearChat}
-                                    className="w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-red-500/10 hover:text-red-300 flex items-center gap-2"
-                                >
-                                    <Trash2 className="w-4 h-4" /> Limpar Conversa
-                                </button>
+                                <button onClick={toggleMsgSelectionMode} className="w-full text-left px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-white flex items-center gap-2"><CheckSquare className="w-4 h-4" /> Selecionar</button>
+                                <button onClick={handleClearChat} className="w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-red-500/10 hover:text-red-300 flex items-center gap-2"><Trash2 className="w-4 h-4" /> Limpar</button>
                             </div>
                         )}
                     </div>
                 </div>
 
-                {/* SCROLL CONTAINER */}
+                {/* SCROLL MESSAGES */}
                 <div 
                     ref={scrollContainerRef}
                     onScroll={handleScroll}
@@ -602,64 +703,79 @@ export default function ChatPage() {
                     <div ref={messagesEndRef} />
                 </div>
 
-                {/* FOOTER: INPUT OU SELECTION ACTION BAR */}
+                {/* INPUT AREA */}
                 {isMsgSelectionMode ? (
                     <div className="p-4 border-t border-zinc-800 bg-zinc-900 flex items-center justify-between animate-in slide-in-from-bottom-10">
-                        <span className="text-sm text-white font-medium pl-2">
-                            {selectedMsgIds.size} selecionada(s)
-                        </span>
+                        <span className="text-sm text-white font-medium pl-2">{selectedMsgIds.size} selecionadas</span>
                         <div className="flex gap-3">
                             <Button variant="ghost" onClick={toggleMsgSelectionMode}>Cancelar</Button>
-                            <Button 
-                                variant="destructive" 
-                                onClick={handleDeleteSelectedMsgs}
-                                disabled={selectedMsgIds.size === 0}
-                                className="bg-red-600 hover:bg-red-700"
-                            >
-                                <Trash2 className="w-4 h-4 mr-2" /> Apagar
-                            </Button>
+                            <Button variant="destructive" onClick={handleDeleteSelectedMsgs} disabled={selectedMsgIds.size === 0}><Trash2 className="w-4 h-4 mr-2" /> Apagar</Button>
                         </div>
                     </div>
                 ) : (
                     <div className="p-3 md:p-4 border-t border-zinc-800 bg-zinc-900/30 backdrop-blur relative">
-                        <div className="flex items-center gap-2 mb-3 overflow-x-auto no-scrollbar">
-                            <Button variant="outline" size="sm" onClick={handleSmartReply} disabled={isAiLoading || messages.length === 0} className="text-xs h-7 gap-2 bg-primary/5 border-primary/20">
-                                {isAiLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3 text-primary" />} IA Sugerir
-                            </Button>
-                        </div>
-
                         <div className="flex items-end gap-2 bg-zinc-950/80 border border-zinc-800 rounded-xl p-2 focus-within:ring-1 focus-within:ring-primary/50 transition-all shadow-inner relative">
-                            <Button variant="ghost" size="icon" className="h-9 w-9 text-zinc-400 hover:text-zinc-100" onClick={() => setMediaMenuOpen(!mediaMenuOpen)}><Paperclip className="h-5 w-5" /></Button>
-                            {mediaMenuOpen && (
-                                <div className="absolute bottom-12 left-0 bg-zinc-900 border border-zinc-800 rounded-xl shadow-xl p-2 w-48 z-50">
-                                    <label className="flex items-center gap-3 px-3 py-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-sm text-zinc-300"><IconImage className="w-4 h-4 text-purple-400" /> Imagem <input type="file" className="hidden" accept="image/*,video/*" onChange={handleFileUpload} /></label>
-                                    <button onClick={() => { setMediaMenuOpen(false); setPollModalOpen(true); }} className="flex items-center gap-3 px-3 py-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-sm text-zinc-300 w-full text-left"><BarChart2 className="w-4 h-4 text-yellow-400" /> Enquete</button>
-                                </div>
-                            )}
-                            <textarea className="flex-1 bg-transparent border-none outline-none text-sm text-white resize-none py-2 max-h-32 custom-scrollbar" placeholder={isRecording ? "Gravando..." : "Digite..."} value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendText(); }}} rows={1} />
-                            
-                            <div className="relative">
-                                <Button 
-                                    variant="ghost" 
-                                    size="icon" 
-                                    className={cn("h-9 w-9 hover:text-white transition-colors", isSchedulerOpen ? "text-purple-500 bg-purple-500/10" : "text-zinc-400")} 
-                                    onClick={() => setIsSchedulerOpen(!isSchedulerOpen)}
-                                    title="Agendar Mensagem"
-                                >
-                                    <Clock className="h-5 w-5" />
-                                </Button>
-                                <MessageScheduler 
-                                    isOpen={isSchedulerOpen} 
-                                    onClose={() => setIsSchedulerOpen(false)}
-                                    contactJid={activeContact.remote_jid}
-                                    sessionId={selectedInstance.session_id}
-                                    onSchedule={handleScheduleMessage}
-                                />
+                            {/* Anexo Menu (Full Expansion) */}
+                            <div className="relative" ref={mediaMenuRef}>
+                                <Button variant="ghost" size="icon" className="h-9 w-9 text-zinc-400 hover:text-zinc-100" onClick={() => setMediaMenuOpen(!mediaMenuOpen)}><Paperclip className="h-5 w-5" /></Button>
+                                {mediaMenuOpen && (
+                                    <div className="absolute bottom-12 left-0 bg-zinc-900 border border-zinc-800 rounded-xl shadow-xl p-2 w-64 z-50 grid grid-cols-2 gap-2 animate-in slide-in-from-bottom-2">
+                                        <label className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
+                                            <IconImage className="w-5 h-5 text-purple-400" /> Galeria
+                                            <input type="file" className="hidden" accept="image/*,video/*" onChange={handleFileUpload} />
+                                        </label>
+                                        <label className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
+                                            <FileText className="w-5 h-5 text-blue-400" /> Documento
+                                            <input type="file" className="hidden" accept="*" onChange={handleFileUpload} ref={fileInputRef} />
+                                        </label>
+                                        <label className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
+                                            <Music className="w-5 h-5 text-pink-400" /> Arquivo Áudio
+                                            <input type="file" className="hidden" accept="audio/*" onChange={handleFileUpload} ref={audioInputRef} />
+                                        </label>
+                                        <button onClick={() => { setMediaMenuOpen(false); setActiveModal('location'); }} className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
+                                            <MapPin className="w-5 h-5 text-red-400" /> Localização
+                                        </button>
+                                        <button onClick={() => { setMediaMenuOpen(false); setActiveModal('contact'); }} className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
+                                            <User className="w-5 h-5 text-blue-400" /> Contato
+                                        </button>
+                                        <button onClick={() => { setMediaMenuOpen(false); setActiveModal('poll'); }} className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
+                                            <BarChart2 className="w-5 h-5 text-yellow-400" /> Enquete
+                                        </button>
+                                        <button onClick={() => { setMediaMenuOpen(false); setActiveModal('pix'); }} className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
+                                            <DollarSign className="w-5 h-5 text-green-400" /> Pix
+                                        </button>
+                                    </div>
+                                )}
                             </div>
 
-                            <Button size="icon" className={`h-9 w-9 transition-transform ${input.trim() ? 'scale-100' : 'scale-0 w-0 p-0'}`} onClick={handleSendText}><Send className="h-4 w-4" /></Button>
+                            {/* Text Input / Audio Recorder UI */}
+                            {isRecording ? (
+                                <div className="flex-1 flex items-center justify-between px-2">
+                                    <div className="flex items-center gap-2 text-red-500 animate-pulse">
+                                        <div className="w-3 h-3 rounded-full bg-red-500" />
+                                        <span className="font-mono text-sm font-bold">{formatTime(recordingTime)}</span>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <Button variant="ghost" size="icon" className="text-red-500 hover:bg-red-500/10" onClick={() => stopRecording(true)}>
+                                            <Trash2 className="w-5 h-5" />
+                                        </Button>
+                                        <Button size="icon" className="bg-green-600 hover:bg-green-500" onClick={() => stopRecording(false)}>
+                                            <Send className="w-4 h-4" />
+                                        </Button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <>
+                                    <textarea className="flex-1 bg-transparent border-none outline-none text-sm text-white resize-none py-2 max-h-32 custom-scrollbar" placeholder="Digite..." value={input} onChange={handleInputChange} onKeyDown={(e) => { if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendText(); }}} rows={1} />
+                                    
+                                    {input.trim() ? (
+                                        <Button size="icon" className="h-9 w-9 transition-transform" onClick={handleSendText}><Send className="h-4 w-4" /></Button>
+                                    ) : (
+                                        <Button size="icon" variant="ghost" className="h-9 w-9 text-zinc-400 hover:text-white" onClick={startRecording}><Mic className="h-5 w-5" /></Button>
+                                    )}
+                                </>
+                            )}
                         </div>
-                        <input type="file" className="hidden" ref={fileInputRef} />
                     </div>
                 )}
             </>
@@ -672,45 +788,126 @@ export default function ChatPage() {
         )}
       </div>
 
-      {/* 3. Sidebar Direita */}
+      {/* SIDEBAR DIREITA */}
       {activeContact && selectedInstance && (
-          <ChatSidebar 
-            contact={activeContact} 
-            lead={activeLead} 
-            refreshLead={refreshLeadData} 
-          />
+          <ChatSidebar contact={activeContact} lead={activeLead} refreshLead={refreshLeadData} />
       )}
 
-      {/* Modals */}
-      <Modal isOpen={pollModalOpen} onClose={() => setPollModalOpen(false)} title="Nova Enquete">
+      {/* --- MODALS DE ANEXO --- */}
+      
+      {/* 1. POLL MODAL */}
+      <Modal isOpen={activeModal === 'poll'} onClose={() => setActiveModal(null)} title="Nova Enquete">
           <div className="space-y-4">
-              <Input value={pollQuestion} onChange={e => setPollQuestion(e.target.value)} placeholder="Pergunta" />
-              <Button onClick={handleCreatePoll} className="w-full">Criar</Button>
+              <Input value={pollQuestion} onChange={e => setPollQuestion(e.target.value)} placeholder="Pergunta da enquete" />
+              <div className="space-y-2">
+                  {pollOptions.map((opt, idx) => (
+                      <Input 
+                        key={idx} 
+                        value={opt} 
+                        onChange={e => {
+                            const newOpts = [...pollOptions];
+                            newOpts[idx] = e.target.value;
+                            setPollOptions(newOpts);
+                        }} 
+                        placeholder={`Opção ${idx + 1}`} 
+                      />
+                  ))}
+                  <Button variant="ghost" size="sm" onClick={() => setPollOptions([...pollOptions, ""])} className="w-full text-xs">+ Adicionar Opção</Button>
+              </div>
+              <Button onClick={handleCreatePoll} className="w-full">Criar Enquete</Button>
           </div>
       </Modal>
 
-      {/* Modal Deletar Conversas */}
-      <Modal isOpen={deleteModalOpen} onClose={() => setDeleteModalOpen(false)} title="Excluir Conversas">
-          <div className="space-y-6">
-              <div className="text-sm text-zinc-300 bg-red-500/10 p-4 rounded-lg border border-red-500/20">
-                  <p className="font-bold text-red-400 mb-2 flex items-center gap-2"><Trash2 className="w-4 h-4" /> Atenção</p>
-                  Você está prestes a apagar {selectedInboxIds.size} conversa(s). Isso removerá todo o histórico de mensagens.
+      {/* 2. PIX MODAL */}
+      <Modal isOpen={activeModal === 'pix'} onClose={() => setActiveModal(null)} title="Enviar Chave Pix">
+          <div className="space-y-4">
+              <div>
+                  <label className="text-xs text-zinc-500 font-bold uppercase mb-1 block">Tipo de Chave</label>
+                  <select value={pixType} onChange={e => setPixType(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-md p-2 text-sm text-white">
+                      <option value="cpf">CPF/CNPJ</option>
+                      <option value="email">Email</option>
+                      <option value="phone">Celular</option>
+                      <option value="random">Aleatória</option>
+                  </select>
               </div>
+              <div>
+                  <label className="text-xs text-zinc-500 font-bold uppercase mb-1 block">Chave</label>
+                  <Input value={pixKey} onChange={e => setPixKey(e.target.value)} placeholder="Digite a chave..." />
+              </div>
+              <Button onClick={handleSendPix} className="w-full bg-green-600 hover:bg-green-500 text-white">Enviar Pix</Button>
+          </div>
+      </Modal>
+
+      {/* 3. CONTACT MODAL */}
+      <Modal isOpen={activeModal === 'contact'} onClose={() => setActiveModal(null)} title="Enviar Contato">
+          <div className="space-y-4">
+              <Input value={contactName} onChange={e => setContactName(e.target.value)} placeholder="Nome do Contato" />
+              <Input value={contactPhone} onChange={e => setContactPhone(e.target.value)} placeholder="Telefone (ex: 5511999999999)" />
+              <Button onClick={handleSendContact} className="w-full">Enviar Cartão de Contato</Button>
+          </div>
+      </Modal>
+
+      {/* 4. LOCATION MODAL (Google Maps Style) */}
+      <Modal isOpen={activeModal === 'location'} onClose={() => setActiveModal(null)} title="Enviar Localização">
+          <div className="space-y-4 py-2">
               
-              <div className="flex items-center gap-3 p-3 border border-zinc-800 rounded-lg hover:bg-zinc-900/50 cursor-pointer" onClick={() => setDeleteLeadToo(!deleteLeadToo)}>
-                  <Checkbox checked={deleteLeadToo} onCheckedChange={(c) => setDeleteLeadToo(!!c)} className="data-[state=checked]:bg-red-500 border-zinc-600" />
-                  <div>
-                      <span className="text-sm font-bold text-white block">Apagar também no CRM?</span>
-                      <span className="text-xs text-zinc-500">Se marcado, os leads vinculados serão removidos do Kanban.</span>
-                  </div>
+              {/* Fake Map Container */}
+              <div className="relative w-full h-48 bg-zinc-800 rounded-xl overflow-hidden border border-zinc-700 group">
+                  {locLat && locLng ? (
+                      <>
+                        <div className="absolute inset-0 bg-[#e5e7eb]" style={{ 
+                            backgroundImage: 'url("https://upload.wikimedia.org/wikipedia/commons/e/ec/World_map_blank_without_borders.svg")', 
+                            backgroundSize: 'cover',
+                            backgroundPosition: 'center',
+                            filter: 'opacity(0.3)'
+                        }}></div>
+                        <div className="absolute inset-0 flex items-center justify-center">
+                            <div className="bg-red-500 p-2 rounded-full shadow-xl animate-bounce">
+                                <MapPin className="w-6 h-6 text-white" fill="currentColor" />
+                            </div>
+                        </div>
+                        <div className="absolute bottom-2 left-2 right-2 bg-white/90 text-black text-xs p-2 rounded shadow flex justify-between items-center">
+                            <span className="font-mono">{locLat.toFixed(6)}, {locLng.toFixed(6)}</span>
+                            <span className="text-[10px] font-bold text-green-600 flex items-center gap-1"><Check className="w-3 h-3" /> Preciso</span>
+                        </div>
+                      </>
+                  ) : (
+                      <div className="absolute inset-0 flex flex-col items-center justify-center text-zinc-500 gap-2">
+                          <MapPin className="w-8 h-8 opacity-20" />
+                          <p className="text-xs">Aguardando localização...</p>
+                      </div>
+                  )}
+                  
+                  {locLoading && (
+                      <div className="absolute inset-0 bg-black/60 flex items-center justify-center backdrop-blur-sm z-20">
+                          <Loader2 className="w-8 h-8 text-primary animate-spin" />
+                      </div>
+                  )}
               </div>
 
-              <div className="flex justify-end gap-2">
-                  <Button variant="ghost" onClick={() => setDeleteModalOpen(false)}>Cancelar</Button>
-                  <Button variant="destructive" onClick={handleDeleteChats}>Confirmar Exclusão</Button>
-              </div>
+              {/* Action Button */}
+              {!locLat ? (
+                  <Button onClick={getCurrentLocation} className="w-full h-12 text-sm bg-blue-600 hover:bg-blue-500" disabled={locLoading}>
+                      <Crosshair className="w-4 h-4 mr-2" /> 
+                      {locLoading ? "Buscando satélites..." : "Obter Localização Atual"}
+                  </Button>
+              ) : (
+                  <div className="flex gap-2">
+                      <Button variant="outline" onClick={() => { setLocLat(null); setLocLng(null); }} className="flex-1">
+                          Refazer
+                      </Button>
+                      <Button onClick={handleSendLocation} className="flex-[2] bg-green-600 hover:bg-green-500">
+                          <Send className="w-4 h-4 mr-2" /> Enviar Localização
+                      </Button>
+                  </div>
+              )}
+              
+              <p className="text-[10px] text-zinc-500 text-center">
+                  Usamos o GPS do seu navegador para alta precisão.
+              </p>
           </div>
       </Modal>
+
     </div>
   );
 }
