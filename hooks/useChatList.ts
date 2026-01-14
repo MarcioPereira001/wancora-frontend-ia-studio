@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { useAuthStore } from '@/store/useAuthStore';
@@ -40,6 +39,7 @@ export function useChatList(selectedSessionId: string | null) {
 
     try {
       // 1. Chamada RPC (Fonte da Verdade)
+      // Substitui o SELECT direto na tabela messages que causava duplicidade
       const { data, error } = await supabase.rpc('get_my_chat_list', {
           p_company_id: user.company_id,
           p_session_id: selectedSessionId || null // Passa NULL explícito se não houver sessão selecionada
@@ -82,7 +82,7 @@ export function useChatList(selectedSessionId: string | null) {
 
       // 3. DEDUPLICAÇÃO "FIREWALL" (Frontend)
       // Garante matematicamente que nunca haverá JIDs duplicados na lista,
-      // mesmo que a RPC ou o banco retornem linhas sujas.
+      // mesmo que a RPC ou o banco retornem linhas sujas por joins complexos.
       const uniqueMap = new Map();
       mappedContacts.forEach(c => uniqueMap.set(c.remote_jid, c));
       const uniqueList = Array.from(uniqueMap.values());
@@ -99,8 +99,7 @@ export function useChatList(selectedSessionId: string | null) {
   useEffect(() => {
     fetchChats();
 
-    // Realtime Listener
-    // Otimizado para não criar múltiplos canais desnecessariamente
+    // Realtime Listener Otimizado
     const channel = supabase
       .channel(`chat-list-global:${user?.company_id}`)
       .on('postgres_changes', { 

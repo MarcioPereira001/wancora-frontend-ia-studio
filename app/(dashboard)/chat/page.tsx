@@ -172,7 +172,7 @@ export default function ChatPage() {
       if(!activeContact || !selectedInstance) return [];
       
       // FIX: Removido filtro de session_id para mostrar histórico completo do Lead/Empresa
-      // O histórico pertence ao Lead, não à sessão específica.
+      // O histórico pertence ao Lead, não à sessão específica. Garante "Contexto Infinito".
       const { data, error } = await supabase
         .from('messages')
         .select(`*, contacts (push_name)`)
@@ -223,7 +223,6 @@ export default function ChatPage() {
           } catch (error) {
             console.error("Erro ao iniciar chat:", error);
           } finally {
-            // FIX: Garantir que loading sempre termina, evitando loop infinito visual
             setLoadingMessages(false);
             setTimeout(() => scrollToBottom('auto'), 100);
           }
