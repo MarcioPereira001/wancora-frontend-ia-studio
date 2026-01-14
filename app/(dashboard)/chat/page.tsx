@@ -232,12 +232,8 @@ export default function ChatPage() {
 
       initChat();
 
-      // REALTIME STRATEGY "THE HAMMER":
-      // 1. Escuta TUDO da tabela messages (sem filtro no canal para evitar bugs de UUID).
-      // 2. Filtra no cliente por company_id.
-      // 3. Se for mensagem da empresa -> refreshChats() (Sidebar).
-      // 4. Se for mensagem do contato ativo (ou suspeita de ser) -> RE-FETCH completo.
-      // Isso contorna problemas de LIDs, payloads parciais ou JIDs mal formatados no evento.
+      // REALTIME STRATEGY "THE HAMMER V2":
+      // Agora aceita LIDs de entrada (received) também.
       const channel = supabase
         .channel(`chat-room-global`)
         .on('postgres_changes', { 
@@ -247,47 +243,52 @@ export default function ChatPage() {
         }, async (payload) => {
             const newMessage = payload.new as Message;
             
-            // Filtro de Segurança Client-Side
             if (newMessage.company_id !== user?.company_id) return;
 
             // 1. Atualiza a Sidebar (Sempre)
             refreshChats();
 
-            // 2. Atualiza o Chat Aberto (Estratégia Híbrida: Optimistic + Re-fetch)
+            // 2. Lógica de "Pertencimento" ao Chat Aberto
             const cleanRemote = newMessage.remote_jid.split('@')[0];
             const cleanActive = activeContact.remote_jid.split('@')[0];
+            const isLid = newMessage.remote_jid.includes('@lid');
             
-            // Verifica se pertence ao chat (match exato, match parcial ou se é LID/Device Link)
-            // Se for 'from_me', assumimos que pode ser sync de outro device e atualizamos
+            // Aceita se:
+            // a) JID bate exatamente (Phone)
+            // b) Número do telefone bate (Clean Phone)
+            // c) É um LID (Assumimos que pertence ao contexto ativo se a empresa é a mesma)
+            //    Nota: Isso pode causar "cross-talk" se múltiplos chats estiverem ativos em abas diferentes,
+            //    mas resolve o problema crítico de "mensagens invisíveis".
             const isRelevant = 
                 newMessage.remote_jid === activeContact.remote_jid ||
                 newMessage.remote_jid.includes(cleanActive) ||
-                (newMessage.from_me && newMessage.remote_jid.includes('@lid'));
+                isLid;
 
             if (isRelevant) {
-                // Adiciona otimisticamente (para feedback visual imediato se o payload for bom)
+                // Adiciona otimisticamente
                 setMessages(prev => {
                     if (prev.some(m => m.id === newMessage.id)) return prev;
                     return [...prev, newMessage];
                 });
                 
-                // FORCE REFRESH: Busca a versão "oficial" do banco para garantir consistência
-                // Isso resolve o problema onde o payload vem com LID mas o banco tem Phone JID
+                // Em background, tenta buscar a versão oficial do banco (Phone JID)
+                // Se o backend tiver normalizado rápido, isso corrige o LID para Phone.
+                // Se não, mantemos o LID na tela.
                 const freshMsgs = await loadMessages(0);
                 if (freshMsgs.length > 0) {
                     setMessages(prev => {
-                        // Merge inteligente: Mantém mensagens antigas, substitui as novas
-                        // Na prática, como loadMessages traz as últimas 30, substituimos o final da lista
-                        // Mas para evitar flicker, vamos apenas garantir que as novas estejam lá
-                        const existingIds = new Set(prev.map(m => m.id));
-                        const uniqueNew = freshMsgs.filter(m => !existingIds.has(m.id));
-                        return [...prev, ...uniqueNew].sort((a,b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+                        // Merge inteligente: Prioriza mensagens já na tela (LID) se o DB não tiver nada novo
+                        // Mas se o DB trouxer a versão "Phone" da mesma mensagem, usamos a do DB.
+                        const dbIds = new Set(freshMsgs.map(m => m.id));
+                        // Mantém mensagens locais que NÃO estão no fetch (ex: LIDs recentes)
+                        const localOnly = prev.filter(m => !dbIds.has(m.id));
+                        
+                        return [...freshMsgs, ...localOnly].sort((a,b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
                     });
                 }
 
                 setTimeout(() => scrollToBottom('smooth'), 100);
                 
-                // Marca lido
                 if (!newMessage.from_me) {
                     supabase.from('contacts').update({ unread_count: 0 }).eq('jid', activeContact.remote_jid);
                 }
