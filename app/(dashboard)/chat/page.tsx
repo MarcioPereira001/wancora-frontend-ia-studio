@@ -169,19 +169,23 @@ export default function ChatPage() {
 
   // --- FETCH MESSAGES ---
   const fetchMessages = async (offset: number) => {
-      if(!activeContact || !selectedInstance) return [];
+      if(!activeContact || !user?.company_id) return [];
       
-      // FIX: Removido filtro de session_id para mostrar histórico completo do Lead/Empresa
-      // O histórico pertence ao Lead, não à sessão específica. Garante "Contexto Infinito".
+      // FIX CRÍTICO: Removido ", contacts (push_name)"
+      // A tabela 'messages' NÃO tem FK para 'contacts' (ver Schema Rule 1).
+      // Isso causava erro 400.
       const { data, error } = await supabase
         .from('messages')
-        .select(`*, contacts (push_name)`)
+        .select(`*`) 
         .eq('remote_jid', activeContact.remote_jid) 
-        .eq('company_id', user?.company_id)
+        .eq('company_id', user.company_id)
         .order('created_at', { ascending: false })
         .range(offset, offset + MESSAGES_PER_PAGE - 1);
         
-      if (error) return [];
+      if (error) {
+          console.error("Erro fetchMessages:", error);
+          return [];
+      }
       return (data || []).reverse(); 
   };
 
