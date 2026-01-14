@@ -13,7 +13,8 @@ export function MessageContent({ message }: MessageContentProps) {
   const { addToast } = useToast();
   const mediaUrl = message.media_url; 
   let content = message.content || message.body || "";
-  const type = message.message_type || 'text';
+  // Cast to string to handle optimistic types like 'pix', 'ptt' not present in strict DB schema
+  const type = (message.message_type || 'text') as string;
   const isMe = message.from_me;
 
   const handleCopy = (text: string) => {

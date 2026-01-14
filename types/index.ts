@@ -52,7 +52,7 @@ export interface Lead {
   status?: string;
   tags: string[];
   notes?: string;
-  deadline?: string; // NOVO: Prazo do Lead
+  deadline?: string; 
   created_at: string;
   updated_at?: string;
   next_appointment_at?: string;
@@ -69,7 +69,7 @@ export interface LeadActivity {
   content: string;
   created_by?: string;
   created_at: string;
-  creator_name?: string; // Helper UI
+  creator_name?: string; 
 }
 
 export interface LeadLink {
@@ -113,7 +113,7 @@ export interface ChecklistItem {
   lead_id: string;
   text: string;
   is_completed: boolean;
-  deadline?: string; // NOVO: Prazo da Tarefa
+  deadline?: string;
   created_at: string;
 }
 
@@ -179,6 +179,8 @@ export interface WhatsAppInstance {
 
 export type Instance = WhatsAppInstance;
 
+// SCHEMA STRICT: Enum do Postgres para message_type
+// 'text', 'image', 'video', 'audio', 'document', 'sticker', 'poll', 'location', 'contact'
 export interface Message {
   id: string;
   session_id: string;
@@ -186,7 +188,8 @@ export interface Message {
   remote_jid: string;
   from_me: boolean;
   content: string;
-  message_type: 'text' | 'image' | 'video' | 'audio' | 'ptt' | 'voice' | 'document' | 'sticker' | 'location' | 'poll' | 'contact' | 'pix' | 'catalog' | 'event';
+  // Simplificado para bater com o banco. O Frontend infere Pix/PTT via conteúdo/metadados.
+  message_type: 'text' | 'image' | 'video' | 'audio' | 'document' | 'sticker' | 'location' | 'poll' | 'contact'; 
   status: 'sent' | 'delivered' | 'read' | 'failed' | 'sending';
   created_at: string;
   has_media?: boolean;
@@ -196,7 +199,7 @@ export interface Message {
   lead_id?: string;
   lead?: Lead;
   contact?: Contact;
-  body?: string;
+  body?: string; // Legacy support
 }
 
 export interface ChatContact {

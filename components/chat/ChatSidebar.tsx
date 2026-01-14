@@ -3,8 +3,8 @@ import { createClient } from '@/utils/supabase/client';
 import { useAuthStore } from '@/store/useAuthStore';
 import { ChatContact, Lead } from '@/types';
 import { useToast } from '@/hooks/useToast';
-import { useLeadData } from '@/hooks/useLeadData'; // Hook sincronizado
-import { useLeadActivities } from '@/hooks/useLeadActivities'; // Hook de atividades
+import { useLeadData } from '@/hooks/useLeadData';
+import { useLeadActivities } from '@/hooks/useLeadActivities';
 import { 
   User, Save, CheckSquare, Brain, Plus, X, DollarSign, UserPlus, Ban, Lock,
   Layout, Activity, Clock, Calendar, Link as LinkIcon, ExternalLink
@@ -28,7 +28,6 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
   const supabase = createClient();
   const { addToast } = useToast();
 
-  // Hooks do CRM (Só ativam se tiver Lead ID)
   const { 
       checklist, links, addCheckitem, toggleCheckitem, deleteCheckitem, 
       updateCheckitemDeadline, addLink, deleteLink 
@@ -36,34 +35,31 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
   
   const { logSystemActivity } = useLeadActivities(lead?.id);
 
-  // UI States
   const [activeTab, setActiveTab] = useState<'details' | 'checklist' | 'activities'>('details');
   const [loading, setLoading] = useState(false);
   const [isIgnored, setIsIgnored] = useState(false);
   
-  // Lead Data Form
+  // Form States
   const [name, setName] = useState('');
   const [value, setValue] = useState(0);
   const [tags, setTags] = useState<string[]>([]);
   const [botStatus, setBotStatus] = useState<'active' | 'paused' | 'off'>('active');
   
-  // Lead Deadline State
+  // Deadline
   const [hasDeadline, setHasDeadline] = useState(false);
   const [deadlineDate, setDeadlineDate] = useState('');
   const [deadlineTime, setDeadlineTime] = useState('');
 
-  // Checklist Input State
+  // Inputs Extras
   const [newItemText, setNewItemText] = useState('');
   const [showTaskDeadlineInput, setShowTaskDeadlineInput] = useState(false);
   const [taskDeadlineDate, setTaskDeadlineDate] = useState('');
   const [taskDeadlineTime, setTaskDeadlineTime] = useState('');
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
-
-  // Links Input State
   const [newLinkTitle, setNewLinkTitle] = useState('');
   const [newLinkUrl, setNewLinkUrl] = useState('');
 
-  // 1. Load Data
+  // 1. Data Sync
   useEffect(() => {
     const loadData = async () => {
         if(!user?.company_id) return;
@@ -102,7 +98,6 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
     loadData();
   }, [contact.remote_jid, lead, user?.company_id]);
 
-  // Ensure Pipeline Helper
   const ensurePipelineExists = async () => {
       if (!user?.company_id) throw new Error("Usuário sem empresa.");
       const { data: existingStage } = await supabase.from('pipeline_stages').select('id').eq('company_id', user.company_id).limit(1).maybeSingle();
@@ -116,11 +111,12 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
       return newStage!.id;
   };
 
-  // ADD TO CRM
+  // ADD TO CRM (Logic: is_ignored = false + Create Lead)
   const handleAddToCRM = async () => {
       if (!user?.company_id) return;
       setLoading(true);
       try {
+          // 1. Garantir contato 'un-ignored'
           await supabase.from('contacts').upsert({
               jid: contact.remote_jid,
               company_id: user.company_id,
@@ -129,10 +125,11 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
               updated_at: new Date().toISOString()
           }, { onConflict: 'jid' });
           
+          // 2. Criar Lead se não existir
           if (!lead) {
               const stageId = await ensurePipelineExists();
               const cleanPhone = contact.remote_jid.split('@')[0].replace(/\D/g, '');
-              await supabase.from('leads').insert({
+              const { error } = await supabase.from('leads').insert({
                   company_id: user.company_id,
                   pipeline_stage_id: stageId,
                   name: name || contact.push_name || 'Novo Lead',
@@ -143,10 +140,16 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
                   temperature: 'cold',
                   bot_status: 'active'
               });
+              
+              if(error) throw error;
               addToast({ type: 'success', title: 'Sucesso', message: 'Lead criado no CRM.' });
+          } else {
+              addToast({ type: 'info', title: 'Atualizado', message: 'Contato reativado.' });
           }
+          
           setIsIgnored(false);
-          setTimeout(() => refreshLead(), 500);
+          // Pequeno delay para propagação
+          setTimeout(() => refreshLead(), 300);
       } catch (e: any) {
           addToast({ type: 'error', title: 'Erro', message: e.message });
       } finally {
@@ -154,18 +157,30 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
       }
   };
 
-  // REMOVE FROM CRM
+  // REMOVE FROM CRM (Logic: is_ignored = true + Delete Lead)
   const handleRemoveFromCRM = async () => {
       if (!user?.company_id) return;
-      if (!confirm("Isso removerá o lead e bloqueará a IA. Continuar?")) return;
+      if (!confirm("Isso removerá o lead e bloqueará a IA para este contato. Continuar?")) return;
       setLoading(true);
       try {
-          await supabase.from('contacts').update({ is_ignored: true, updated_at: new Date().toISOString() }).eq('jid', contact.remote_jid).eq('company_id', user.company_id);
+          // 1. Marcar contato como ignorado (Anti-Ghost)
+          await supabase.from('contacts')
+            .update({ is_ignored: true, updated_at: new Date().toISOString() })
+            .eq('jid', contact.remote_jid)
+            .eq('company_id', user.company_id);
+          
+          // 2. Deletar Lead (Cascade vai limpar atividades, mas não as mensagens)
           const cleanPhone = contact.remote_jid.split('@')[0].replace(/\D/g, '');
-          await supabase.from('leads').delete().eq('company_id', user.company_id).ilike('phone', `%${cleanPhone}%`); 
-          addToast({ type: 'info', title: 'Removido', message: 'Lead removido e contato pausado.' });
+          const { error } = await supabase.from('leads')
+            .delete()
+            .eq('company_id', user.company_id)
+            .ilike('phone', `%${cleanPhone}%`);
+            
+          if(error) throw error;
+
+          addToast({ type: 'info', title: 'Removido', message: 'Contato movido para ignorados.' });
           setIsIgnored(true);
-          setTimeout(() => refreshLead(), 500);
+          setTimeout(() => refreshLead(), 300);
       } catch (e: any) {
           addToast({ type: 'error', title: 'Erro', message: e.message });
       } finally {
@@ -209,17 +224,14 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
       }
   };
 
-  // --- CHECKLIST & LINKS HANDLERS ---
   const handleAddChecklist = async (e: React.FormEvent) => {
       e.preventDefault();
       if(!newItemText.trim()) return;
-      
       let deadlineISO = undefined;
       if (showTaskDeadlineInput && taskDeadlineDate) {
           const time = taskDeadlineTime || '12:00';
           deadlineISO = new Date(`${taskDeadlineDate}T${time}`).toISOString();
       }
-
       await addCheckitem(newItemText, deadlineISO);
       await logSystemActivity(`Nova tarefa: "${newItemText}"`);
       setNewItemText('');
@@ -250,7 +262,6 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
   return (
     <div className="w-80 border-l border-zinc-800 bg-zinc-900/50 flex flex-col h-full overflow-hidden animate-in slide-in-from-right-4">
         
-        {/* Header Profile */}
         <div className="p-6 border-b border-zinc-800 flex flex-col items-center text-center shrink-0">
             <div className="w-20 h-20 rounded-full bg-zinc-800 border-2 border-zinc-700 mb-3 overflow-hidden shadow-lg relative">
                 {contact.profile_pic_url ? (
@@ -275,7 +286,6 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
             </div>
         </div>
 
-        {/* Lead Controls (Tabs) */}
         {!isIgnored && lead ? (
             <>
                 <div className="flex border-b border-zinc-800 shrink-0 bg-zinc-900/30">
@@ -291,7 +301,7 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
                 </div>
 
                 <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-6">
-                    {/* --- TAB 1: DADOS & PRAZOS --- */}
+                    {/* DETAILS TAB */}
                     {activeTab === 'details' && (
                         <div className="space-y-4 animate-in fade-in">
                             <div className="bg-zinc-950/50 p-3 rounded-lg border border-zinc-800">
@@ -307,7 +317,6 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
                                 </div>
                             </div>
 
-                            {/* Deadline Control */}
                             <div className="bg-zinc-900/50 p-3 rounded-lg border border-zinc-800">
                                 <div className="flex items-center justify-between mb-2">
                                     <label className="text-xs font-bold text-zinc-400 flex items-center gap-2">
@@ -359,10 +368,9 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
                         </div>
                     )}
 
-                    {/* --- TAB 2: CHECKLIST & LINKS --- */}
+                    {/* CHECKLIST TAB */}
                     {activeTab === 'checklist' && (
                         <div className="space-y-6 animate-in fade-in">
-                            {/* Checklist Form */}
                             <form onSubmit={handleAddChecklist} className="space-y-2">
                                 <div className="flex gap-2">
                                     <Input value={newItemText} onChange={e => setNewItemText(e.target.value)} placeholder="Nova tarefa..." className="h-8 text-xs bg-zinc-950 border-zinc-800 flex-1" />
@@ -381,7 +389,6 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
                                 )}
                             </form>
 
-                            {/* Checklist Items */}
                             <div className="space-y-2">
                                 {checklist.map(item => (
                                     <div key={item.id} className="flex flex-col p-2 rounded-lg bg-zinc-900/30 border border-zinc-800 hover:border-zinc-700 group">
@@ -407,7 +414,6 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
                                 ))}
                             </div>
 
-                            {/* Links Section */}
                             <div className="pt-4 border-t border-zinc-800">
                                 <h4 className="text-[10px] font-bold text-zinc-500 uppercase mb-2 flex items-center gap-1"><LinkIcon className="w-3 h-3" /> Links</h4>
                                 <div className="flex gap-1 mb-2">
@@ -427,7 +433,7 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
                         </div>
                     )}
 
-                    {/* --- TAB 3: ACTIVITIES --- */}
+                    {/* ACTIVITIES TAB */}
                     {activeTab === 'activities' && (
                         <div className="animate-in fade-in h-full">
                             <ActivityTimeline leadId={lead.id} />

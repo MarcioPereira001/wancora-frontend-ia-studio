@@ -3,29 +3,47 @@ import { createClient } from '@/utils/supabase/client';
 import { Instance } from '../types';
 
 export const whatsappService = {
-  // Busca status via API se sessionId fornecido (Auditoria), senão busca do Supabase (Lista)
+  // Busca status via API (prioridade) ou Supabase (fallback)
+  // Contract Update: GET /session/status/:companyId
   getInstanceStatus: async (sessionId?: string): Promise<Instance | null> => {
     try {
       const supabase = createClient();
-      
-      if (sessionId) {
-          try {
-             // Prioridade para a API se tivermos o ID, conforme especificação de auditoria
-             const apiData = await api.get(`/session/status/${sessionId}`);
-             return apiData as Instance;
-          } catch (e) {
-             console.warn("API de status falhou, tentando Supabase fallback...", e);
-          }
-      }
-
-      // Fallback ou busca geral
       const { data: { session: authSession } } = await supabase.auth.getSession();
+      
       if (!authSession?.user?.id) return null;
       
       const { data: profile } = await supabase.from('profiles').select('company_id').eq('id', authSession.user.id).single();
       const companyId = profile?.company_id;
+      
       if (!companyId) return null;
 
+      // 1. Tentativa via API (Realtime Status do Container)
+      try {
+         // O contrato define /session/status/:companyId
+         const apiData = await api.get(`/session/status/${companyId}`);
+         
+         // A API retorna { status: 'online', session: 'connected' | 'disconnected' }
+         // Precisamos mesclar isso com os dados do banco para ter QR Code e metadados
+         if (apiData && sessionId) {
+             const { data: dbInstance } = await supabase
+                .from('instances')
+                .select('*')
+                .eq('session_id', sessionId)
+                .maybeSingle();
+             
+             if (dbInstance) {
+                 // Se a API diz que está online, forçamos o status visual, mas respeitamos o QR Code do banco
+                 return {
+                     ...dbInstance,
+                     status: apiData.session === 'connected' ? 'connected' : dbInstance.status
+                 };
+             }
+         }
+      } catch (e) {
+         // Silencioso: Backend pode estar dormindo (Render free tier), fallback para banco
+      }
+
+      // 2. Fallback: Banco de Dados (Supabase)
       let query = supabase.from('instances').select('*').eq('company_id', companyId);
       
       if (sessionId) {
@@ -36,6 +54,7 @@ export const whatsappService = {
 
       const { data } = await query.maybeSingle();
       return data as Instance;
+
     } catch (error) {
       console.error('Erro ao buscar status da instância:', error);
       return null;
@@ -76,7 +95,7 @@ export const whatsappService = {
 
       const displayName = instanceName || (sessionId === 'default' ? 'Principal' : sessionId);
 
-      // Limpa QR Code antigo
+      // Limpa QR Code antigo e define status inicial
       const { data: instanceData, error: dbError } = await supabase
         .from('instances')
         .upsert({ 
