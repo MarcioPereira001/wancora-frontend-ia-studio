@@ -173,7 +173,7 @@ export default function ChatPage() {
       
       // FIX CRÍTICO: Removido ", contacts (push_name)"
       // A tabela 'messages' NÃO tem FK para 'contacts' (ver Schema Rule 1).
-      // Não podemos fazer join. O activeContact já tem o nome necessário.
+      // Isso causava erro 400.
       const { data, error } = await supabase
         .from('messages')
         .select(`*`) 
