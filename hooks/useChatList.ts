@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo } from 'react';
+
+import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { useAuthStore } from '@/store/useAuthStore';
 import { ChatContact } from '@/types';
@@ -10,22 +11,27 @@ export function useChatList(selectedSessionId: string | null) {
   const [rawContacts, setRawContacts] = useState<ChatContact[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Helper para formatar preview da mensagem na lista
   const formatMessagePreview = (content: string, type: string) => {
     if (!content && type !== 'text') {
-        if (type === 'image') return '📷 Imagem';
-        if (type === 'audio' || type === 'ptt' || type === 'voice') return '🎵 Áudio';
-        if (type === 'video') return '🎥 Vídeo';
-        if (type === 'document') return '📄 Documento';
-        if (type === 'poll') return '📊 Enquete';
-        if (type === 'location') return '📍 Localização';
-        if (type === 'sticker') return '👾 Figurinha';
-        if (type === 'contact') return '👤 Contato';
-        if (type === 'pix') return '💲 Pix';
+        const typeMap: Record<string, string> = {
+            image: '📷 Imagem',
+            audio: '🎵 Áudio',
+            ptt: '🎤 Voz',
+            video: '🎥 Vídeo',
+            document: '📄 Documento',
+            poll: '📊 Enquete',
+            location: '📍 Localização',
+            sticker: '👾 Figurinha',
+            contact: '👤 Contato',
+            pix: '💲 Pix'
+        };
+        return typeMap[type] || 'Mensagem';
     }
     return content;
   };
 
-  const fetchChats = async () => {
+  const fetchChats = useCallback(async () => {
     if (!user?.company_id) {
         setRawContacts([]); 
         setLoading(false);
@@ -33,63 +39,68 @@ export function useChatList(selectedSessionId: string | null) {
     }
 
     try {
-      // setLoading(true); // Removemos loading agressivo para evitar piscar na tela em updates
-      
-      // Se não tiver session_id selecionado, busca de todos (visão geral)
+      // 1. Chamada RPC (Fonte da Verdade)
       const { data, error } = await supabase.rpc('get_my_chat_list', {
           p_company_id: user.company_id,
-          p_session_id: selectedSessionId || undefined 
+          p_session_id: selectedSessionId || null // Passa NULL explícito se não houver sessão selecionada
       });
 
-      if (error) throw error;
+      if (error) {
+          console.error('CRITICAL: Erro ao buscar lista de chats via RPC:', error);
+          throw error;
+      }
 
+      // 2. Mapeamento de Dados
       const mappedContacts: ChatContact[] = (data || []).map((row: any) => {
-          const displayPic = row.lead_pic || row.contact_pic;
+          const displayPic = row.contact_pic || row.lead_pic;
           
-          // Lógica aprimorada para evitar "Novo Contato" se tiver push_name
-          let finalName = row.contact_name;
-          if (!finalName || finalName.includes('Novo Contato')) {
-              finalName = row.contact_push_name || row.lead_name || row.contact_name;
-          }
-
-          const tempContact = {
+          // Lógica de Display Name robusta
+          const finalName = getDisplayName({
               is_group: row.is_group,
-              name: finalName,
+              name: row.contact_name || row.lead_name,
               push_name: row.contact_push_name,
               remote_jid: row.remote_jid
-          };
+          });
 
           return {
-              id: row.remote_jid,
+              id: row.remote_jid, // ID único para a chave do React
               company_id: user.company_id,
               jid: row.remote_jid,
               remote_jid: row.remote_jid,
-              name: getDisplayName(tempContact),
+              name: finalName,
               push_name: row.contact_push_name,
               profile_pic_url: displayPic,
-              unread_count: Number(row.unread_count),
+              unread_count: Number(row.unread_count || 0),
               last_message: formatMessagePreview(row.last_message_content, row.last_message_type),
               last_message_time: row.last_message_time,
               phone_number: row.remote_jid.split('@')[0],
-              is_muted: row.is_muted,
-              is_group: row.is_group,
+              is_muted: row.is_muted || false,
+              is_group: row.is_group || false,
               updated_at: row.contact_updated_at || new Date().toISOString()
           };
       });
 
-      setRawContacts(mappedContacts);
+      // 3. DEDUPLICAÇÃO "FIREWALL" (Frontend)
+      // Garante matematicamente que nunca haverá JIDs duplicados na lista,
+      // mesmo que a RPC ou o banco retornem linhas sujas.
+      const uniqueMap = new Map();
+      mappedContacts.forEach(c => uniqueMap.set(c.remote_jid, c));
+      const uniqueList = Array.from(uniqueMap.values());
+
+      setRawContacts(uniqueList);
 
     } catch (err) {
-      console.error('Erro chat list:', err);
+      console.error('Erro no fluxo de chat list:', err);
     } finally {
       setLoading(false);
     }
-  };
+  }, [user?.company_id, selectedSessionId]); // Dependências do useCallback
 
   useEffect(() => {
     fetchChats();
 
-    // REALTIME IMPROVED: Escuta qualquer mudança em mensagens ou contatos desta empresa
+    // Realtime Listener
+    // Otimizado para não criar múltiplos canais desnecessariamente
     const channel = supabase
       .channel(`chat-list-global:${user?.company_id}`)
       .on('postgres_changes', { 
@@ -110,7 +121,7 @@ export function useChatList(selectedSessionId: string | null) {
       supabase.removeChannel(channel);
     };
 
-  }, [user?.company_id, selectedSessionId]);
+  }, [fetchChats, user?.company_id]);
 
   return { 
       contacts: rawContacts, 
