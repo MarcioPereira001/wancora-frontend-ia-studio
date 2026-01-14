@@ -102,14 +102,15 @@ export default function ChatPage() {
 
   // --- FETCH MESSAGES (Pagination) ---
   const fetchMessages = async (offset: number) => {
-      if(!activeContact || !selectedInstance) return [];
+      if(!activeContact || !user?.company_id) return [];
       
+      // FIXED: Removido filtro de session_id. 
+      // O histórico pertence ao Lead/Empresa, independente de qual instância enviou/recebeu.
       const { data, error } = await supabase
         .from('messages')
         .select(`*, contacts (push_name)`)
         .eq('remote_jid', activeContact.remote_jid) 
-        .eq('session_id', selectedInstance.session_id) 
-        .eq('company_id', user?.company_id)
+        .eq('company_id', user.company_id)
         .order('created_at', { ascending: false }) // Recentes primeiro
         .range(offset, offset + MESSAGES_PER_PAGE - 1);
 
@@ -162,7 +163,8 @@ export default function ChatPage() {
       initChat();
 
       // Realtime
-      const channelName = `chat:${activeContact.remote_jid}:${selectedInstance.session_id}`;
+      // Monitora TODAS as mensagens deste contato nesta empresa, independente da sessão
+      const channelName = `chat:${activeContact.remote_jid}`;
       const subscription = supabase
         .channel(channelName)
         .on('postgres_changes', { 
@@ -171,24 +173,28 @@ export default function ChatPage() {
             table: 'messages',
             filter: `remote_jid=eq.${activeContact.remote_jid}` 
         }, (payload) => {
-            if (payload.new && (payload.new as any).session_id === selectedInstance.session_id) {
+            const newMessage = payload.new as Message;
+            const oldMessage = payload.old as Message;
+
+            // Segurança: Garante que pertence à empresa atual
+            if (newMessage?.company_id === user?.company_id || oldMessage?.company_id === user?.company_id) {
                 if (payload.eventType === 'INSERT') {
                     setMessages(prev => {
-                        if (prev.some(m => m.id === payload.new.id)) return prev;
-                        return [...prev, payload.new as Message];
+                        if (prev.some(m => m.id === newMessage.id)) return prev;
+                        return [...prev, newMessage];
                     });
                     setTimeout(() => scrollToBottom('smooth'), 100);
                 } else if (payload.eventType === 'UPDATE') {
-                    setMessages(prev => prev.map(m => m.id === payload.new.id ? payload.new as Message : m));
+                    setMessages(prev => prev.map(m => m.id === newMessage.id ? newMessage : m));
                 } else if (payload.eventType === 'DELETE') {
-                    setMessages(prev => prev.filter(m => m.id !== payload.old.id));
+                    setMessages(prev => prev.filter(m => m.id !== oldMessage.id));
                 }
             }
         })
         .subscribe();
 
       return () => { subscription.unsubscribe(); };
-  }, [activeContact?.id, selectedInstance?.session_id]);
+  }, [activeContact?.id, user?.company_id]); // Removido selectedInstance.session_id das deps para não resetar à toa
 
   // --- INBOX ACTIONS (SIDEBAR ESQUERDA) ---
   const handleInboxSelect = (jid: string) => {
@@ -375,7 +381,13 @@ export default function ChatPage() {
               url: payload.url,         
               caption: payload.caption, 
               options: payload.options, 
-              name: payload.name        
+              name: payload.name,
+              mimetype: payload.mimetype,
+              fileName: payload.fileName,
+              poll: payload.poll,
+              location: payload.location,
+              contact: payload.contact,
+              ptt: payload.ptt
           });
       } catch (error) { setMessages(prev => prev.filter(m => m.id !== optimisticId)); }
   };
@@ -390,10 +402,15 @@ export default function ChatPage() {
       try {
           const { publicUrl, fileName } = await uploadChatMedia(file, user.company_id);
           let type = 'document';
+          let ptt = false;
+          
           if (file.type.startsWith('image/')) type = 'image';
           else if (file.type.startsWith('video/')) type = 'video';
-          else if (file.type.startsWith('audio/')) type = 'audio';
-          await dispatchMessage({ type, url: publicUrl, fileName: fileName, caption: input, mimetype: file.type });
+          else if (file.type.startsWith('audio/')) {
+              type = 'audio';
+              ptt = false; // Uploaded audio is not PTT
+          }
+          await dispatchMessage({ type, url: publicUrl, fileName: fileName, caption: input, mimetype: file.type, ptt });
           setInput(""); 
       } catch (error: any) { addToast({ type: 'error', title: 'Falha', message: error.message }); } 
       finally { if (fileInputRef.current) fileInputRef.current.value = ''; }
