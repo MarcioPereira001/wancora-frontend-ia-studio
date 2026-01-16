@@ -1,8 +1,6 @@
 import React from 'react';
 import { ActivityItem } from '@/types';
 import { CheckCircle2, MessageSquare, UserPlus, Clock } from 'lucide-react';
-import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 
 interface ActivityFeedProps {
@@ -38,6 +36,20 @@ export function ActivityFeed({ activities, loading }: ActivityFeedProps) {
       }
   };
 
+  const formatDate = (dateString: string) => {
+    try {
+        const date = new Date(dateString);
+        return new Intl.DateTimeFormat('pt-BR', {
+            day: '2-digit',
+            month: 'short',
+            hour: '2-digit',
+            minute: '2-digit'
+        }).format(date).replace('.', '');
+    } catch (e) {
+        return '';
+    }
+  };
+
   return (
     <div className="space-y-1 pr-2 custom-scrollbar max-h-[350px] overflow-y-auto">
         {activities.map((act) => (
@@ -59,7 +71,7 @@ export function ActivityFeed({ activities, loading }: ActivityFeedProps) {
                         <p className="text-sm font-medium text-zinc-200 truncate">{act.title}</p>
                         <span className="text-[10px] text-zinc-600 flex items-center gap-1 shrink-0 bg-zinc-950 px-1.5 rounded">
                             <Clock className="w-3 h-3" />
-                            {format(new Date(act.created_at), "dd MMM, HH:mm", { locale: ptBR })}
+                            {formatDate(act.created_at)}
                         </span>
                     </div>
                     <p className="text-xs text-zinc-500 mt-0.5 line-clamp-1 group-hover:text-zinc-400 transition-colors">

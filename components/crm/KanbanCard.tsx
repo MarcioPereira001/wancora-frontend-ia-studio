@@ -1,7 +1,5 @@
 import React from 'react';
 import { Calendar, MessageCircle, Flame, User, Tag, Clock } from 'lucide-react';
-import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
 import { Lead, TeamMember } from '@/types';
 import { cn, formatCurrency } from '@/lib/utils';
 import { DeadlineTimer } from './DeadlineTimer'; // Componente Novo

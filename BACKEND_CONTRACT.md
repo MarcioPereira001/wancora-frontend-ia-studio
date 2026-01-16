@@ -52,6 +52,7 @@ O Frontend interage com o resultado do processamento do Backend através destas 
 ---
 
 ## 3. 🔌 API REST (Endpoints de Comando)
+> **ATENÇÃO:** O endpoint `GET /session/status/:companyId` foi DEPRECIADO para uso do Frontend. O Frontend deve obter o estado da instância exclusivamente via assinatura do Supabase Realtime na tabela `instances`.
 
 **Base URL:** `https://seu-backend.onrender.com/api/v1`
 **Headers:** `Content-Type: application/json`

@@ -4,6 +4,7 @@ import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import AuthProvider from "@/providers/AuthProvider";
 import QueryProvider from "@/providers/QueryProvider";
+import RealtimeProvider from "@/providers/RealtimeProvider"; // NOVO
 import { ToastProvider } from "@/context/ToastContext";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
@@ -25,7 +26,10 @@ export default function RootLayout({
         <QueryProvider>
           <ToastProvider>
             <AuthProvider>
-              {children}
+              {/* RealtimeProvider deve estar DENTRO do AuthProvider para acessar o user */}
+              <RealtimeProvider>
+                {children}
+              </RealtimeProvider>
             </AuthProvider>
           </ToastProvider>
         </QueryProvider>

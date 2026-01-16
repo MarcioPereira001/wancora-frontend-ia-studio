@@ -6,8 +6,6 @@ import { createClient } from '@/utils/supabase/client';
 import { useAuthStore } from '@/store/useAuthStore';
 import { Button } from '@/components/ui/button';
 import { Plus, Rocket, Calendar, CheckCircle2, AlertCircle, Clock, Loader2 } from 'lucide-react';
-import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
 
 interface Campaign {
   id: string;
@@ -61,6 +59,20 @@ export default function CampaignsListPage() {
     }
   };
 
+  const formatDate = (dateString: string) => {
+    try {
+        const date = new Date(dateString);
+        return new Intl.DateTimeFormat('pt-BR', {
+            day: '2-digit',
+            month: 'short',
+            hour: '2-digit',
+            minute: '2-digit'
+        }).format(date).replace('.', '');
+    } catch (e) {
+        return dateString;
+    }
+  };
+
   return (
     <div className="max-w-6xl mx-auto space-y-8 animate-in fade-in duration-500">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -108,7 +120,7 @@ export default function CampaignsListPage() {
                     <div className="flex flex-col items-end justify-center min-w-[150px] gap-2">
                         <div className="flex items-center gap-2 text-sm text-zinc-500">
                             <Calendar size={14} />
-                            {format(new Date(campaign.created_at), "dd 'de' MMM, HH:mm", { locale: ptBR })}
+                            {formatDate(campaign.created_at)}
                         </div>
                         <Button variant="ghost" size="sm" className="text-xs text-zinc-400 hover:text-white" disabled>
                             Ver Relatório (Em breve)

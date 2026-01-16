@@ -1,14 +1,13 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { Activity, Download, Calendar as CalendarIcon, User, Trophy } from 'lucide-react';
+import { Activity, Download, Calendar as CalendarIcon, User, Trophy, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { createClient } from '@/utils/supabase/client';
 import { useAuthStore } from '@/store/useAuthStore';
 import { GamificationProfile, ActivityItem, FunnelStat, DashboardKPI } from '@/types';
 import { useTeam } from '@/hooks/useTeam';
-import * as XLSX from 'xlsx';
-import { startOfMonth, endOfMonth, format } from 'date-fns';
+import { useToast } from '@/hooks/useToast';
 
 // Import Components
 import { DashboardStats } from '@/components/dashboard/DashboardStats';
@@ -20,16 +19,30 @@ export default function DashboardPage() {
   const { user } = useAuthStore();
   const { members } = useTeam();
   const supabase = createClient();
+  const { addToast } = useToast();
   
+  // Helper para datas
+  const getStartOfMonth = () => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+  };
+
+  const getEndOfMonth = () => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
+  };
+
   // STATE: Filtros
   const [dateRange, setDateRange] = useState({
-      start: format(startOfMonth(new Date()), 'yyyy-MM-dd'),
-      end: format(endOfMonth(new Date()), 'yyyy-MM-dd')
+      start: getStartOfMonth(),
+      end: getEndOfMonth()
   });
   const [selectedOwnerId, setSelectedOwnerId] = useState<string>('all');
   
   // STATE: Dados
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
+  
   const [stats, setStats] = useState<DashboardKPI>({
     totalLeads: 0,
     potentialRevenue: 0,
@@ -64,7 +77,6 @@ export default function DashboardPage() {
           if (leadsData) {
               const totalLeads = leadsData.length;
               const totalValue = leadsData.reduce((acc, curr) => acc + (Number(curr.value_potential) || 0), 0);
-              // Consideramos 'won' se o status for 'won' ou se estiver numa etapa chamada 'Ganho' (simplificação)
               const wonLeads = leadsData.filter(l => l.status === 'won').length;
               const conversion = totalLeads ? ((wonLeads / totalLeads) * 100) : 0;
               const ticket = wonLeads ? (totalValue / wonLeads) : 0;
@@ -111,32 +123,115 @@ export default function DashboardPage() {
       fetchData();
   }, [user?.company_id, dateRange, selectedOwnerId]);
 
-  // EXPORT XLSX
-  const handleExport = () => {
+  // EXPORT XLSX (Formatação Profissional com ExcelJS)
+  const handleExport = async () => {
       if(!ranking.length && !stats.totalLeads) return;
-      
-      const wb = XLSX.utils.book_new();
-      
-      // Sheet 1: Resumo
-      const summaryData = [
-          { Metrica: "Faturamento Total", Valor: stats.potentialRevenue },
-          { Metrica: "Total Leads", Valor: stats.totalLeads },
-          { Metrica: "Conversão", Valor: `${stats.conversionRate}%` },
-          { Metrica: "Ticket Médio", Valor: stats.avgTicket },
-          { Periodo: `${dateRange.start} a ${dateRange.end}` }
-      ];
-      const wsSummary = XLSX.utils.json_to_sheet(summaryData);
-      XLSX.utils.book_append_sheet(wb, wsSummary, "Resumo");
+      setExporting(true);
 
-      // Sheet 2: Ranking
-      const wsRank = XLSX.utils.json_to_sheet(ranking);
-      XLSX.utils.book_append_sheet(wb, wsRank, "Ranking Equipe");
+      try {
+          // Importação Dinâmica para não pesar o bundle inicial
+          const ExcelJS = (await import('exceljs')).default;
+          
+          const workbook = new ExcelJS.Workbook();
+          workbook.creator = 'Wancora CRM';
+          workbook.created = new Date();
 
-      // Sheet 3: Funil
-      const wsFunnel = XLSX.utils.json_to_sheet(funnelData);
-      XLSX.utils.book_append_sheet(wb, wsFunnel, "Funil Detalhado");
+          const sheet = workbook.addWorksheet('Relatório Gerencial');
 
-      XLSX.writeFile(wb, `Wancora_Report_${dateRange.start}.xlsx`);
+          // --- ESTILOS GERAIS ---
+          sheet.properties.defaultRowHeight = 20;
+
+          // --- CABEÇALHO KPI (LINHAS 1-7) ---
+          sheet.mergeCells('A1:D1');
+          const titleCell = sheet.getCell('A1');
+          titleCell.value = 'RELATÓRIO DE PERFORMANCE WANCORA';
+          titleCell.font = { name: 'Arial', size: 16, bold: true, color: { argb: 'FFFFFFFF' } };
+          titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF16a34a' } }; // Verde Primary
+          titleCell.alignment = { vertical: 'middle', horizontal: 'center' };
+          
+          sheet.getCell('A2').value = 'Período:';
+          sheet.getCell('B2').value = `${dateRange.start} até ${dateRange.end}`;
+          sheet.getCell('A2').font = { bold: true };
+
+          sheet.getCell('A4').value = 'Faturamento Total';
+          sheet.getCell('B4').value = stats.potentialRevenue;
+          sheet.getCell('B4').numFmt = '"R$"#,##0.00';
+          
+          sheet.getCell('A5').value = 'Total Leads';
+          sheet.getCell('B5').value = stats.totalLeads;
+
+          sheet.getCell('C4').value = 'Taxa Conversão';
+          sheet.getCell('D4').value = stats.conversionRate / 100;
+          sheet.getCell('D4').numFmt = '0.0%';
+
+          sheet.getCell('C5').value = 'Ticket Médio';
+          sheet.getCell('D5').value = stats.avgTicket;
+          sheet.getCell('D5').numFmt = '"R$"#,##0.00';
+
+          // Estilo dos labels KPI
+          ['A4', 'A5', 'C4', 'C5'].forEach(cell => {
+              sheet.getCell(cell).font = { bold: true, color: { argb: 'FF52525B' } };
+          });
+
+          // --- TABELA DE RANKING (LINHA 9 EM DIANTE) ---
+          
+          // Configura colunas
+          sheet.columns = [
+              { header: 'Posição', key: 'rank', width: 10 },
+              { header: 'Vendedor', key: 'name', width: 30 },
+              { header: 'Vendas Totais', key: 'sales', width: 20 },
+              { header: 'Leads Ganhos', key: 'won', width: 15 },
+              { header: 'XP', key: 'xp', width: 15 },
+          ];
+
+          // Adiciona tabela nativa do Excel (Com Filtros e Cores)
+          const tableRows = ranking.map(r => [r.rank, r.user_name, r.total_sales, r.leads_won, r.xp]);
+          
+          sheet.addTable({
+              name: 'RankingTable',
+              ref: 'A9',
+              headerRow: true,
+              totalsRow: true,
+              style: {
+                  theme: 'TableStyleMedium2', // Estilo azul/cinza profissional
+                  showRowStripes: true,
+              },
+              columns: [
+                  { name: 'Posição', filterButton: true },
+                  { name: 'Vendedor', filterButton: true },
+                  { name: 'Vendas Totais', totalsRowLabel: 'Total:', filterButton: true }, // Label apenas
+                  { name: 'Leads Ganhos', totalsRowFunction: 'sum', filterButton: true },
+                  { name: 'XP', filterButton: true },
+              ],
+              rows: tableRows,
+          });
+
+          // Formatação da coluna de valores dentro da tabela (tem que ser por célula pois addTable herda)
+          const startRow = 10;
+          const endRow = 10 + ranking.length;
+          for (let i = startRow; i < endRow; i++) {
+              sheet.getCell(`C${i}`).numFmt = '"R$"#,##0.00'; // Formata Moeda
+          }
+
+          // --- GERAR ARQUIVO ---
+          const buffer = await workbook.xlsx.writeBuffer();
+          const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+          
+          const url = window.URL.createObjectURL(blob);
+          const anchor = document.createElement('a');
+          anchor.href = url;
+          anchor.download = `Wancora_Relatorio_${dateRange.start}.xlsx`;
+          anchor.click();
+          window.URL.revokeObjectURL(url);
+
+          addToast({ type: 'success', title: 'Exportado', message: 'Relatório Excel gerado com sucesso.' });
+
+      } catch (error) {
+          console.error("Erro export:", error);
+          addToast({ type: 'error', title: 'Erro', message: 'Falha ao gerar Excel.' });
+      } finally {
+          setExporting(false);
+      }
   };
 
   const myRank = ranking.find(r => r.user_id === user?.id);
@@ -192,8 +287,9 @@ export default function DashboardPage() {
                 </div>
             )}
 
-            <Button onClick={handleExport} variant="outline" className="border-zinc-700 hover:bg-zinc-800 h-[42px] gap-2">
-                <Download className="w-4 h-4" /> <span className="hidden sm:inline">Exportar</span>
+            <Button onClick={handleExport} disabled={exporting} variant="outline" className="border-zinc-700 hover:bg-zinc-800 h-[42px] gap-2 bg-zinc-900">
+                {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />} 
+                <span className="hidden sm:inline">Excel</span>
             </Button>
         </div>
       </div>

@@ -1,72 +1,71 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { Smartphone, Loader2, Battery, Power, Trash2, RefreshCw, CheckCircle2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { whatsappService } from '@/services/whatsappService';
-import { Instance } from '@/types';
 import { useToast } from '@/hooks/useToast';
+import { useRealtimeStore } from '@/store/useRealtimeStore';
 
 export function ConnectionStatus() {
   const { addToast } = useToast();
-  const [instance, setInstance] = useState<Instance | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [isSyncing, setIsSyncing] = useState(false);
+  const { instances } = useRealtimeStore(); // Conectado à Store Global
+  const [loadingAction, setLoadingAction] = useState(false);
+  const [isSyncingManual, setIsSyncingManual] = useState(false);
 
-  const fetchStatus = async () => {
-      const data = await whatsappService.getInstanceStatus();
-      setInstance(data);
-      if (data?.status === 'connected') setIsSyncing(false);
-  };
-
-  useEffect(() => {
-    fetchStatus();
-    // Polling inteligente: rápido se conectando, lento se estável
-    const intervalTime = (instance?.status === 'connecting' || instance?.status === 'qr_ready' || instance?.status === 'qrcode') ? 2000 : 5000;
-    const interval = setInterval(fetchStatus, intervalTime);
-    return () => clearInterval(interval);
-  }, [instance?.status]);
+  // Pega a instância mais recente ou a primeira disponível
+  // Lógica: Prioriza conectada, senão a mais recente
+  const instance = instances.find(i => i.status === 'connected') || instances[0];
 
   const handleConnect = async () => {
-    setLoading(true);
+    setLoadingAction(true);
     try {
-        await whatsappService.connectInstance();
-        addToast({ type: 'info', title: 'Conectando', message: 'Gerando QR Code...' });
+        // Se já existe uma instância desconectada, tenta reconectar ela
+        const sessionId = instance?.session_id || 'default';
+        await whatsappService.connectInstance(sessionId, instance?.name);
+        addToast({ type: 'info', title: 'Iniciando', message: 'Solicitando QR Code ao servidor...' });
     } catch (e: any) {
         addToast({ type: 'error', title: 'Erro', message: e.message });
     } finally {
-        setLoading(false);
+        setLoadingAction(false);
     }
   };
 
   const handleLogout = async () => {
+    if (!instance) return;
     if (!confirm("Desconectar o WhatsApp?")) return;
-    setLoading(true);
+    setLoadingAction(true);
     try {
-        await whatsappService.logoutInstance();
-        setInstance(prev => prev ? { ...prev, status: 'disconnected', qrcode_url: undefined } : null);
+        await whatsappService.logoutInstance(instance.session_id);
+        // O RealtimeStore atualizará a UI automaticamente quando o banco mudar
     } catch (e: any) {
         addToast({ type: 'error', title: 'Erro', message: e.message });
     } finally {
-        setLoading(false);
+        setLoadingAction(false);
     }
   };
 
   const renderContent = () => {
     const status = instance?.status || 'disconnected';
+    const isSyncing = instance?.sync_status && instance.sync_status !== 'completed';
 
-    // 1. Loading / Conectando
-    if (loading || status === 'connecting' || isSyncing) {
+    // 1. Loading / Conectando / Sincronizando
+    if (loadingAction || status === 'connecting' || isSyncing || isSyncingManual) {
       return (
         <div className="flex flex-col items-center gap-4 animate-in fade-in zoom-in">
           <div className="relative">
              <div className="absolute inset-0 bg-green-500/20 blur-xl rounded-full"></div>
              <Loader2 className="w-12 h-12 text-green-500 animate-spin relative z-10" />
           </div>
-          <p className="text-zinc-400 text-sm animate-pulse font-medium">
-            {isSyncing ? "Sincronizando..." : "Estabelecendo conexão..."}
-          </p>
+          <div className="text-center">
+            <p className="text-zinc-400 text-sm animate-pulse font-medium">
+                {isSyncing ? "Sincronizando Mensagens..." : "Aguardando Conexão..."}
+            </p>
+            {isSyncing && instance.sync_percent !== undefined && (
+                <span className="text-xs font-mono text-primary mt-1 block">{instance.sync_percent}%</span>
+            )}
+          </div>
         </div>
       );
     }
@@ -78,7 +77,7 @@ export function ConnectionStatus() {
            <div className="relative group">
               <img 
                 src={instance?.profile_pic_url || 'https://via.placeholder.com/150'} 
-                className="w-24 h-24 rounded-full border-2 border-green-500 p-1 shadow-[0_0_30px_rgba(34,197,94,0.3)] object-cover"
+                className="w-24 h-24 rounded-full border-2 border-green-500 p-1 shadow-[0_0_30px_rgba(34,197,94,0.3)] object-cover bg-zinc-950"
                 alt="Avatar"
               />
               <div className="absolute -bottom-1 -right-1 bg-zinc-950 p-1.5 rounded-full border border-zinc-800">
@@ -89,40 +88,37 @@ export function ConnectionStatus() {
               <p className="text-white font-bold text-lg">{instance?.name || 'WhatsApp'}</p>
               <div className="flex items-center gap-2 justify-center text-zinc-400 text-sm mt-1">
                 <CheckCircle2 className="w-4 h-4 text-green-500" />
-                <span className="text-green-500 font-medium">Sessão Ativa</span>
+                <span className="text-green-500 font-medium">Online e Operante</span>
               </div>
            </div>
         </div>
       );
     }
 
-    // 3. QR Code
+    // 3. QR Code (Estado 'qrcode' ou 'qr_ready')
     if ((status === 'qr_ready' || status === 'qrcode') && instance?.qrcode_url) {
       return (
         <div className="text-center space-y-4 animate-in fade-in zoom-in">
-          <div className="p-4 bg-white rounded-xl shadow-[0_0_30px_rgba(34,197,94,0.15)] relative mx-auto w-fit group">
+          <div className="p-4 bg-white rounded-xl shadow-[0_0_30px_rgba(34,197,94,0.15)] relative mx-auto w-fit group border-4 border-white">
              <QRCodeSVG 
                 value={instance.qrcode_url}
-                size={180}
-                level="H"
-                includeMargin={true}
+                size={160}
+                level="L"
+                includeMargin={false}
              />
              <div className="absolute top-0 left-0 w-full h-1 bg-green-500/50 shadow-[0_0_15px_rgba(34,197,94,0.8)] animate-[scan_2s_ease-in-out_infinite]" />
           </div>
-          <p className="text-emerald-400 text-xs font-mono font-bold tracking-widest animate-pulse">
-            ESCANEIE AGORA
-          </p>
-          <button 
-            onClick={() => setIsSyncing(true)}
-            className="text-[10px] text-zinc-500 hover:text-white underline cursor-pointer"
-          >
-            Demorando para atualizar?
-          </button>
+          <div>
+            <p className="text-emerald-400 text-xs font-mono font-bold tracking-widest animate-pulse">
+                ESCANEIE AGORA
+            </p>
+            <p className="text-[10px] text-zinc-500 mt-1">Abra WhatsApp &gt; Aparelhos Conectados</p>
+          </div>
         </div>
       );
     }
 
-    // 4. Desconectado
+    // 4. Desconectado (Estado inicial ou 'disconnected')
     return (
       <div className="text-center space-y-4 animate-in fade-in zoom-in">
         <div className="w-20 h-20 bg-zinc-800/50 rounded-full flex items-center justify-center mx-auto mb-2 border border-zinc-700 shadow-inner">
@@ -130,10 +126,10 @@ export function ConnectionStatus() {
         </div>
         <button 
           onClick={handleConnect}
-          disabled={loading}
+          disabled={loadingAction}
           className="px-6 py-3 bg-primary hover:bg-primary/90 text-primary-foreground font-bold rounded-lg transition-all shadow-[0_0_20px_rgba(34,197,94,0.3)] flex items-center gap-2 mx-auto active:scale-95 disabled:opacity-50"
         >
-          INICIAR CONEXÃO
+          {loadingAction ? <Loader2 className="w-4 h-4 animate-spin" /> : "INICIAR CONEXÃO"}
         </button>
       </div>
     );
@@ -153,7 +149,7 @@ export function ConnectionStatus() {
           <div>
             <h3 className="text-white font-bold tracking-tight text-sm">Dispositivo</h3>
             <p className="text-[10px] text-zinc-500 font-mono uppercase tracking-widest opacity-70">
-              {instance?.status === 'connected' ? instance.session_id.slice(0,8) : 'OFFLINE'}
+              {instance?.session_id ? instance.session_id.slice(0,12) : 'OFFLINE'}
             </p>
           </div>
         </div>
@@ -162,17 +158,18 @@ export function ConnectionStatus() {
             <div className={cn(
             "flex items-center gap-2 text-[10px] font-bold px-3 py-1 rounded-full border transition-all duration-300",
             instance?.status === 'connected' ? "text-green-400 bg-green-500/10 border-green-500/20" : 
-            (instance?.status === 'connecting' || isSyncing) ? "text-yellow-400 bg-yellow-500/10 border-yellow-500/20" :
+            (instance?.status === 'connecting') ? "text-yellow-400 bg-yellow-500/10 border-yellow-500/20" :
             "text-zinc-500 bg-zinc-900 border-zinc-800"
             )}>
-            {(instance?.status === 'connecting' || isSyncing) && <RefreshCw className="w-3 h-3 animate-spin" />}
-            {isSyncing ? "SYNC" : (instance?.status || 'DISCONNECTED').toUpperCase()}
+            {(instance?.status === 'connecting') && <RefreshCw className="w-3 h-3 animate-spin" />}
+            {(instance?.status || 'DISCONNECTED').toUpperCase()}
             </div>
 
             {instance?.status === 'connected' && (
                 <button 
                 onClick={handleLogout}
                 title="Desconectar"
+                disabled={loadingAction}
                 className="p-1.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 rounded-lg text-red-500 transition-colors"
                 >
                 <Trash2 className="w-4 h-4" />

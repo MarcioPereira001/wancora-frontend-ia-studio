@@ -2,9 +2,7 @@ import React, { useState } from 'react';
 import { useLeadActivities } from '@/hooks/useLeadActivities';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { Loader2, MessageSquare, ClipboardList, Send, User } from 'lucide-react';
-import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
+import { Loader2, MessageSquare, ClipboardList, Send } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface ActivityTimelineProps {
@@ -22,6 +20,20 @@ export function ActivityTimeline({ leadId }: ActivityTimelineProps) {
       await addNote(note);
       setNote('');
       setIsSubmitting(false);
+  };
+
+  const formatDate = (dateString: string) => {
+    try {
+        const date = new Date(dateString);
+        return new Intl.DateTimeFormat('pt-BR', {
+            day: '2-digit',
+            month: 'short',
+            hour: '2-digit',
+            minute: '2-digit'
+        }).format(date).replace('.', '');
+    } catch (e) {
+        return '';
+    }
   };
 
   return (
@@ -78,7 +90,7 @@ export function ActivityTimeline({ leadId }: ActivityTimelineProps) {
                                         {activity.creator_name}
                                     </span>
                                     <span className="text-[10px] text-zinc-500">
-                                        {format(new Date(activity.created_at), "dd MMM, HH:mm", { locale: ptBR })}
+                                        {formatDate(activity.created_at)}
                                     </span>
                                 </div>
                             </div>

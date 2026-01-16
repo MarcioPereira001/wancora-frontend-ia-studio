@@ -3,8 +3,9 @@ import { createClient } from '@/utils/supabase/client';
 import { Instance } from '../types';
 
 export const whatsappService = {
-  // Busca status via API (prioridade) ou Supabase (fallback)
-  // Contract Update: GET /session/status/:companyId
+  // CONTRACT COMPLIANCE:
+  // Este método agora lê APENAS do Banco de Dados.
+  // O Backend atualiza o banco, o Frontend lê do banco. Sem chamadas REST GET desnecessárias.
   getInstanceStatus: async (sessionId?: string): Promise<Instance | null> => {
     try {
       const supabase = createClient();
@@ -12,47 +13,31 @@ export const whatsappService = {
       
       if (!authSession?.user?.id) return null;
       
-      const { data: profile } = await supabase.from('profiles').select('company_id').eq('id', authSession.user.id).single();
-      const companyId = profile?.company_id;
+      // Otimização: Pegar company_id direto do metadata se possível, ou profile
+      let companyId = authSession.user.user_metadata?.company_id;
+      
+      if (!companyId) {
+          const { data: profile } = await supabase.from('profiles').select('company_id').eq('id', authSession.user.id).single();
+          companyId = profile?.company_id;
+      }
       
       if (!companyId) return null;
 
-      // 1. Tentativa via API (Realtime Status do Container)
-      try {
-         // O contrato define /session/status/:companyId
-         const apiData = await api.get(`/session/status/${companyId}`);
-         
-         // A API retorna { status: 'online', session: 'connected' | 'disconnected' }
-         // Precisamos mesclar isso com os dados do banco para ter QR Code e metadados
-         if (apiData && sessionId) {
-             const { data: dbInstance } = await supabase
-                .from('instances')
-                .select('*')
-                .eq('session_id', sessionId)
-                .maybeSingle();
-             
-             if (dbInstance) {
-                 // Se a API diz que está online, forçamos o status visual, mas respeitamos o QR Code do banco
-                 return {
-                     ...dbInstance,
-                     status: apiData.session === 'connected' ? 'connected' : dbInstance.status
-                 };
-             }
-         }
-      } catch (e) {
-         // Silencioso: Backend pode estar dormindo (Render free tier), fallback para banco
-      }
-
-      // 2. Fallback: Banco de Dados (Supabase)
       let query = supabase.from('instances').select('*').eq('company_id', companyId);
       
       if (sessionId) {
           query = query.eq('session_id', sessionId);
       } else {
-          query = query.order('created_at', { ascending: false }).limit(1);
+          query = query.order('updated_at', { ascending: false }).limit(1);
       }
 
-      const { data } = await query.maybeSingle();
+      const { data, error } = await query.maybeSingle();
+      
+      if (error) {
+          console.error("DB Error getInstanceStatus:", error);
+          return null;
+      }
+
       return data as Instance;
 
     } catch (error) {
@@ -67,6 +52,7 @@ export const whatsappService = {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.user?.id) return [];
 
+      // Recuperação segura do company_id
       const { data: profile } = await supabase.from('profiles').select('company_id').eq('id', session.user.id).single();
       if (!profile?.company_id) return [];
 
@@ -90,12 +76,12 @@ export const whatsappService = {
       if (!session?.user?.id) throw new Error("Sessão expirada.");
 
       const { data: profile } = await supabase.from('profiles').select('company_id').eq('id', session.user.id).single();
-      
       if (!profile?.company_id) throw new Error("Usuário sem empresa vinculada.");
 
       const displayName = instanceName || (sessionId === 'default' ? 'Principal' : sessionId);
 
-      // Limpa QR Code antigo e define status inicial
+      // 1. Prepara o banco (Optimistic Update)
+      // Define status como 'connecting' para a UI mostrar loading imediatamente
       const { data: instanceData, error: dbError } = await supabase
         .from('instances')
         .upsert({ 
@@ -103,14 +89,16 @@ export const whatsappService = {
             session_id: sessionId, 
             status: 'connecting', 
             name: displayName,
-            qrcode_url: null 
+            qrcode_url: null,
+            updated_at: new Date().toISOString()
         }, { onConflict: 'session_id' })
         .select()
         .single();
 
       if (dbError) throw new Error("Falha ao preparar conexão no banco.");
 
-      // Dispara Backend (Endpoint: /session/start)
+      // 2. Dispara Backend (Fire and Forget logic from UX perspective)
+      // O Backend vai processar e atualizar o banco com 'qrcode' ou 'connected'
       await api.post('/session/start', {
         sessionId: sessionId,
         companyId: profile.company_id
@@ -133,13 +121,13 @@ export const whatsappService = {
       const { data: profile } = await supabase.from('profiles').select('company_id').eq('id', session.user.id).single();
       if (!profile?.company_id) return;
 
-      // Chama backend (Endpoint: /session/logout)
+      // 1. Chama backend para derrubar conexão real
       await api.post('/session/logout', {
           sessionId: sessionId,
           companyId: profile.company_id
       });
       
-      // Update otimista
+      // 2. Atualiza banco (Backend também faz, mas fazemos aqui para feedback imediato)
       await supabase
         .from('instances')
         .update({ status: 'disconnected', qrcode_url: null })
@@ -161,15 +149,17 @@ export const whatsappService = {
         const { data: profile } = await supabase.from('profiles').select('company_id').eq('id', session.user.id).single();
         if (!profile?.company_id) return;
   
+        // Tenta logout limpo antes de deletar
         try {
             await api.post('/session/logout', {
                 sessionId: sessionId,
                 companyId: profile.company_id
             });
         } catch (e) {
-            // Backend pode já estar off
+            // Ignora erro se backend já estiver off
         }
   
+        // Hard Delete do registro
         await supabase
             .from('instances')
             .delete()

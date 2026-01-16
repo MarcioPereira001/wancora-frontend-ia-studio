@@ -1,7 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { Clock, AlertTriangle, CheckCircle2, Hourglass } from 'lucide-react';
-import { differenceInSeconds, differenceInMinutes, formatDistanceToNow } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 
 interface DeadlineTimerProps {
@@ -21,7 +19,7 @@ export function DeadlineTimer({ deadline, isCompleted, compact = false }: Deadli
 
     // Se faltar menos de 24h, atualiza a cada segundo. Se não, a cada minuto.
     const target = new Date(deadline);
-    const diffSec = differenceInSeconds(target, new Date());
+    const diffSec = (target.getTime() - new Date().getTime()) / 1000;
     const intervalTime = diffSec < 86400 && diffSec > -86400 ? 1000 : 60000;
 
     const interval = setInterval(() => setNow(new Date()), intervalTime); 
@@ -40,8 +38,7 @@ export function DeadlineTimer({ deadline, isCompleted, compact = false }: Deadli
   }
 
   const dateDeadline = new Date(deadline);
-  const diffMinutesVal = differenceInMinutes(dateDeadline, now);
-  const diffSecondsVal = differenceInSeconds(dateDeadline, now);
+  const diffSecondsVal = (dateDeadline.getTime() - now.getTime()) / 1000;
   
   // Lógica de Status
   let status: 'safe' | 'warning' | 'urgent' | 'overdue' = 'safe';
@@ -58,12 +55,12 @@ export function DeadlineTimer({ deadline, isCompleted, compact = false }: Deadli
       const absSeconds = Math.abs(diffSecondsVal);
       const h = Math.floor(absSeconds / 3600).toString().padStart(2, '0');
       const m = Math.floor((absSeconds % 3600) / 60).toString().padStart(2, '0');
-      const s = (absSeconds % 60).toString().padStart(2, '0');
+      const s = Math.floor(absSeconds % 60).toString().padStart(2, '0');
       timeString = `${h}:${m}:${s}`;
   } else {
-      // Formato textual para prazos longos
-      timeString = formatDistanceToNow(dateDeadline, { locale: ptBR, addSuffix: false });
-      timeString = timeString.replace('cerca de ', '');
+      // Formato textual para prazos longos (dias)
+      const days = Math.floor(Math.abs(diffSecondsVal) / 86400);
+      timeString = `${days} dia${days !== 1 ? 's' : ''}`;
   }
 
   // Configuração Visual
