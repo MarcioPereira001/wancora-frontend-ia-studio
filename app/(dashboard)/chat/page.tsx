@@ -5,9 +5,9 @@ import { createClient } from '@/utils/supabase/client';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useChatStore } from '@/store/useChatStore';
 import { useRealtimeStore } from '@/store/useRealtimeStore';
-import { Message, Lead } from '@/types';
+import { Message } from '@/types';
 import { cn } from '@/lib/utils';
-import { Smartphone, Database } from 'lucide-react';
+import { Smartphone, Database, Loader2, Lock } from 'lucide-react';
 
 // Atomic Components
 import { ChatListSidebar } from '@/components/chat/ChatListSidebar';
@@ -28,9 +28,25 @@ export default function ChatPage() {
       setSelectedInstance
   } = useChatStore();
 
-  // Sync Overlay Data
+  // --- LÓGICA DE AUTO-SELEÇÃO DE INSTÂNCIA (Vital para renderização) ---
+  useEffect(() => {
+      // Se não tem instância selecionada, mas temos instâncias carregadas, seleciona a primeira conectada ou a primeira disponível
+      if (!selectedInstance && instances.length > 0) {
+          const connected = instances.find(i => i.status === 'connected') || instances[0];
+          setSelectedInstance(connected);
+      }
+      
+      // Se a instância selecionada não existe mais (foi deletada), limpa a seleção
+      if (selectedInstance && instances.length > 0 && !instances.find(i => i.id === selectedInstance.id)) {
+          const connected = instances.find(i => i.status === 'connected') || instances[0];
+          setSelectedInstance(connected);
+      }
+  }, [instances, selectedInstance, setSelectedInstance]);
+
+  // Sync Overlay Data & Logic
   const isSyncing = selectedInstance && selectedInstance.sync_status && selectedInstance.sync_status !== 'completed';
   const syncPercent = selectedInstance?.sync_percent || 0;
+  const syncStatusLabel = selectedInstance?.sync_status === 'importing_contacts' ? 'Importando Contatos...' : 'Baixando Mensagens...';
 
   // Lógica de "Identity Unification" (LID)
   const linkIdentity = async (lidJid: string, phoneJid: string) => {
@@ -41,7 +57,6 @@ export default function ChatPage() {
               p_phone: phoneJid,
               p_company_id: user.company_id
           });
-          // Refresh message logic handled via re-fetch or realtime in ChatWindow
       } catch (e) {}
   };
 
@@ -77,7 +92,6 @@ export default function ChatPage() {
             
             // Lógica LID
             if (activeContact && newMessage.remote_jid.includes('@lid') && activeContact.remote_jid.includes('@s.whatsapp.net')) {
-                // Se receber msg de LID enquanto fala com Phone, unifica
                 await linkIdentity(newMessage.remote_jid, activeContact.remote_jid);
             }
 
@@ -85,7 +99,6 @@ export default function ChatPage() {
             if (activeContact && (newMessage.remote_jid === activeContact.remote_jid || newMessage.remote_jid.includes('@lid'))) {
                 addMessage(newMessage);
                 
-                // Marca como lida se for recebida
                 if (!newMessage.from_me) {
                     supabase.from('contacts')
                         .update({ unread_count: 0 })
@@ -96,7 +109,6 @@ export default function ChatPage() {
         })
         .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages', filter: `company_id=eq.${user.company_id}` }, async (payload) => {
             const updatedMessage = payload.new as Message;
-            // Atualiza mensagem existente (ex: votos enquete)
             if (activeContact && updatedMessage.remote_jid === activeContact.remote_jid) {
                 setMessages(prev => prev.map(m => m.id === updatedMessage.id ? updatedMessage : m));
             }
@@ -106,7 +118,6 @@ export default function ChatPage() {
       return () => { supabase.removeChannel(channel); };
   }, [activeContact?.id, user?.company_id]);
 
-  // Helper para refresh manual do lead vindo da sidebar direita
   const refreshLeadData = async () => {
       if(!activeContact || !user?.company_id) return;
       const cleanPhone = activeContact.remote_jid.split('@')[0].replace(/\D/g, '');
@@ -123,18 +134,43 @@ export default function ChatPage() {
   return (
     <div className="flex h-[calc(100vh-6rem)] md:h-[calc(100vh-4rem)] rounded-xl border border-zinc-800 bg-zinc-950/50 overflow-hidden shadow-2xl animate-in fade-in duration-500 relative">
       
-      {/* SYNC OVERLAY */}
+      {/* --- BLOCKING SYNC OVERLAY --- */}
       {isSyncing && (
-          <div className="absolute inset-0 z-[999] bg-zinc-950/95 backdrop-blur-md flex flex-col items-center justify-center text-center animate-in fade-in zoom-in duration-300">
-              <div className="relative mb-6">
-                  <div className="absolute inset-0 bg-primary/20 rounded-full blur-2xl animate-pulse"></div>
-                  <Database className="w-16 h-16 text-primary relative z-10 animate-bounce" />
+          <div className="absolute inset-0 z-[9999] bg-zinc-950/95 backdrop-blur-md flex flex-col items-center justify-center text-center animate-in fade-in zoom-in duration-300 cursor-not-allowed">
+              <div className="max-w-md w-full p-8 rounded-2xl border border-zinc-800 bg-zinc-900/50 shadow-2xl relative overflow-hidden">
+                  {/* Background Effect */}
+                  <div className="absolute inset-0 bg-primary/5 animate-pulse"></div>
+                  
+                  <div className="relative z-10 flex flex-col items-center">
+                      <div className="w-20 h-20 bg-zinc-800 rounded-full flex items-center justify-center mb-6 border border-zinc-700 shadow-inner">
+                          <Database className="w-8 h-8 text-primary animate-bounce" />
+                      </div>
+                      
+                      <h2 className="text-2xl font-bold text-white mb-2">Sincronizando WhatsApp</h2>
+                      <p className="text-zinc-400 text-sm mb-6">
+                          Estamos importando seus contatos e histórico.<br/>
+                          Isso garante que os nomes e fotos apareçam corretamente.
+                      </p>
+
+                      <div className="w-full space-y-2">
+                          <div className="flex justify-between text-xs font-bold uppercase tracking-wider text-zinc-500">
+                              <span>{syncStatusLabel}</span>
+                              <span className="text-primary">{syncPercent}%</span>
+                          </div>
+                          <div className="w-full h-3 bg-zinc-950 rounded-full overflow-hidden border border-zinc-800">
+                              <div 
+                                className="h-full bg-gradient-to-r from-primary to-emerald-400 transition-all duration-500 ease-out shadow-[0_0_15px_rgba(34,197,94,0.5)]" 
+                                style={{ width: `${syncPercent}%` }}
+                              ></div>
+                          </div>
+                      </div>
+
+                      <div className="mt-6 flex items-center gap-2 text-xs text-yellow-500 bg-yellow-500/10 px-3 py-2 rounded-lg border border-yellow-500/20">
+                          <Lock className="w-3 h-3" />
+                          <span>O chat será liberado automaticamente ao finalizar.</span>
+                      </div>
+                  </div>
               </div>
-              <h2 className="text-2xl font-bold text-white mb-2">Sincronizando WhatsApp...</h2>
-              <div className="w-64 h-2 bg-zinc-900 rounded-full overflow-hidden border border-zinc-800">
-                  <div className="h-full bg-primary transition-all duration-500 ease-out" style={{ width: `${syncPercent}%` }}></div>
-              </div>
-              <span className="text-xs font-mono text-primary mt-2">{syncPercent}% Concluído</span>
           </div>
       )}
 
@@ -151,9 +187,20 @@ export default function ChatPage() {
             </>
         ) : (
             <div className="flex h-full items-center justify-center flex-col text-zinc-500 bg-zinc-950/20 p-4 text-center">
-                <Smartphone className="h-12 w-12 text-zinc-700 mb-4 animate-bounce" />
-                <h3 className="text-lg font-medium text-zinc-300">Wancora CRM</h3>
-                <p className="text-sm opacity-60">Selecione uma conexão e um contato.</p>
+                {selectedInstance ? (
+                    <>
+                        <div className="w-24 h-24 bg-zinc-900 rounded-full flex items-center justify-center mb-6 border border-zinc-800 shadow-[0_0_40px_rgba(0,0,0,0.5)]">
+                            <Smartphone className="h-10 w-10 text-zinc-700" />
+                        </div>
+                        <h3 className="text-xl font-bold text-zinc-200 mb-2">Wancora CRM</h3>
+                        <p className="text-sm opacity-60 max-w-xs">Selecione uma conversa ao lado para iniciar o atendimento.</p>
+                    </>
+                ) : (
+                    <>
+                        <Loader2 className="h-10 w-10 text-primary animate-spin mb-4" />
+                        <p className="text-sm text-zinc-400">Conectando à instância...</p>
+                    </>
+                )}
             </div>
         )}
       </div>

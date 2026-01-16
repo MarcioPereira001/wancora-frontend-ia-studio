@@ -1,9 +1,9 @@
 # 📘 WANCORA CRM - System Architecture & Master Blueprint
 
-**Versão:** 3.8 (Native Pix & Interactive Flows)
-**Status:** Production-Ready
+**Versão:** 4.0 (Next.js 15 & React 19 Core)
+**Status:** Production-Ready / Secure
 **Arquitetura:** Event-Driven, Multi-Tenant, Persistent Connection
-**Stack Principal:** Next.js 14 (App Router), Node.js (Baileys Core), Supabase (PostgreSQL + Realtime).
+**Stack Principal:** Next.js 15 (App Router), React 19, Node.js (Baileys Core), Supabase (PostgreSQL + Realtime).
 
 ---
 
@@ -11,36 +11,44 @@
 O Wancora CRM é um Sistema Operacional de Vendas para WhatsApp. Diferente de ferramentas que apenas "disparam mensagens", o Wancora foca na **Retenção de Contexto**, **Conversão de Leads** e **Auditabilidade Total**.
 
 ### A "Experiência Wancora" (UX Guidelines)
-1.  **Zero Friction:** O usuário nunca deve sentir que "perdeu" uma mensagem porque a internet caiu ou a aba fechou. O sistema deve ser resiliente e salvar rascunhos/estados.
-2.  **Optimistic UI:** Ações como enviar mensagem, criar uma tarefa ou adicionar uma nota, a interface atualiza **instantaneamente** na tela, e só depois confirma o envio com o servidor. O usuário não vê "loading" para ações triviais.
-3.  **Contexto Infinito:** O histórico pertence ao Lead, não à conexão. Se o vendedor trocar de número/instância, a conversa com o cliente continua visível e acessível no CRM.
-4.  **IA Invisível:** A IA ("Sentinela") não é um robô chato. Ela é um "copiloto" que atua nos bastidores, sugerindo respostas e preenchendo dados.
+1.  **Zero Friction:** O usuário nunca deve sentir que "perdeu" uma mensagem porque a internet caiu ou a aba fechou. O sistema deve ser resiliente e salvar rascunhos/estados.
+2.  **Optimistic UI:** Ações como enviar mensagem, criar uma tarefa ou adicionar uma nota, a interface atualiza **instantaneamente** na tela, e só depois confirma o envio com o servidor. O usuário não vê "loading" para ações triviais.
+3.  **Contexto Infinito:** O histórico pertence ao Lead, não à conexão. Se o vendedor trocar de número/instância, a conversa com o cliente continua visível e acessível no CRM.
+4.  **IA Invisível:** A IA ("Sentinela") não é um robô chato. Ela é um "copiloto" que atua nos bastidores, sugerindo respostas e preenchendo dados.
 
 ---
 
 ## 2. Arquitetura Técnica Detalhada
 
-### A. O Core Backend (Node.js + @whiskeysockets/baileys)
+### A. O Frontend (Next.js 15 + React 19)
+Atualizado para a arquitetura mais moderna e segura do React.
+*   **Framework:** Next.js 15.1.3 (App Router).
+*   **UI Library:** React 19 + TailwindCSS + Shadcn/UI.
+*   **Data Fetching:** TanStack Query v5 (Gerenciamento de cache e estado assíncrono).
+*   **Excel Export:** `exceljs` (Substituindo `xlsx` por motivos de segurança e performance). Gera planilhas nativas com formatação e filtros.
+*   **State Management:** Zustand (Persistência local de sessão).
+
+### B. O Core Backend (Node.js + @whiskeysockets/baileys)
 Este é o coração pulsante. Ele não é apenas uma API REST; é um Gerenciador de Estado Persistente.
 
 * **Gerenciamento de Sessão:** Usa um `Map<sessionId, socket>` em memória RAM para manter a conexão WebSocket ativa.
-    * *Nota de Infra:* Em ambientes Serverless, é necessário um "Keep-Alive" (Cron-job) batendo na rota `/health` a cada 14 min.
+    * *Nota de Infra:* Em ambientes Serverless, é necessário um "Keep-Alive" (Cron-job) batendo na rota `/health` a cada 14 min.
 * **Fingerprint:** Emula `Ubuntu 24.04` para evitar banimentos e desconexões por "versão obsoleta".
 * **Protocolo de Dados:**
-    * **Entrada:** Webhooks do Baileys (`messages.upsert`, `connection.update`, `messages.update`).
-    * **Saída:** API REST para o Frontend (`POST /api/message/send`).
-    * **Persistência:** Gravação direta no Supabase via `supabase-js` (Service Role) ignorando RLS.
+    * **Entrada:** Webhooks do Baileys (`messages.upsert`, `connection.update`, `messages.update`).
+    * **Saída:** API REST para o Frontend (`POST /api/message/send`).
+    * **Persistência:** Gravação direta no Supabase via `supabase-js` (Service Role) ignorando RLS.
 * **Estratégia de Sincronização (Sync Strategy):**
-    * **Sync First Protocol (Visual Feedback):** Ao conectar, o Backend atualiza a tabela `instances` com `sync_status` ('importing_contacts' -> 'importing_messages' -> 'completed') e `sync_percent`. Isso permite que o Frontend exiba uma tela de bloqueio com barra de progresso real.
-    * **Gerenciamento de Mídia (Supabase Storage):**
-        * Bucket: `chat-media` (Público).
-        * Fluxo: O Backend intercepta msg com mídia -> Baixa o buffer -> Faz upload no Storage -> Salva a URL pública na coluna `messages.media_url`.
-    * **Chunking:** Processamos mensagens históricas em lotes seguros (ex: 50 msgs) para evitar *Out of Memory*.
-    * **Unwrap:** Função nativa (`unwrapMessage`) para desenrolar mensagens complexas (ViewOnce, Editadas, Docs com Legenda) antes de salvar.
-    * **Deduplicação:** Uso rigoroso de `whatsapp_id` + `remote_jid` como chave composta única para evitar mensagens repetidas.
-    * **Mutex:** Sistema de bloqueio (`leadCreationLock`) para impedir criação duplicada de leads em rajadas de mensagens.
+    * **Sync First Protocol (Visual Feedback):** Ao conectar, o Backend atualiza a tabela `instances` com `sync_status` ('importing_contacts' -> 'importing_messages' -> 'completed') e `sync_percent`. Isso permite que o Frontend exiba uma tela de bloqueio com barra de progresso real.
+    * **Gerenciamento de Mídia (Supabase Storage):**
+        * Bucket: `chat-media` (Público).
+        * Fluxo: O Backend intercepta msg com mídia -> Baixa o buffer -> Faz upload no Storage -> Salva a URL pública na coluna `messages.media_url`.
+    * **Chunking:** Processamos mensagens históricas em lotes seguros (ex: 50 msgs) para evitar *Out of Memory*.
+    * **Unwrap:** Função nativa (`unwrapMessage`) para desenrolar mensagens complexas (ViewOnce, Editadas, Docs com Legenda) antes de salvar.
+    * **Deduplicação:** Uso rigoroso de `whatsapp_id` + `remote_jid` como chave composta única para evitar mensagens repetidas.
+    * **Mutex:** Sistema de bloqueio (`leadCreationLock`) para impedir criação duplicada de leads em rajadas de mensagens.
 
-### B. O Banco de Dados (Supabase / PostgreSQL)
+### C. O Banco de Dados (Supabase / PostgreSQL)
 A Fonte da Verdade. Se não está no banco, não existe.
 
 #### Schema Crítico & Relacionamentos
@@ -96,12 +104,12 @@ A Fonte da Verdade. Se não está no banco, não existe.
 O Frontend **NÃO** deve fazer queries complexas ("Joins") manualmente. Usamos funções SQL otimizadas:
 
 * **`get_my_chat_list(p_company_id, p_session_id)`**
-    * **Função:** Retorna a "Inbox" completa e paginada.
-    * **Lógica:** Agrupa mensagens por `remote_jid`, pega a mais recente, junta com `contacts` (para foto/nome/grupos/mute) e `leads` (para dados de negócio). Usa `LEFT JOIN` para garantir que LIDs sem contato apareçam.
-    * **Retorno Crítico:** Inclui `is_muted`, `is_group` (derivado de `@g.us`), `unread_count`.
+    * **Função:** Retorna a "Inbox" completa e paginada.
+    * **Lógica:** Agrupa mensagens por `remote_jid`, pega a mais recente, junta com `contacts` (para foto/nome/grupos/mute) e `leads` (para dados de negócio). Usa `LEFT JOIN` para garantir que LIDs sem contato apareçam.
+    * **Retorno Crítico:** Inclui `is_muted`, `is_group` (derivado de `@g.us`), `unread_count`.
 * **`get_gamification_ranking`**
-    * **Função:** Calcula XP e Ranking.
-    * **Lógica:** XP = (Vendas * 1000) + (Valor / 10).
+    * **Função:** Calcula XP e Ranking.
+    * **Lógica:** XP = (Vendas * 1000) + (Valor / 10).
 
 #### Realtime Strategy (The Hammer Fix)
 * O Frontend escuta o canal `public:messages` filtrando apenas por `company_id`.
@@ -119,72 +127,72 @@ O Chat é o centro de comando unificado.
 * **Busca em Tempo Real:** Filtro instantâneo por Nome, Telefone ou Push Name.
 * **Identificação de Grupos:** Exibe nome do grupo corretamente (identifica `@g.us`).
 * **Indicadores Visuais:**
-    * **Bolinha Verde:** Contador de não lidas (some ao clicar).
-    * **Badge "Novo":** Rótulo temporário (24h) para leads recém-criados.
+    * **Bolinha Verde:** Contador de não lidas (some ao clicar).
+    * **Badge "Novo":** Rótulo temporário (24h) para leads recém-criados.
 * **Gestão de Conversas:**
-    * **Seleção Múltipla:** Checkboxes para selecionar vários chats.
-    * **Ações em Massa:** Silenciar, Apagar (com opção de apagar Lead em cascata).
+    * **Seleção Múltipla:** Checkboxes para selecionar vários chats.
+    * **Ações em Massa:** Silenciar, Apagar (com opção de apagar Lead em cascata).
 * **Deduplicação Inteligente:** O sistema oculta automaticamente sessões secundárias (`@lid`) para evitar que o mesmo contato apareça duas vezes na lista, mantendo apenas a thread principal visível.
 
 **Área de Conversa (Chat Window):**
 * **Checks de Leitura:**
-    * Cinza (1): Enviado ao Servidor.
-    * Cinza (2): Entregue ao Destinatário.
-    * **Azul (2):** Lido/Visualizado.
+    * Cinza (1): Enviado ao Servidor.
+    * Cinza (2): Entregue ao Destinatário.
+    * **Azul (2):** Lido/Visualizado.
 * **Gestão de Histórico (Selection Mode):**
-    * Permite selecionar mensagens individuais para **Apagar** (Delete) ou **Encaminhar**.
-    * Opção "Limpar Conversa" (Clear Chat) no menu superior para resetar o histórico.
+    * Permite selecionar mensagens individuais para **Apagar** (Delete) ou **Encaminhar**.
+    * Opção "Limpar Conversa" (Clear Chat) no menu superior para resetar o histórico.
 
 **Menu de Anexos (Clipper) & Tipos de Mensagem Suportados:**
 O sistema suporta protocolos complexos além de texto. (`MessageContent.tsx`):
 
-1.  **📍 Localização (Location):**
-    * **Envio:** Captura `navigator.geolocation`.
-    * **Renderização:** Exibe um "Fake Static Map" (CSS Styled) com coordenadas e link para Google Maps.
-2.  **📊 Enquete (Poll) [Atualizado]:**
-    * **Estrutura JSON:** `{ name: "Pergunta", options: ["A", "B"], selectableOptionsCount: 1 }`.
-    * **Renderização:** Card interativo com opções selecionáveis e **Barra de Progresso Real** baseada nos votos recebidos.
-3.  **💲 Pix Nativo (Copia e Cola):**
-    * **Backend:** Transforma `type: 'pix'` em `interactiveMessage` (Native Flow).
-    * **UX do Cliente:** Recebe um card oficial com botão **"COPIAR CHAVE PIX"** que interage com a área de transferência do sistema.
-    * **UX do Vendedor:** Vê um card estilizado verde no CRM com a chave e QR Code.
-4.  **👤 Contato (vCard):**
-    * **Envio:** Envia VCard padrão (compatível com botão "Salvar" no celular).
-    * **Renderização:** Card estilo VCard com botão de Download (.vcf).
-5.  **🎤 Áudio PTT:**
-    * **Envio:** Gravação nativa via `MediaRecorder`. Envia com flag `ptt: true` (Onda sonora verde no WhatsApp).
-    * **Renderização:** Player nativo encapsulado em container estilizado.
-6.  **📁 Arquivo de Áudio:** Upload de MP3/WAV como arquivo (ícone de música/fones).
-7.  **📄 Documentos:** PDF/Docx com prévia do nome do arquivo e botão de download.
-8.  **📷 Galeria/Câmera:** Envio de imagens e vídeos com legenda.
+1.  **📍 Localização (Location):**
+    * **Envio:** Captura `navigator.geolocation`.
+    * **Renderização:** Exibe um "Fake Static Map" (CSS Styled) com coordenadas e link para Google Maps.
+2.  **📊 Enquete (Poll) [Atualizado]:**
+    * **Estrutura JSON:** `{ name: "Pergunta", options: ["A", "B"], selectableOptionsCount: 1 }`.
+    * **Renderização:** Card interativo com opções selecionáveis e **Barra de Progresso Real** baseada nos votos recebidos.
+3.  **💲 Pix Nativo (Copia e Cola):**
+    * **Backend:** Transforma `type: 'pix'` em `interactiveMessage` (Native Flow).
+    * **UX do Cliente:** Recebe um card oficial com botão **"COPIAR CHAVE PIX"** que interage com a área de transferência do sistema.
+    * **UX do Vendedor:** Vê um card estilizado verde no CRM com a chave e QR Code.
+4.  **👤 Contato (vCard):**
+    * **Envio:** Envia VCard padrão (compatível com botão "Salvar" no celular).
+    * **Renderização:** Card estilo VCard com botão de Download (.vcf).
+5.  **🎤 Áudio PTT:**
+    * **Envio:** Gravação nativa via `MediaRecorder`. Envia com flag `ptt: true` (Onda sonora verde no WhatsApp).
+    * **Renderização:** Player nativo encapsulado em container estilizado.
+6.  **📁 Arquivo de Áudio:** Upload de MP3/WAV como arquivo (ícone de música/fones).
+7.  **📄 Documentos:** PDF/Docx com prévia do nome do arquivo e botão de download.
+8.  **📷 Galeria/Câmera:** Envio de imagens e vídeos com legenda.
 
 **Sidebar Direita (Lead Command Center - Atualizado):**
 Agora possui navegação por **Abas** para organizar a densidade de informações:
-1.  **Aba Dados:**
-    * **Botões de Ação:** "Adicionar ao CRM" (Verde) / "Remover do CRM" (Vermelho).
-    * **Status Visual:** Se removido, campos ficam bloqueados (Ícone Cadeado).
-    * **Cronômetro (Deadline):** Visualização e edição do prazo do lead com seletor de Data/Hora.
-2.  **Aba Tarefas:**
-    * Checklist com suporte a **Prazos Individuais** (ícone de relógio em cada tarefa).
-    * Ordenação automática (pendentes primeiro).
-3.  **Aba Atividades:**
-    * **Timeline:** Feed unificado de logs do sistema (mudanças de etapa/valor) e Notas manuais.
-    * **Gestão de Links:** Adicionar/Remover URLs importantes.
+1.  **Aba Dados:**
+    * **Botões de Ação:** "Adicionar ao CRM" (Verde) / "Remover do CRM" (Vermelho).
+    * **Status Visual:** Se removido, campos ficam bloqueados (Ícone Cadeado).
+    * **Cronômetro (Deadline):** Visualização e edição do prazo do lead com seletor de Data/Hora.
+2.  **Aba Tarefas:**
+    * Checklist com suporte a **Prazos Individuais** (ícone de relógio em cada tarefa).
+    * Ordenação automática (pendentes primeiro).
+3.  **Aba Atividades:**
+    * **Timeline:** Feed unificado de logs do sistema (mudanças de etapa/valor) e Notas manuais.
+    * **Gestão de Links:** Adicionar/Remover URLs importantes.
 
 ### 📊 Módulo 2: Kanban & Pipeline (Híbrido)
 **Cards do Kanban:**
 * **Cronômetro Visual:**
-    * **Verde:** No prazo (> 24h).
-    * **Amarelo:** Atenção (< 24h, mostra segundos).
-    * **Vermelho:** Vencido (conta o tempo de atraso).
+    * **Verde:** No prazo (> 24h).
+    * **Amarelo:** Atenção (< 24h, mostra segundos).
+    * **Vermelho:** Vencido (conta o tempo de atraso).
 * **Foto do Lead:** Sincronizada com o perfil do WhatsApp.
 * **Indicadores:** Ícones para tarefas pendentes, valor monetário e nome da empresa.
 
 **Interações Avançadas (UX):**
 * **Pan Navigation:** Clicar e arrastar no fundo do board move a rolagem horizontal (estilo Trello/Figma).
 * **Smart Drop & Sort:**
-    * Lógica: Ordenação manual persistente baseada na coluna `position`.
-    * Cálculo: A nova posição é a média matemática: `(Posição Anterior + Posição Posterior) / 2`.
+    * Lógica: Ordenação manual persistente baseada na coluna `position`.
+    * Cálculo: A nova posição é a média matemática: `(Posição Anterior + Posição Posterior) / 2`.
 * **Master List View:** Visualização em tabela para Admins verem todos os leads da empresa.
 
 ### 🤖 Módulo 3: IA Sentinela (Intelligence Layer)
@@ -201,13 +209,13 @@ Agora possui navegação por **Abas** para organizar a densidade de informaçõe
 ### A. Fluxo "Anti-Ghost" & Identidade
 Como o sistema decide quem vira Lead e quem é ignorado?
 
-1.  **Chegada da Mensagem:** Webhook `messages.upsert` dispara.
-2.  **Verificação de Bloqueio:** O sistema checa `contacts.is_ignored`.
-    * Se `TRUE`: A mensagem é salva, mas **nenhum** Lead é criado/atualizado.
-    * Se `FALSE`: Segue para o passo 3.
-3.  **LID Safe:** O sistema aceita mensagens de IDs ocultos (`@lid`) sem quebrar (graças à remoção de FK restrita).
-4.  **Trigger de Unificação:** O Trigger `sync_lid_to_phone_contact` no banco garante que, se uma mensagem chegar via LID, o contato principal (telefone) sobe para o topo da lista.
-5.  **Smart Name:** Se o Lead está salvo apenas como número, e o contato manda mensagem com um Nome de Perfil (PushName), o sistema atualiza o nome do Lead automaticamente.
+1.  **Chegada da Mensagem:** Webhook `messages.upsert` dispara.
+2.  **Verificação de Bloqueio:** O sistema checa `contacts.is_ignored`.
+    * Se `TRUE`: A mensagem é salva, mas **nenhum** Lead é criado/atualizado.
+    * Se `FALSE`: Segue para o passo 3.
+3.  **LID Safe:** O sistema aceita mensagens de IDs ocultos (`@lid`) sem quebrar (graças à remoção de FK restrita).
+4.  **Trigger de Unificação:** O Trigger `sync_lid_to_phone_contact` no banco garante que, se uma mensagem chegar via LID, o contato principal (telefone) sobe para o topo da lista.
+5.  **Smart Name:** Se o Lead está salvo apenas como número, e o contato manda mensagem com um Nome de Perfil (PushName), o sistema atualiza o nome do Lead automaticamente.
 
 ### B. Fluxo de Sincronização (Remover/Adicionar)
 * **Remover:** Define `contacts.is_ignored = true` e deleta o Lead. O Backend para de processar mensagens para o CRM.
@@ -234,18 +242,18 @@ O WhatsApp moderno utiliza dois identificadores:
 
 Ao gerar código para este projeto, você **DEVE** seguir estas regras estritas:
 
-1.  **Integridade do Schema:**
-    * NUNCA invente colunas. Consulte este README e o arquivo SQL.
-    * Use `lead_activities` para logs, **não** crie campos JSON dentro de `leads`.
-    * Use a FK `created_by` apontando para `profiles` (não `auth.users`) ao listar atividades.
-2.  **Data Fetching:**
-    * Para listar chats, **SEMPRE** use a RPC `get_my_chat_list`. Nunca tente fazer joins manuais complexos no Frontend, pois é lento e perde dados de Grupos/Mute.
-3.  **Componentes Globais:**
-    * Use `useLeadData` e `useLeadActivities` para garantir que Chat e Kanban mostrem os mesmos dados em tempo real.
-    * Reutilize `DeadlineTimer.tsx` para consistência visual dos cronômetros.
-4.  **Tipagem:** Respeite os tipos `poll`, `location`, `contact` no envio de mensagens (`whatsappController.js` e `routes.js` já estão adaptados para receber payloads estruturados).
-5.  **Performance:**
-    * Use **Optimistic UI** em interações de checklist, notas e cronômetros. O usuário não pode esperar o banco responder para ver a alteração.
+1.  **Integridade do Schema:**
+    * NUNCA invente colunas. Consulte este README e o arquivo SQL.
+    * Use `lead_activities` para logs, **não** crie campos JSON dentro de `leads`.
+    * Use a FK `created_by` apontando para `profiles` (não `auth.users`) ao listar atividades.
+2.  **Data Fetching:**
+    * Para listar chats, **SEMPRE** use a RPC `get_my_chat_list`. Nunca tente fazer joins manuais complexos no Frontend, pois é lento e perde dados de Grupos/Mute.
+3.  **Componentes Globais:**
+    * Use `useLeadData` e `useLeadActivities` para garantir que Chat e Kanban mostrem os mesmos dados em tempo real.
+    * Reutilize `DeadlineTimer.tsx` para consistência visual dos cronômetros.
+4.  **Tipagem:** Respeite os tipos `poll`, `location`, `contact` no envio de mensagens (`whatsappController.js` e `routes.js` já estão adaptados para receber payloads estruturados).
+5.  **Performance:**
+    * Use **Optimistic UI** em interações de checklist, notas e cronômetros. O usuário não pode esperar o banco responder para ver a alteração.
 
 ---
 

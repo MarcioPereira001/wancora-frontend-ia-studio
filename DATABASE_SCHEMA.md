@@ -595,4 +595,13 @@ $$ LANGUAGE sql SECURITY DEFINER;
 
 ---
 
+### `fill_contact_name_fallback` (Auto-Name Fix)
+Garante que, se um contato for salvo sem nome de agenda, o sistema use automaticamente o `push_name` (Nome do Perfil) como nome de exibição principal.
+
+```sql
+CREATE TRIGGER on_contact_name_fix
+BEFORE INSERT OR UPDATE ON public.contacts
+FOR EACH ROW
+EXECUTE FUNCTION public.fill_contact_name_fallback();
+
 Fim do Schema.

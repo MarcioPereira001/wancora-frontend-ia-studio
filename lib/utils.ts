@@ -43,28 +43,29 @@ export function formatPhone(jid: string): string {
 }
 
 // LÓGICA DE OURO: HIERARQUIA DE NOMES
-// 1. Nome Salvo na Agenda (contact.name)
-// 2. Nome do Perfil (contact.push_name)
-// 3. Telefone Formatado
 export function getDisplayName(contact: any): string {
     if (!contact) return "Usuário";
 
-    // Se for grupo, tenta nome ou fallback
+    // 1. Grupos (Prioridade Total para o Nome se existir)
     if (contact.is_group || contact.remote_jid?.includes('@g.us')) {
-        return contact.name || contact.push_name || "Grupo (Sem Nome)";
+        if (contact.name && contact.name !== contact.remote_jid) return contact.name;
+        if (contact.push_name) return contact.push_name;
+        return "Grupo (Sem Nome)";
     }
     
-    // Verifica se contact.name é válido e não é o próprio número
-    if (contact.name && contact.name !== contact.remote_jid && !contact.name.includes('@')) {
+    // 2. Contato Salvo na Agenda (contact.name)
+    // Ignora se o nome for igual ao ID (alguns backends fazem isso)
+    if (contact.name && contact.name !== contact.remote_jid && !contact.name.includes('@') && !contact.name.includes(':')) {
         return contact.name;
     }
     
-    // Fallback para Push Name
+    // 3. Nome do Perfil (push_name)
+    // Isso é crucial para quem não está na agenda
     if (contact.push_name && contact.push_name !== contact.remote_jid) {
         return contact.push_name;
     }
     
-    // Último caso: Número
+    // 4. Fallback: Formatação do Número
     return formatPhone(contact.remote_jid || contact.jid);
 }
 

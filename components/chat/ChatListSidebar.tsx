@@ -14,29 +14,19 @@ import { useAuthStore } from '@/store/useAuthStore';
 export function ChatListSidebar() {
   const { user } = useAuthStore();
   const supabase = createClient();
-  const { instances } = useRealtimeStore(); // Vindo do Realtime Store (Fase 1)
+  const { instances } = useRealtimeStore();
   
-  // Chat Store
   const { 
       activeContact, setActiveContact, 
       selectedInstance, setSelectedInstance,
       searchTerm, setSearchTerm 
   } = useChatStore();
 
-  // Local state para seleção de inbox (ações em massa)
   const [isInboxSelectionMode, setIsInboxSelectionMode] = React.useState(false);
   const [selectedInboxIds, setSelectedInboxIds] = React.useState<Set<string>>(new Set());
 
-  // Hook de dados
+  // Data Hook
   const { contacts, loading: loadingContacts, refreshChats } = useChatList(selectedInstance?.session_id || null);
-
-  // Efeito para selecionar instância inicial automaticamente
-  React.useEffect(() => {
-      if (!selectedInstance && instances.length > 0) {
-          const connected = instances.find(i => i.status === 'connected') || instances[0];
-          setSelectedInstance(connected);
-      }
-  }, [instances, selectedInstance, setSelectedInstance]);
 
   const filteredContacts = useMemo(() => {
       if (!searchTerm) return contacts;
@@ -54,13 +44,11 @@ export function ChatListSidebar() {
           return;
       }
       
-      // Se clicar no mesmo, não faz nada
-      if (activeContact?.id === contact.id) return;
-
       setActiveContact(contact);
-      setSearchTerm("");
+      // Limpa busca ao selecionar para dar foco na conversa (opcional, removido para UX fluida)
+      // setSearchTerm(""); 
       
-      // Zera contador visualmente
+      // Zera contador
       try {
           await supabase.from('contacts')
             .update({ unread_count: 0 })
@@ -94,7 +82,7 @@ export function ChatListSidebar() {
                     }} 
                     disabled={instances.length === 0}
                 >
-                    {instances.length === 0 ? <option value="">Sem Conexões</option> : instances.map(i => <option key={i.session_id} value={i.session_id}>{i.name}</option>)}
+                    {instances.length === 0 ? <option value="">Carregando...</option> : instances.map(i => <option key={i.session_id} value={i.session_id}>{i.name} ({i.status})</option>)}
                 </select>
             </div>
             
@@ -126,6 +114,7 @@ export function ChatListSidebar() {
         {/* Lista de Contatos */}
         <div className="flex-1 overflow-y-auto custom-scrollbar">
             {loadingContacts ? <div className="flex justify-center p-8"><Loader2 className="animate-spin text-primary" /></div> : 
+             filteredContacts.length === 0 ? <div className="p-8 text-center text-zinc-500 text-sm">Nenhuma conversa encontrada.</div> :
              filteredContacts.map(contact => {
                 const isSelected = selectedInboxIds.has(contact.jid);
                 const isNewLead = contact.updated_at && (new Date().getTime() - new Date(contact.updated_at).getTime() < 24 * 60 * 60 * 1000);
