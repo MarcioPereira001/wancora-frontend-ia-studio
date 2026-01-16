@@ -23,8 +23,14 @@ export function ChatWindow() {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [fetchingMore, setFetchingMore] = React.useState(false);
 
-  const scrollToBottom = (behavior: 'auto' | 'smooth' = 'smooth') => {
-      messagesEndRef.current?.scrollIntoView({ behavior });
+  const scrollToBottom = (behavior: 'auto' | 'smooth' = 'auto') => {
+      // PERFORMANCE FIX: requestAnimationFrame garante execução no próximo frame de renderização
+      // removendo delays artificiais de setTimeout(..., 100)
+      requestAnimationFrame(() => {
+          if (messagesEndRef.current) {
+              messagesEndRef.current.scrollIntoView({ behavior });
+          }
+      });
   };
 
   const loadMessages = async (offset: number) => {
@@ -45,7 +51,7 @@ export function ChatWindow() {
       return (data || []).reverse(); 
   };
 
-  // Carga Inicial
+  // Carga Inicial - OTIMIZADA (Zero Delay)
   useEffect(() => {
       if (!activeContact) return;
 
@@ -55,9 +61,13 @@ export function ChatWindow() {
           setHasMoreMessages(true);
           
           const initialMsgs = await loadMessages(0);
+          
+          // Renderiza IMEDIATAMENTE
           setMessages(initialMsgs);
           setLoadingMessages(false);
-          setTimeout(() => scrollToBottom('auto'), 100);
+          
+          // Scroll instantâneo sem animação no load inicial para parecer nativo
+          scrollToBottom('auto');
       };
 
       initChat();
@@ -73,11 +83,11 @@ export function ChatWindow() {
           
           if (olderMessages.length > 0) {
               setMessages(prev => [...olderMessages, ...prev]);
-              // Mantém a posição do scroll
-              setTimeout(() => { 
+              // Mantém a posição do scroll visualmente estável
+              requestAnimationFrame(() => { 
                   if (scrollContainerRef.current) 
                       scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight - currentHeight; 
-              }, 0);
+              });
           } else { 
               setHasMoreMessages(false); 
           }
@@ -88,7 +98,8 @@ export function ChatWindow() {
   // Auto-scroll on new message
   useEffect(() => {
       if (messages.length > 0 && !fetchingMore && !loadingMessages) {
-          setTimeout(() => scrollToBottom('smooth'), 100);
+          // Apenas mensagens novas recebem scroll suave
+          scrollToBottom('smooth');
       }
   }, [messages.length]);
 
@@ -99,18 +110,11 @@ export function ChatWindow() {
         className="flex-1 overflow-y-auto p-4 md:p-6 space-y-2 relative custom-scrollbar" 
         style={{ backgroundImage: 'radial-gradient(circle at center, rgba(34, 197, 94, 0.03) 0%, transparent 70%)' }}
     >
-        {/* REMOVIDO: Spinner de fetchingMore */}
-        
         {/* Aviso de início de conversa (só aparece se já carregou e tem mensagens) */}
         {!hasMoreMessages && !loadingMessages && messages.length > 0 && (
             <div className="text-center py-4 text-xs text-zinc-600">Início da conversa</div>
         )}
 
-        {/* MUDANÇA CRÍTICA:
-            Removemos a condição {loadingMessages ? <Spinner/> : map}.
-            Agora fazemos o map direto. Se estiver carregando, array vazio = tela limpa.
-            Assim que os dados chegam, eles aparecem instantaneamente.
-        */}
         {messages.map((msg, idx) => (
             <div key={msg.id || idx} className={`flex w-full mb-1`}>
                 <MessageBubble 
