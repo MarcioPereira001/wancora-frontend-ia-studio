@@ -43,17 +43,9 @@ export function ChatListSidebar() {
           handleInboxSelect(contact.jid);
           return;
       }
-      
       setActiveContact(contact);
-      // Limpa busca ao selecionar para dar foco na conversa (opcional, removido para UX fluida)
-      // setSearchTerm(""); 
-      
-      // Zera contador
       try {
-          await supabase.from('contacts')
-            .update({ unread_count: 0 })
-            .eq('jid', contact.jid)
-            .eq('company_id', user?.company_id);
+          await supabase.from('contacts').update({ unread_count: 0 }).eq('jid', contact.jid).eq('company_id', user?.company_id);
           refreshChats();
       } catch (e) {}
   };
@@ -113,8 +105,19 @@ export function ChatListSidebar() {
 
         {/* Lista de Contatos */}
         <div className="flex-1 overflow-y-auto custom-scrollbar">
-            {loadingContacts ? <div className="flex justify-center p-8"><Loader2 className="animate-spin text-primary" /></div> : 
-             filteredContacts.length === 0 ? <div className="p-8 text-center text-zinc-500 text-sm">Nenhuma conversa encontrada.</div> :
+            {/* Removemos o loading state bloqueante. Se tiver contatos, mostra. Se estiver carregando, mostra spinner pequeno no topo ou nada. */}
+            {filteredContacts.length === 0 ? (
+                <div className="p-8 text-center flex flex-col items-center justify-center h-40">
+                    {loadingContacts ? (
+                        <>
+                            <Loader2 className="animate-spin text-zinc-600 mb-2" />
+                            <span className="text-zinc-500 text-xs">Carregando conversas...</span>
+                        </>
+                    ) : (
+                        <span className="text-zinc-500 text-sm">Nenhuma conversa encontrada.</span>
+                    )}
+                </div>
+            ) : (
              filteredContacts.map(contact => {
                 const isSelected = selectedInboxIds.has(contact.jid);
                 const isNewLead = contact.updated_at && (new Date().getTime() - new Date(contact.updated_at).getTime() < 24 * 60 * 60 * 1000);
@@ -144,7 +147,7 @@ export function ChatListSidebar() {
                         </div>
                     </div>
                 );
-             })}
+             }))}
         </div>
     </div>
   );
