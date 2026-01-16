@@ -3,7 +3,7 @@
 import React, { useEffect, useRef } from 'react';
 import { useChatStore } from '@/store/useChatStore';
 import { MessageBubble } from '@/components/chat/MessageBubble';
-import { Loader2 } from 'lucide-react';
+// REMOVIDO: import { Loader2 } from 'lucide-react'; 
 import { createClient } from '@/utils/supabase/client';
 import { useAuthStore } from '@/store/useAuthStore';
 
@@ -85,12 +85,9 @@ export function ChatWindow() {
       }
   };
 
-  // Auto-scroll on new message (se estiver perto do fim)
+  // Auto-scroll on new message
   useEffect(() => {
       if (messages.length > 0 && !fetchingMore && !loadingMessages) {
-          // Lógica simples: se for a primeira carga ou msg nova, scroll.
-          // Refinamento: Só scrollar se usuário já estiver no fim.
-          // Por enquanto, scrollamos sempre para garantir UX de chat em tempo real.
           setTimeout(() => scrollToBottom('smooth'), 100);
       }
   }, [messages.length]);
@@ -102,12 +99,19 @@ export function ChatWindow() {
         className="flex-1 overflow-y-auto p-4 md:p-6 space-y-2 relative custom-scrollbar" 
         style={{ backgroundImage: 'radial-gradient(circle at center, rgba(34, 197, 94, 0.03) 0%, transparent 70%)' }}
     >
-        {fetchingMore && <div className="flex justify-center py-2"><Loader2 className="w-5 h-5 text-primary/50 animate-spin" /></div>}
-        {!hasMoreMessages && !loadingMessages && messages.length > 0 && <div className="text-center py-4 text-xs text-zinc-600">Início da conversa</div>}
+        {/* REMOVIDO: Spinner de fetchingMore */}
+        
+        {/* Aviso de início de conversa (só aparece se já carregou e tem mensagens) */}
+        {!hasMoreMessages && !loadingMessages && messages.length > 0 && (
+            <div className="text-center py-4 text-xs text-zinc-600">Início da conversa</div>
+        )}
 
-        {loadingMessages ? (
-            <div className="flex h-full items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-primary/50" /></div>
-        ) : messages.map((msg, idx) => (
+        {/* MUDANÇA CRÍTICA:
+            Removemos a condição {loadingMessages ? <Spinner/> : map}.
+            Agora fazemos o map direto. Se estiver carregando, array vazio = tela limpa.
+            Assim que os dados chegam, eles aparecem instantaneamente.
+        */}
+        {messages.map((msg, idx) => (
             <div key={msg.id || idx} className={`flex w-full mb-1`}>
                 <MessageBubble 
                     message={msg} 
@@ -117,6 +121,7 @@ export function ChatWindow() {
                 />
             </div>
         ))}
+        
         <div ref={messagesEndRef} />
     </div>
   );
