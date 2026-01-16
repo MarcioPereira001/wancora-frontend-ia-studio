@@ -105,7 +105,6 @@ export function ChatListSidebar() {
 
         {/* Lista de Contatos */}
         <div className="flex-1 overflow-y-auto custom-scrollbar">
-            {/* Removemos o loading state bloqueante. Se tiver contatos, mostra. Se estiver carregando, mostra spinner pequeno no topo ou nada. */}
             {filteredContacts.length === 0 ? (
                 <div className="p-8 text-center flex flex-col items-center justify-center h-40">
                     {loadingContacts ? (
@@ -121,6 +120,9 @@ export function ChatListSidebar() {
              filteredContacts.map(contact => {
                 const isSelected = selectedInboxIds.has(contact.jid);
                 const isNewLead = contact.updated_at && (new Date().getTime() - new Date(contact.updated_at).getTime() < 24 * 60 * 60 * 1000);
+                
+                // PRIORITY NAME LOGIC: Agenda Name > Push Name > Formatted Phone
+                const displayName = contact.name || contact.push_name || contact.phone_number || "Usuário";
 
                 return (
                     <div key={contact.id} onClick={() => handleContactSelect(contact)} className={cn("p-4 border-b border-zinc-800/30 cursor-pointer hover:bg-zinc-800/50 relative transition-colors", activeContact?.id === contact.id && !isInboxSelectionMode ? 'bg-primary/5 border-l-2 border-l-primary' : '', isSelected ? "bg-primary/10" : "")}>
@@ -128,11 +130,11 @@ export function ChatListSidebar() {
                             {isInboxSelectionMode && (<div className="mr-3 mt-1"><Checkbox checked={isSelected} onCheckedChange={() => handleInboxSelect(contact.jid)} className="border-zinc-600 data-[state=checked]:bg-primary" /></div>)}
                             <div className="flex items-center gap-3 overflow-hidden flex-1">
                                  <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center shrink-0 border border-zinc-700 overflow-hidden relative">
-                                    {contact.profile_pic_url ? (<img src={contact.profile_pic_url} className="w-full h-full object-cover" />) : contact.is_group ? (<Users className="w-5 h-5 text-zinc-500" />) : (<span className="text-zinc-500 font-bold">{contact.name?.charAt(0) || 'U'}</span>)}
+                                    {contact.profile_pic_url ? (<img src={contact.profile_pic_url} className="w-full h-full object-cover" />) : contact.is_group ? (<Users className="w-5 h-5 text-zinc-500" />) : (<span className="text-zinc-500 font-bold">{displayName.charAt(0).toUpperCase()}</span>)}
                                  </div>
                                  <div className="min-w-0 flex-1">
                                     <div className="flex justify-between items-center">
-                                        <span className={cn("font-medium truncate block", activeContact?.id === contact.id ? 'text-primary' : 'text-zinc-200')}>{contact.name}</span>
+                                        <span className={cn("font-medium truncate block", activeContact?.id === contact.id ? 'text-primary' : 'text-zinc-200')}>{displayName}</span>
                                         <span className="text-[10px] text-zinc-500">{contact.last_message_time ? new Date(contact.last_message_time).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : ''}</span>
                                     </div>
                                     <div className="flex items-center justify-between mt-0.5">
