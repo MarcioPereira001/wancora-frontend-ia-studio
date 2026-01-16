@@ -7,7 +7,7 @@ import { useChatStore } from '@/store/useChatStore';
 import { useRealtimeStore } from '@/store/useRealtimeStore';
 import { Message } from '@/types';
 import { cn } from '@/lib/utils';
-import { Smartphone, Database, Loader2, Lock, DownloadCloud, CheckCircle2, RefreshCw } from 'lucide-react';
+import { Smartphone, CheckCircle2, RefreshCw, Lock } from 'lucide-react'; // Removi ícones não usados
 
 // Atomic Components
 import { ChatListSidebar } from '@/components/chat/ChatListSidebar';
@@ -41,27 +41,32 @@ export default function ChatPage() {
       }
   }, [instances, selectedInstance, setSelectedInstance]);
 
-  // --- SYNC STATE LOGIC (SMART SYNC V4.0) ---
+  // --- SYNC STATE LOGIC (COMPATÍVEL COM NOVO BACKEND) ---
   const syncStatus = selectedInstance?.sync_status || 'completed';
-  const isSyncing = (syncStatus === 'importing_contacts' || syncStatus === 'importing_messages' || syncStatus === 'waiting') && selectedInstance?.status === 'connected';
+  
+  // CORREÇÃO: O backend agora manda 'syncing' quando está baixando histórico
+  const isSyncing = (syncStatus === 'syncing') && selectedInstance?.status === 'connected';
   const syncPercent = selectedInstance?.sync_percent || 0;
   
   // Texto dinâmico do status
-  let syncLabel = "Conectando...";
-  let syncSubLabel = "Estabelecendo túnel criptografado";
+  let syncLabel = "Sincronizando WhatsApp";
+  let syncSubLabel = "Baixando histórico de conversas recentes...";
   
-  if (syncStatus === 'importing_contacts') {
-      syncLabel = "Organizando Agenda";
-      syncSubLabel = "Identificando contatos e nomes...";
-  } else if (syncStatus === 'importing_messages') {
-      syncLabel = "Sincronizando Histórico";
-      syncSubLabel = "Baixando e indexando conversas recentes...";
+  // Ajuste fino para feedback visual dependendo da porcentagem
+  if (syncPercent < 20) {
+      syncLabel = "Conectando...";
+      syncSubLabel = "Estabelecendo conexão segura...";
+  } else if (syncPercent < 50) {
+      syncLabel = "Organizando Contatos";
+      syncSubLabel = "Verificando agenda e nomes...";
+  } else {
+      syncLabel = "Finalizando Histórico";
+      syncSubLabel = "Indexando últimas mensagens...";
   }
 
   // --- MATH FOR SVG CIRCLE ---
   const radius = 60;
   const circumference = 2 * Math.PI * radius;
-  // Garante que o percentual esteja entre 0 e 100
   const safePercent = Math.min(Math.max(syncPercent, 0), 100);
   const offset = circumference - (safePercent / 100) * circumference;
 
@@ -136,7 +141,7 @@ export default function ChatPage() {
   return (
     <div className="flex h-[calc(100vh-6rem)] md:h-[calc(100vh-4rem)] rounded-xl border border-zinc-800 bg-zinc-950/50 overflow-hidden shadow-2xl animate-in fade-in duration-500 relative">
       
-      {/* --- SMART SYNC OVERLAY (SVG PROGRESSIVE) --- */}
+      {/* --- SMART SYNC OVERLAY (BLOQUEIO TOTAL) --- */}
       {isSyncing && (
           <div className="fixed inset-0 z-[9999] bg-zinc-950/90 backdrop-blur-xl flex flex-col items-center justify-center text-center animate-in fade-in duration-500 cursor-wait">
               
@@ -147,31 +152,31 @@ export default function ChatPage() {
                   
                   {/* Círculo SVG */}
                   <div className="relative w-48 h-48">
-                       {/* Background Circle */}
-                       <svg className="w-full h-full transform -rotate-90 drop-shadow-[0_0_15px_rgba(34,197,94,0.3)]">
-                         <circle
-                           cx="96" cy="96" r={radius}
-                           stroke="currentColor" strokeWidth="8" fill="transparent"
-                           className="text-zinc-800"
-                         />
-                         {/* Progress Circle */}
-                         <circle
-                           cx="96" cy="96" r={radius}
-                           stroke="currentColor" strokeWidth="8" fill="transparent"
-                           strokeDasharray={circumference}
-                           strokeDashoffset={offset}
-                           strokeLinecap="round"
-                           className="text-primary transition-all duration-700 ease-out"
-                         />
-                       </svg>
-                       
-                       {/* Percentual Centralizado */}
-                       <div className="absolute inset-0 flex flex-col items-center justify-center">
-                         <span className="text-4xl font-bold text-white font-mono tracking-tighter">
-                            {safePercent}%
-                         </span>
-                         <RefreshCw className="w-5 h-5 text-primary/80 animate-spin mt-2" />
-                       </div>
+                        {/* Background Circle */}
+                        <svg className="w-full h-full transform -rotate-90 drop-shadow-[0_0_15px_rgba(34,197,94,0.3)]">
+                          <circle
+                            cx="96" cy="96" r={radius}
+                            stroke="currentColor" strokeWidth="8" fill="transparent"
+                            className="text-zinc-800"
+                          />
+                          {/* Progress Circle */}
+                          <circle
+                            cx="96" cy="96" r={radius}
+                            stroke="currentColor" strokeWidth="8" fill="transparent"
+                            strokeDasharray={circumference}
+                            strokeDashoffset={offset}
+                            strokeLinecap="round"
+                            className="text-primary transition-all duration-700 ease-out"
+                          />
+                        </svg>
+                        
+                        {/* Percentual Centralizado */}
+                        <div className="absolute inset-0 flex flex-col items-center justify-center">
+                          <span className="text-4xl font-bold text-white font-mono tracking-tighter">
+                             {safePercent}%
+                          </span>
+                          <RefreshCw className="w-5 h-5 text-primary/80 animate-spin mt-2" />
+                        </div>
                   </div>
 
                   <div className="space-y-2 max-w-sm">
@@ -189,7 +194,7 @@ export default function ChatPage() {
           </div>
       )}
 
-      {/* LEFT SIDEBAR */}
+      {/* LEFT SIDEBAR (Contatos) */}
       <ChatListSidebar />
 
       {/* MAIN CONTENT AREA */}
@@ -219,15 +224,16 @@ export default function ChatPage() {
                     </>
                 ) : (
                     <>
-                        <Loader2 className="h-10 w-10 text-primary animate-spin mb-4" />
-                        <p className="text-sm text-zinc-400">Conectando à instância...</p>
+                        {/* Se não tiver instância selecionada, não mostra spinner, apenas texto */}
+                        <Smartphone className="h-10 w-10 text-zinc-700 mb-4" />
+                        <p className="text-sm text-zinc-400">Selecione ou conecte uma instância.</p>
                     </>
                 )}
             </div>
         )}
       </div>
 
-      {/* RIGHT SIDEBAR */}
+      {/* RIGHT SIDEBAR (Detalhes) */}
       {activeContact && selectedInstance && (
           <ChatSidebar contact={activeContact} lead={activeLead} refreshLead={refreshLeadData} />
       )}
