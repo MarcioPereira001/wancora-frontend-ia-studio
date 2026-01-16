@@ -7,7 +7,7 @@ import { ChatContact, Message, Instance, Lead } from '@/types';
 import { cleanJid, cn } from '@/lib/utils';
 import { 
     Loader2, Search, Send, Paperclip, Sparkles, Mic, 
-    Image as IconImage, FileText, BarChart2, X, Trash2, ArrowLeft, User, Smartphone, Wifi, Clock, MoreVertical, CheckSquare, BellOff, Bell, Users, Check, MapPin, DollarSign, List, Plus, Copy, Crosshair, StopCircle, Music
+    Image as IconImage, FileText, BarChart2, X, Trash2, ArrowLeft, User, Smartphone, Wifi, Clock, MoreVertical, CheckSquare, BellOff, Bell, Users, Check, MapPin, DollarSign, List, Plus, Copy, Crosshair, StopCircle, Music, RefreshCw
 } from 'lucide-react';
 import { MessageBubble } from '@/components/chat/MessageBubble';
 import { ChatSidebar } from '@/components/chat/ChatSidebar';
@@ -68,11 +68,28 @@ export default function ChatPage() {
   const [activeContact, setActiveContact] = useState<ChatContact | null>(null);
   const [activeLead, setActiveLead] = useState<Lead | null>(null);
   
+  // --- LIVE BINDING (Sincronização em Tempo Real do Contato Ativo) ---
+  // Se o backend atualizar o nome/foto do contato (ex: via celular), reflete no chat aberto imediatamente.
+  useEffect(() => {
+      if (activeContact && contacts.length > 0) {
+          const updatedContact = contacts.find(c => c.jid === activeContact.jid);
+          if (updatedContact) {
+              // Verifica se houve mudança real para evitar re-render loops
+              if (
+                  updatedContact.name !== activeContact.name || 
+                  updatedContact.profile_pic_url !== activeContact.profile_pic_url ||
+                  updatedContact.unread_count !== activeContact.unread_count
+              ) {
+                  // Preserva o ID mas atualiza os metadados visuais
+                  setActiveContact(prev => prev ? { ...prev, ...updatedContact } : null);
+              }
+          }
+      }
+  }, [contacts, activeContact?.jid]); // Dependência em contacts (que vem do Realtime Hook)
+
   // INBOX SELECTION
   const [isInboxSelectionMode, setIsInboxSelectionMode] = useState(false);
   const [selectedInboxIds, setSelectedInboxIds] = useState<Set<string>>(new Set());
-  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
-  const [deleteLeadToo, setDeleteLeadToo] = useState(false);
   
   // Message State
   const [messages, setMessages] = useState<Message[]>([]);
@@ -85,8 +102,6 @@ export default function ChatPage() {
   const [selectedMsgIds, setSelectedMsgIds] = useState<Set<string>>(new Set());
   const [showOptionsMenu, setShowOptionsMenu] = useState(false);
   const [input, setInput] = useState("");
-  const [isAiLoading, setIsAiLoading] = useState(false);
-  const [isSchedulerOpen, setIsSchedulerOpen] = useState(false);
   const [mediaMenuOpen, setMediaMenuOpen] = useState(false);
   
   // -- MEDIA RECORDING --
@@ -98,20 +113,12 @@ export default function ChatPage() {
 
   // -- MODALS STATE --
   const [activeModal, setActiveModal] = useState<'poll'|'pix'|'contact'|'location'|null>(null);
-  
-  // Poll Data
   const [pollQuestion, setPollQuestion] = useState("");
   const [pollOptions, setPollOptions] = useState(["Sim", "Não"]);
-  
-  // Pix Data
   const [pixKey, setPixKey] = useState("");
   const [pixType, setPixType] = useState("cpf");
-  
-  // Contact Data
   const [contactName, setContactName] = useState("");
   const [contactPhone, setContactPhone] = useState("");
-  
-  // Location Data
   const [locLat, setLocLat] = useState<number | null>(null);
   const [locLng, setLocLng] = useState<number | null>(null);
   const [locLoading, setLocLoading] = useState(false);
@@ -119,9 +126,9 @@ export default function ChatPage() {
   // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const mediaMenuRef = useRef<HTMLDivElement>(null); // Ref para click outside
-  const fileInputRef = useRef<HTMLInputElement>(null); // Added missing ref
-  const audioInputRef = useRef<HTMLInputElement>(null); // Ref separado para Audio File
+  const mediaMenuRef = useRef<HTMLDivElement>(null); 
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const audioInputRef = useRef<HTMLInputElement>(null);
   
   const scrollToBottom = (behavior: 'auto' | 'smooth' = 'smooth') => {
       messagesEndRef.current?.scrollIntoView({ behavior });
@@ -140,8 +147,6 @@ export default function ChatPage() {
       };
   }, []);
 
-  // --- ACTIONS ---
-  
   const handleContactSelect = async (contact: ChatContact) => {
       if (isInboxSelectionMode) {
           handleInboxSelect(contact.jid);
@@ -151,29 +156,41 @@ export default function ChatPage() {
       setSearchTerm("");
       setMediaMenuOpen(false); 
       
-      // Zera LOCALMENTE para UX instantânea
-      contact.unread_count = 0;
-      
-      // Tenta zerar no banco
+      // Zera contador localmente para feedback instantâneo
+      const updatedContact = { ...contact, unread_count: 0 };
+      setActiveContact(updatedContact);
+
       try {
           await supabase.from('contacts')
             .update({ unread_count: 0 })
             .eq('jid', contact.jid)
             .eq('company_id', user?.company_id);
-          
           refreshChats();
+      } catch (e) {}
+  };
+
+  // --- IDENTITY UNIFICATION LOGIC ---
+  const linkIdentity = async (lidJid: string, phoneJid: string) => {
+      if (!user?.company_id) return;
+      console.log(`[Identity] Linking LID ${lidJid} to Phone ${phoneJid}`);
+      
+      try {
+          await supabase.rpc('link_identities', {
+              p_lid: lidJid,
+              p_phone: phoneJid,
+              p_company_id: user.company_id
+          });
+          // Refresh after link to get the merged messages
+          const msgs = await loadMessages(0);
+          setMessages(msgs);
       } catch (e) {
-          console.error("Erro ao zerar unread:", e);
+          console.error("Link failed:", e);
       }
   };
 
-  // --- FETCH MESSAGES ---
-  const fetchMessages = async (offset: number) => {
+  const loadMessages = async (offset: number) => {
       if(!activeContact || !user?.company_id) return [];
       
-      // FIX CRÍTICO: Removido ", contacts (push_name)"
-      // A tabela 'messages' NÃO tem FK para 'contacts' (ver Schema Rule 1).
-      // Isso causava erro 400.
       const { data, error } = await supabase
         .from('messages')
         .select(`*`) 
@@ -189,7 +206,6 @@ export default function ChatPage() {
       return (data || []).reverse(); 
   };
 
-  // --- LEAD REFRESH ---
   const refreshLeadData = async () => {
       if(!activeContact || !user?.company_id) return;
       const cleanPhone = activeContact.remote_jid.split('@')[0].replace(/\D/g, '');
@@ -220,7 +236,7 @@ export default function ChatPage() {
             setMessages([]);
             setHasMoreMessages(true);
             
-            const initialMsgs = await fetchMessages(0);
+            const initialMsgs = await loadMessages(0);
             setMessages(initialMsgs);
             
             await refreshLeadData();
@@ -235,40 +251,37 @@ export default function ChatPage() {
       initChat();
 
       const channel = supabase
-        .channel(`chat-room:${activeContact.remote_jid}`)
+        .channel(`chat-room-global`)
         .on('postgres_changes', { 
             event: 'INSERT', 
             schema: 'public', 
-            table: 'messages', 
-            filter: `remote_jid=eq.${activeContact.remote_jid}` // Filtra apenas pelo contato atual
-        }, (payload) => {
+            table: 'messages'
+        }, async (payload) => {
             const newMessage = payload.new as Message;
-            
             if (newMessage.company_id !== user?.company_id) return;
 
-            setMessages(prev => {
-                const exists = prev.some(m => m.id === newMessage.id);
-                if (exists) return prev;
+            // Se a mensagem for deste chat ou de um LID relacionado, atualiza a UI
+            // O refreshChats global (useChatList) já cuida da sidebar
+            refreshChats();
 
-                if (newMessage.from_me) {
-                    const tempIndex = prev.findIndex(m => 
-                        m.status === 'sending' && 
-                        (m.content === newMessage.content || m.message_type === newMessage.message_type)
-                    );
-                    if (tempIndex !== -1) {
-                        const newArr = [...prev];
-                        newArr[tempIndex] = newMessage;
-                        return newArr;
-                    }
-                }
-
-                return [...prev, newMessage];
-            });
-
-            setTimeout(() => scrollToBottom('smooth'), 100);
+            const isLid = newMessage.remote_jid.includes('@lid');
+            const isActiveChat = newMessage.remote_jid === activeContact.remote_jid;
             
-            if (!newMessage.from_me) {
-                supabase.from('contacts').update({ unread_count: 0 }).eq('jid', activeContact.remote_jid);
+            if (!isActiveChat && isLid && activeContact.remote_jid.includes('@s.whatsapp.net')) {
+                await linkIdentity(newMessage.remote_jid, activeContact.remote_jid);
+                return;
+            }
+
+            if (isActiveChat || isLid) {
+                setMessages(prev => {
+                    if (prev.some(m => m.id === newMessage.id)) return prev;
+                    return [...prev, newMessage];
+                });
+                setTimeout(() => scrollToBottom('smooth'), 100);
+                
+                if (!newMessage.from_me) {
+                    supabase.from('contacts').update({ unread_count: 0 }).eq('jid', activeContact.remote_jid);
+                }
             }
         })
         .subscribe();
@@ -276,7 +289,6 @@ export default function ChatPage() {
       return () => { supabase.removeChannel(channel); };
   }, [activeContact?.id, user?.company_id]);
 
-  // --- SENDING LOGIC ---
   const dispatchMessage = async (payload: any) => {
       if(!activeContact || !user?.company_id || !selectedInstance) return;
       
@@ -334,94 +346,51 @@ export default function ChatPage() {
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file || !user?.company_id) return;
-      
-      if (file.size > 50 * 1024 * 1024) {
-          addToast({ type: 'error', title: 'Arquivo muito grande', message: 'Limite máximo de 50MB.' });
-          return;
-      }
-
+      if (file.size > 50 * 1024 * 1024) { addToast({ type: 'error', title: 'Limite', message: 'Máx 50MB.' }); return; }
       setMediaMenuOpen(false); 
-      addToast({ type: 'info', title: 'Upload', message: 'Enviando arquivo...' });
-      
+      addToast({ type: 'info', title: 'Upload', message: 'Enviando...' });
       try {
           const { publicUrl, fileName } = await uploadChatMedia(file, user.company_id);
           let type = 'document';
           let ptt = false;
-
           if (file.type.startsWith('image/')) type = 'image';
           else if (file.type.startsWith('video/')) type = 'video';
-          else if (file.type.startsWith('audio/')) {
-              type = 'audio';
-              ptt = false; 
-          }
-          
-          await dispatchMessage({ 
-              type, 
-              url: publicUrl, 
-              caption: input, 
-              fileName: fileName,
-              mimetype: file.type,
-              ptt: ptt 
-          }); 
+          else if (file.type.startsWith('audio/')) { type = 'audio'; ptt = false; }
+          await dispatchMessage({ type, url: publicUrl, caption: input, fileName: fileName, mimetype: file.type, ptt: ptt }); 
           setInput("");
-      } catch (e: any) {
-          addToast({ type: 'error', title: 'Erro', message: e.message });
-      } finally {
-          if (fileInputRef.current) fileInputRef.current.value = ''; 
-          if (audioInputRef.current) audioInputRef.current.value = ''; 
-      }
+      } catch (e: any) { addToast({ type: 'error', title: 'Erro', message: e.message }); }
+      finally { if (fileInputRef.current) fileInputRef.current.value = ''; if (audioInputRef.current) audioInputRef.current.value = ''; }
   };
 
-  // --- AUDIO RECORDING (PTT) ---
   const startRecording = async () => {
       try {
           const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
           const mediaRecorder = new MediaRecorder(stream);
           mediaRecorderRef.current = mediaRecorder;
           audioChunksRef.current = [];
-
-          mediaRecorder.ondataavailable = (event) => {
-              if (event.data.size > 0) audioChunksRef.current.push(event.data);
-          };
-
+          mediaRecorder.ondataavailable = (event) => { if (event.data.size > 0) audioChunksRef.current.push(event.data); };
           mediaRecorder.onstop = async () => {
               const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/mp3' });
               const audioFile = new File([audioBlob], `voice_${Date.now()}.mp3`, { type: 'audio/mp3' });
-              
               if (audioFile.size > 0 && user?.company_id) {
                   try {
                       const { publicUrl } = await uploadChatMedia(audioFile, user.company_id);
-                      await dispatchMessage({ 
-                          type: 'audio', 
-                          url: publicUrl, 
-                          mimetype: 'audio/mp4',
-                          ptt: true
-                      });
-                  } catch (e) {
-                      addToast({ type: 'error', title: 'Erro', message: 'Falha ao enviar áudio.' });
-                  }
+                      await dispatchMessage({ type: 'audio', url: publicUrl, mimetype: 'audio/mp4', ptt: true });
+                  } catch (e) {}
               }
               stream.getTracks().forEach(track => track.stop());
           };
-
           mediaRecorder.start();
           setIsRecording(true);
           setRecordingTime(0);
           timerRef.current = setInterval(() => setRecordingTime(prev => prev + 1), 1000);
-
-      } catch (err) {
-          addToast({ type: 'error', title: 'Microfone', message: 'Permissão negada ou indisponível.' });
-      }
+      } catch (err) { addToast({ type: 'error', title: 'Microfone', message: 'Permissão negada.' }); }
   };
 
   const stopRecording = (cancel = false) => {
       if (mediaRecorderRef.current && isRecording) {
-          if (cancel) {
-              mediaRecorderRef.current.stream.getTracks().forEach(t => t.stop());
-              mediaRecorderRef.current = null;
-          } else {
-              mediaRecorderRef.current.stop();
-          }
+          if (cancel) { mediaRecorderRef.current.stream.getTracks().forEach(t => t.stop()); mediaRecorderRef.current = null; } 
+          else { mediaRecorderRef.current.stop(); }
       }
       setIsRecording(false);
       if (timerRef.current) clearInterval(timerRef.current);
@@ -434,113 +403,34 @@ export default function ChatPage() {
       return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // --- SPECIAL SEND HANDLERS ---
-  const handleCreatePoll = () => {
-      if(!pollQuestion.trim()) return;
-      const validOptions = pollOptions.filter(o => o.trim().length > 0);
-      
-      if (validOptions.length < 2) {
-          addToast({type: 'warning', title: 'Enquete Inválida', message: 'Preencha pelo menos 2 opções.'});
-          return;
-      }
+  // Special Handlers
+  const handleCreatePoll = () => { if(!pollQuestion.trim()) return; const valid = pollOptions.filter(o => o.trim().length > 0); if(valid.length < 2) return; dispatchMessage({ type: 'poll', content: { name: pollQuestion, options: valid, selectableOptionsCount: 1 } }); setPollQuestion(""); setPollOptions(["Sim", "Não"]); setActiveModal(null); };
+  const handleSendPix = () => { if(!pixKey.trim()) return; dispatchMessage({ type: 'pix', text: pixKey }); setPixKey(""); setActiveModal(null); };
+  const handleSendContact = () => { if(!contactName.trim() || !contactPhone.trim()) return; const vcard = `BEGIN:VCARD\nVERSION:3.0\nFN:${contactName}\nTEL;type=CELL:${contactPhone}\nEND:VCARD`; dispatchMessage({ type: 'contact', content: { displayName: contactName, vcard, phone: contactPhone } }); setContactName(""); setContactPhone(""); setActiveModal(null); };
+  const getCurrentLocation = () => { if (!navigator.geolocation) return; setLocLoading(true); navigator.geolocation.getCurrentPosition((pos) => { setLocLat(pos.coords.latitude); setLocLng(pos.coords.longitude); setLocLoading(false); }, (err) => { setLocLoading(false); }, { enableHighAccuracy: true, timeout: 10000 }); };
+  const handleSendLocation = () => { if (locLat && locLng) { dispatchMessage({ type: 'location', content: { latitude: locLat, longitude: locLng } }); setActiveModal(null); setLocLat(null); setLocLng(null); } };
 
-      dispatchMessage({ 
-          type: 'poll', 
-          content: { 
-              name: pollQuestion, 
-              options: validOptions, 
-              selectableOptionsCount: 1 
-          } 
-      });
-      setPollQuestion(""); setPollOptions(["Sim", "Não"]); setActiveModal(null);
-  };
-
-  const handleSendPix = () => {
-      if(!pixKey.trim()) return;
-      dispatchMessage({ type: 'pix', text: pixKey });
-      setPixKey(""); setActiveModal(null);
-  };
-
-  const handleSendContact = () => {
-      if(!contactName.trim() || !contactPhone.trim()) return;
-      const vcard = `BEGIN:VCARD\nVERSION:3.0\nFN:${contactName}\nTEL;type=CELL:${contactPhone}\nEND:VCARD`;
-      dispatchMessage({ 
-          type: 'contact', 
-          content: { displayName: contactName, vcard, phone: contactPhone } 
-      });
-      setContactName(""); setContactPhone(""); setActiveModal(null);
-  };
-
-  const getCurrentLocation = () => {
-      if (!navigator.geolocation) {
-          addToast({ type: 'error', title: 'Erro', message: 'Geolocalização não suportada.' });
-          return;
-      }
-      setLocLoading(true);
-      navigator.geolocation.getCurrentPosition(
-          (pos) => {
-              setLocLat(pos.coords.latitude);
-              setLocLng(pos.coords.longitude);
-              setLocLoading(false);
-          },
-          (err) => {
-              addToast({ type: 'error', title: 'Erro GPS', message: 'Não foi possível obter localização.' });
-              setLocLoading(false);
-          },
-          { enableHighAccuracy: true, timeout: 10000 }
-      );
-  };
-
-  const handleSendLocation = () => {
-      if (locLat && locLng) {
-          dispatchMessage({ 
-              type: 'location', 
-              content: { latitude: locLat, longitude: locLng } 
-          });
-          setActiveModal(null);
-          setLocLat(null); setLocLng(null);
-      }
-  };
-
-  // --- UTILS ---
+  // Utils
   const handleScroll = async (e: React.UIEvent<HTMLDivElement>) => {
       const container = e.currentTarget;
       if (container.scrollTop < 50 && hasMoreMessages && !fetchingMore && !loadingMessages) {
           setFetchingMore(true);
           const currentHeight = container.scrollHeight; 
-          const olderMessages = await fetchMessages(messages.length);
+          const olderMessages = await loadMessages(messages.length);
           if (olderMessages.length > 0) {
               setMessages(prev => [...olderMessages, ...prev]);
-              setTimeout(() => {
-                  if (scrollContainerRef.current) {
-                      const newHeight = scrollContainerRef.current.scrollHeight;
-                      scrollContainerRef.current.scrollTop = newHeight - currentHeight;
-                  }
-              }, 0);
-          } else {
-              setHasMoreMessages(false);
-          }
+              setTimeout(() => { if (scrollContainerRef.current) scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight - currentHeight; }, 0);
+          } else { setHasMoreMessages(false); }
           setFetchingMore(false);
       }
   };
 
-  const handleInboxSelect = (jid: string) => {
-      setSelectedInboxIds(prev => { const n = new Set(prev); if(n.has(jid)) n.delete(jid); else n.add(jid); return n; });
-  };
-
-  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-      setInput(e.target.value);
-  };
-
-  // Imports placeholders
-  const handleToggleMute = async () => {};
-  const handleDeleteChats = async () => {};
+  const handleInboxSelect = (jid: string) => setSelectedInboxIds(prev => { const n = new Set(prev); if(n.has(jid)) n.delete(jid); else n.add(jid); return n; });
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => setInput(e.target.value);
   const toggleMsgSelectionMode = () => { setIsMsgSelectionMode(!isMsgSelectionMode); setSelectedMsgIds(new Set()); setShowOptionsMenu(false); };
   const handleSelectMessage = (id: string) => { setSelectedMsgIds(prev => { const n = new Set(prev); if(n.has(id)) n.delete(id); else n.add(id); return n; }); };
-  const handleDeleteSelectedMsgs = async () => {};
   const handleClearChat = async () => {};
-  const handleSmartReply = async () => {};
-  const handleScheduleMessage = (content: string, date: Date) => {};
+  const handleDeleteSelectedMsgs = async () => {};
 
   return (
     <div className="flex h-[calc(100vh-6rem)] md:h-[calc(100vh-4rem)] rounded-xl border border-zinc-800 bg-zinc-950/50 overflow-hidden shadow-2xl animate-in fade-in duration-500">
@@ -551,16 +441,7 @@ export default function ChatPage() {
         <div className="p-4 border-b border-zinc-800 bg-zinc-900/80 space-y-3">
             <div className="flex items-center gap-2 px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-lg shadow-sm">
                 <Wifi className={cn("w-4 h-4", selectedInstance ? "text-green-500" : "text-zinc-500")} />
-                <select 
-                    className="w-full bg-transparent text-zinc-200 text-sm font-medium outline-none cursor-pointer"
-                    value={selectedInstance?.session_id || ''}
-                    onChange={(e) => {
-                        const inst = instances.find(i => i.session_id === e.target.value);
-                        setSelectedInstance(inst || null);
-                        setActiveContact(null);
-                    }}
-                    disabled={instances.length === 0}
-                >
+                <select className="w-full bg-transparent text-zinc-200 text-sm font-medium outline-none cursor-pointer" value={selectedInstance?.session_id || ''} onChange={(e) => { const inst = instances.find(i => i.session_id === e.target.value); setSelectedInstance(inst || null); setActiveContact(null); }} disabled={instances.length === 0}>
                     {instances.length === 0 ? <option value="">Sem Conexões</option> : instances.map(i => <option key={i.session_id} value={i.session_id}>{i.name}</option>)}
                 </select>
             </div>
@@ -576,12 +457,7 @@ export default function ChatPage() {
                 <div className="flex gap-2">
                     <div className="relative group flex-1">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500" />
-                        <input 
-                            className="w-full bg-zinc-950/50 border border-zinc-800 rounded-lg py-2 pl-9 pr-4 text-sm focus:outline-none focus:ring-1 focus:ring-primary text-white" 
-                            placeholder="Buscar..."
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                        />
+                        <input className="w-full bg-zinc-950/50 border border-zinc-800 rounded-lg py-2 pl-9 pr-4 text-sm focus:outline-none focus:ring-1 focus:ring-primary text-white" placeholder="Buscar..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
                     </div>
                     <Button size="icon" variant="ghost" className="border border-zinc-800 hover:bg-zinc-800" onClick={() => setIsInboxSelectionMode(true)}>
                         <CheckSquare className="h-4 w-4 text-zinc-400" />
@@ -598,40 +474,17 @@ export default function ChatPage() {
                 const isNewLead = contact.updated_at && (new Date().getTime() - new Date(contact.updated_at).getTime() < 24 * 60 * 60 * 1000);
 
                 return (
-                    <div 
-                        key={contact.id} 
-                        onClick={() => handleContactSelect(contact)}
-                        className={cn(
-                            "p-4 border-b border-zinc-800/30 cursor-pointer hover:bg-zinc-800/50 relative transition-colors",
-                            activeContact?.id === contact.id && !isInboxSelectionMode ? 'bg-primary/5 border-l-2 border-l-primary' : '',
-                            isSelected ? "bg-primary/10" : ""
-                        )}
-                    >
+                    <div key={contact.id} onClick={() => handleContactSelect(contact)} className={cn("p-4 border-b border-zinc-800/30 cursor-pointer hover:bg-zinc-800/50 relative transition-colors", activeContact?.id === contact.id && !isInboxSelectionMode ? 'bg-primary/5 border-l-2 border-l-primary' : '', isSelected ? "bg-primary/10" : "")}>
                         <div className="flex justify-between items-start mb-1">
-                            {isInboxSelectionMode && (
-                                <div className="mr-3 mt-1">
-                                    <Checkbox checked={isSelected} onCheckedChange={() => handleInboxSelect(contact.jid)} className="border-zinc-600 data-[state=checked]:bg-primary" />
-                                </div>
-                            )}
-                            
+                            {isInboxSelectionMode && (<div className="mr-3 mt-1"><Checkbox checked={isSelected} onCheckedChange={() => handleInboxSelect(contact.jid)} className="border-zinc-600 data-[state=checked]:bg-primary" /></div>)}
                             <div className="flex items-center gap-3 overflow-hidden flex-1">
                                  <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center shrink-0 border border-zinc-700 overflow-hidden relative">
-                                    {contact.profile_pic_url ? (
-                                        <img src={contact.profile_pic_url} className="w-full h-full object-cover" />
-                                    ) : contact.is_group ? (
-                                        <Users className="w-5 h-5 text-zinc-500" />
-                                    ) : (
-                                        <span className="text-zinc-500 font-bold">{contact.name?.charAt(0) || 'U'}</span>
-                                    )}
+                                    {contact.profile_pic_url ? (<img src={contact.profile_pic_url} className="w-full h-full object-cover" />) : contact.is_group ? (<Users className="w-5 h-5 text-zinc-500" />) : (<span className="text-zinc-500 font-bold">{contact.name?.charAt(0) || 'U'}</span>)}
                                  </div>
                                  <div className="min-w-0 flex-1">
                                     <div className="flex justify-between items-center">
-                                        <span className={cn("font-medium truncate block", activeContact?.id === contact.id ? 'text-primary' : 'text-zinc-200')}>
-                                            {contact.name}
-                                        </span>
-                                        <span className="text-[10px] text-zinc-500">
-                                            {contact.last_message_time ? new Date(contact.last_message_time).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : ''}
-                                        </span>
+                                        <span className={cn("font-medium truncate block", activeContact?.id === contact.id ? 'text-primary' : 'text-zinc-200')}>{contact.name}</span>
+                                        <span className="text-[10px] text-zinc-500">{contact.last_message_time ? new Date(contact.last_message_time).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : ''}</span>
                                     </div>
                                     <div className="flex items-center justify-between mt-0.5">
                                         <p className="text-xs text-zinc-500 truncate max-w-[140px]">{contact.last_message}</p>
@@ -715,7 +568,7 @@ export default function ChatPage() {
                 ) : (
                     <div className="p-3 md:p-4 border-t border-zinc-800 bg-zinc-900/30 backdrop-blur relative">
                         <div className="flex items-end gap-2 bg-zinc-950/80 border border-zinc-800 rounded-xl p-2 focus-within:ring-1 focus-within:ring-primary/50 transition-all shadow-inner relative">
-                            {/* Anexo Menu (Full Expansion) */}
+                            {/* Anexo Menu */}
                             <div className="relative" ref={mediaMenuRef}>
                                 <Button variant="ghost" size="icon" className="h-9 w-9 text-zinc-400 hover:text-zinc-100" onClick={() => setMediaMenuOpen(!mediaMenuOpen)}><Paperclip className="h-5 w-5" /></Button>
                                 {mediaMenuOpen && (
@@ -794,23 +647,12 @@ export default function ChatPage() {
       )}
 
       {/* --- MODALS DE ANEXO --- */}
-      
-      {/* 1. POLL MODAL */}
       <Modal isOpen={activeModal === 'poll'} onClose={() => setActiveModal(null)} title="Nova Enquete">
           <div className="space-y-4">
               <Input value={pollQuestion} onChange={e => setPollQuestion(e.target.value)} placeholder="Pergunta da enquete" />
               <div className="space-y-2">
                   {pollOptions.map((opt, idx) => (
-                      <Input 
-                        key={idx} 
-                        value={opt} 
-                        onChange={e => {
-                            const newOpts = [...pollOptions];
-                            newOpts[idx] = e.target.value;
-                            setPollOptions(newOpts);
-                        }} 
-                        placeholder={`Opção ${idx + 1}`} 
-                      />
+                      <Input key={idx} value={opt} onChange={e => {const newOpts = [...pollOptions]; newOpts[idx] = e.target.value; setPollOptions(newOpts);}} placeholder={`Opção ${idx + 1}`} />
                   ))}
                   <Button variant="ghost" size="sm" onClick={() => setPollOptions([...pollOptions, ""])} className="w-full text-xs">+ Adicionar Opção</Button>
               </div>
@@ -818,7 +660,6 @@ export default function ChatPage() {
           </div>
       </Modal>
 
-      {/* 2. PIX MODAL */}
       <Modal isOpen={activeModal === 'pix'} onClose={() => setActiveModal(null)} title="Enviar Chave Pix">
           <div className="space-y-4">
               <div>
@@ -838,73 +679,32 @@ export default function ChatPage() {
           </div>
       </Modal>
 
-      {/* 3. CONTACT MODAL */}
       <Modal isOpen={activeModal === 'contact'} onClose={() => setActiveModal(null)} title="Enviar Contato">
           <div className="space-y-4">
               <Input value={contactName} onChange={e => setContactName(e.target.value)} placeholder="Nome do Contato" />
-              <Input value={contactPhone} onChange={e => setContactPhone(e.target.value)} placeholder="Telefone (ex: 5511999999999)" />
+              <Input value={contactPhone} onChange={e => setContactPhone(e.target.value)} placeholder="Telefone" />
               <Button onClick={handleSendContact} className="w-full">Enviar Cartão de Contato</Button>
           </div>
       </Modal>
 
-      {/* 4. LOCATION MODAL (Google Maps Style) */}
       <Modal isOpen={activeModal === 'location'} onClose={() => setActiveModal(null)} title="Enviar Localização">
           <div className="space-y-4 py-2">
-              
-              {/* Fake Map Container */}
               <div className="relative w-full h-48 bg-zinc-800 rounded-xl overflow-hidden border border-zinc-700 group">
                   {locLat && locLng ? (
                       <>
-                        <div className="absolute inset-0 bg-[#e5e7eb]" style={{ 
-                            backgroundImage: 'url("https://upload.wikimedia.org/wikipedia/commons/e/ec/World_map_blank_without_borders.svg")', 
-                            backgroundSize: 'cover',
-                            backgroundPosition: 'center',
-                            filter: 'opacity(0.3)'
-                        }}></div>
-                        <div className="absolute inset-0 flex items-center justify-center">
-                            <div className="bg-red-500 p-2 rounded-full shadow-xl animate-bounce">
-                                <MapPin className="w-6 h-6 text-white" fill="currentColor" />
-                            </div>
-                        </div>
-                        <div className="absolute bottom-2 left-2 right-2 bg-white/90 text-black text-xs p-2 rounded shadow flex justify-between items-center">
-                            <span className="font-mono">{locLat.toFixed(6)}, {locLng.toFixed(6)}</span>
-                            <span className="text-[10px] font-bold text-green-600 flex items-center gap-1"><Check className="w-3 h-3" /> Preciso</span>
-                        </div>
+                        <div className="absolute inset-0 bg-[#e5e7eb]" style={{ backgroundImage: 'url("https://upload.wikimedia.org/wikipedia/commons/e/ec/World_map_blank_without_borders.svg")', backgroundSize: 'cover', backgroundPosition: 'center', filter: 'opacity(0.3)'}}></div>
+                        <div className="absolute inset-0 flex items-center justify-center"><div className="bg-red-500 p-2 rounded-full shadow-xl animate-bounce"><MapPin className="w-6 h-6 text-white" fill="currentColor" /></div></div>
+                        <div className="absolute bottom-2 left-2 right-2 bg-white/90 text-black text-xs p-2 rounded shadow flex justify-between items-center"><span className="font-mono">{locLat.toFixed(6)}, {locLng.toFixed(6)}</span><span className="text-[10px] font-bold text-green-600 flex items-center gap-1"><Check className="w-3 h-3" /> Preciso</span></div>
                       </>
-                  ) : (
-                      <div className="absolute inset-0 flex flex-col items-center justify-center text-zinc-500 gap-2">
-                          <MapPin className="w-8 h-8 opacity-20" />
-                          <p className="text-xs">Aguardando localização...</p>
-                      </div>
-                  )}
-                  
-                  {locLoading && (
-                      <div className="absolute inset-0 bg-black/60 flex items-center justify-center backdrop-blur-sm z-20">
-                          <Loader2 className="w-8 h-8 text-primary animate-spin" />
-                      </div>
-                  )}
+                  ) : (<div className="absolute inset-0 flex flex-col items-center justify-center text-zinc-500 gap-2"><MapPin className="w-8 h-8 opacity-20" /><p className="text-xs">Aguardando localização...</p></div>)}
+                  {locLoading && (<div className="absolute inset-0 bg-black/60 flex items-center justify-center backdrop-blur-sm z-20"><Loader2 className="w-8 h-8 text-primary animate-spin" /></div>)}
               </div>
-
-              {/* Action Button */}
               {!locLat ? (
-                  <Button onClick={getCurrentLocation} className="w-full h-12 text-sm bg-blue-600 hover:bg-blue-500" disabled={locLoading}>
-                      <Crosshair className="w-4 h-4 mr-2" /> 
-                      {locLoading ? "Buscando satélites..." : "Obter Localização Atual"}
-                  </Button>
+                  <Button onClick={getCurrentLocation} className="w-full h-12 text-sm bg-blue-600 hover:bg-blue-500" disabled={locLoading}><Crosshair className="w-4 h-4 mr-2" /> {locLoading ? "Buscando satélites..." : "Obter Localização Atual"}</Button>
               ) : (
-                  <div className="flex gap-2">
-                      <Button variant="outline" onClick={() => { setLocLat(null); setLocLng(null); }} className="flex-1">
-                          Refazer
-                      </Button>
-                      <Button onClick={handleSendLocation} className="flex-[2] bg-green-600 hover:bg-green-500">
-                          <Send className="w-4 h-4 mr-2" /> Enviar Localização
-                      </Button>
-                  </div>
+                  <div className="flex gap-2"><Button variant="outline" onClick={() => { setLocLat(null); setLocLng(null); }} className="flex-1">Refazer</Button><Button onClick={handleSendLocation} className="flex-[2] bg-green-600 hover:bg-green-500"><Send className="w-4 h-4 mr-2" /> Enviar Localização</Button></div>
               )}
-              
-              <p className="text-[10px] text-zinc-500 text-center">
-                  Usamos o GPS do seu navegador para alta precisão.
-              </p>
+              <p className="text-[10px] text-zinc-500 text-center">Usamos o GPS do seu navegador para alta precisão.</p>
           </div>
       </Modal>
 

@@ -19,13 +19,23 @@ export function cleanJid(jid: string) {
 }
 
 export function formatPhone(jid: string): string {
+  if (!jid) return 'Desconhecido';
   const clean = cleanJid(jid);
+  
+  // Se for grupo (@g.us) e não tiver nome, formata como "Grupo ..."
+  if (jid.includes('@g.us')) {
+      return `Grupo ${clean.slice(0, 4)}...`;
+  }
+
   // Formato simples +55 (DDD) 9xxxx-xxxx
   if (clean.length >= 12 && clean.startsWith('55')) {
       const ddd = clean.substring(2, 4);
       const num = clean.substring(4);
       if (num.length === 9) {
-          return `+55 (${ddd}) ${num.substring(0, 5)}-${num.substring(5)}`;
+          return `(${ddd}) ${num.substring(0, 5)}-${num.substring(5)}`;
+      }
+      if (num.length === 8) {
+          return `(${ddd}) ${num.substring(0, 4)}-${num.substring(4)}`;
       }
       return `+55 (${ddd}) ${num}`;
   }
@@ -37,8 +47,11 @@ export function formatPhone(jid: string): string {
 // 2. Nome do Perfil (contact.push_name)
 // 3. Telefone Formatado
 export function getDisplayName(contact: any): string {
-    if (contact.is_group) {
-        return contact.name || contact.push_name || "Grupo";
+    if (!contact) return "Usuário";
+
+    // Se for grupo, tenta nome ou fallback
+    if (contact.is_group || contact.remote_jid?.includes('@g.us')) {
+        return contact.name || contact.push_name || "Grupo (Sem Nome)";
     }
     
     // Verifica se contact.name é válido e não é o próprio número
@@ -47,12 +60,12 @@ export function getDisplayName(contact: any): string {
     }
     
     // Fallback para Push Name
-    if (contact.push_name) {
+    if (contact.push_name && contact.push_name !== contact.remote_jid) {
         return contact.push_name;
     }
     
     // Último caso: Número
-    return formatPhone(contact.remote_jid);
+    return formatPhone(contact.remote_jid || contact.jid);
 }
 
 export const delay = (ms: number) => new Promise(res => setTimeout(res, ms));

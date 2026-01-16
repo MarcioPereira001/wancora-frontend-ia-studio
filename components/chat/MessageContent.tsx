@@ -1,6 +1,7 @@
 "use client";
 
-import { FileText, MapPin, Download, PlayCircle, Image as ImageIcon, Film, BarChart2, User, Copy, QrCode, DollarSign, CheckCircle2 } from "lucide-react";
+import React, { useState } from 'react';
+import { FileText, MapPin, Download, PlayCircle, Image as ImageIcon, Film, BarChart2, User, Copy, QrCode, DollarSign, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
 import { Message } from "@/types";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/useToast";
@@ -11,6 +12,9 @@ interface MessageContentProps {
 
 export function MessageContent({ message }: MessageContentProps) {
   const { addToast } = useToast();
+  const [imgError, setImgError] = useState(false);
+  const [selectedPollOption, setSelectedPollOption] = useState<number | null>(null);
+
   const mediaUrl = message.media_url; 
   let content = message.content || message.body || "";
   // Cast to string to handle optimistic types like 'pix', 'ptt' not present in strict DB schema
@@ -19,26 +23,41 @@ export function MessageContent({ message }: MessageContentProps) {
 
   const handleCopy = (text: string) => {
       navigator.clipboard.writeText(text);
-      addToast({ type: 'success', title: 'Copiado!', message: 'Texto copiado.' });
+      addToast({ type: 'success', title: 'Copiado!', message: 'Chave Pix copiada.' });
+  };
+
+  const handleVote = (idx: number) => {
+      setSelectedPollOption(idx);
+      addToast({ type: 'info', title: 'Voto Registrado', message: 'Interação registrada (Simulação).' });
   };
 
   // --- 1. IMAGEM ---
   if (type === 'image') {
     return (
       <div className="space-y-1">
-        <div className="relative mt-1 overflow-hidden rounded-lg bg-black/20 border border-white/10 group cursor-pointer">
-            {mediaUrl ? (
+        <div className="relative mt-1 overflow-hidden rounded-lg bg-black/20 border border-white/10 group cursor-pointer min-h-[150px] min-w-[200px]">
+            {mediaUrl && !imgError ? (
                 <img 
                 src={mediaUrl} 
                 alt="Imagem" 
                 className="max-w-[280px] max-h-[300px] object-cover hover:scale-105 transition-transform duration-500" 
                 loading="lazy"
+                onError={() => setImgError(true)}
                 onClick={() => window.open(mediaUrl, '_blank')}
                 />
             ) : (
-                <div className="h-32 w-48 flex items-center justify-center text-zinc-500 bg-zinc-800">
-                    <ImageIcon className="w-8 h-8 opacity-50" />
-                    <span className="text-xs ml-2">Carregando imagem...</span>
+                <div className="h-40 w-56 flex flex-col items-center justify-center text-zinc-500 bg-zinc-900">
+                    {!mediaUrl && !imgError ? (
+                        <>
+                            <Loader2 className="w-8 h-8 text-primary animate-spin mb-2" />
+                            <span className="text-xs text-zinc-400">Baixando mídia...</span>
+                        </>
+                    ) : (
+                        <>
+                            <ImageIcon className="w-10 h-10 opacity-30 mb-2" />
+                            <span className="text-xs text-zinc-400">Imagem expirada</span>
+                        </>
+                    )}
                 </div>
             )}
         </div>
@@ -60,7 +79,7 @@ export function MessageContent({ message }: MessageContentProps) {
             "w-10 h-10 rounded-full flex items-center justify-center shrink-0",
             isMe ? "bg-primary text-primary-foreground" : "bg-zinc-700 text-zinc-400"
         )}>
-            <PlayCircle className="w-6 h-6" />
+            {mediaUrl ? <PlayCircle className="w-6 h-6" /> : <Loader2 className="w-5 h-5 animate-spin" />}
         </div>
         <div className="flex-1 flex flex-col justify-center overflow-hidden">
             {mediaUrl ? (
@@ -68,7 +87,9 @@ export function MessageContent({ message }: MessageContentProps) {
                     <source src={mediaUrl} />
                 </audio>
             ) : (
-                <span className="text-xs text-zinc-500">Áudio indisponível</span>
+                <div className="flex items-center gap-1 text-xs text-zinc-500">
+                    <span className="italic">Processando áudio...</span>
+                </div>
             )}
         </div>
       </div>
@@ -86,8 +107,9 @@ export function MessageContent({ message }: MessageContentProps) {
                     Seu navegador não suporta vídeos.
                 </video>
             ) : (
-                <div className="h-32 w-48 flex items-center justify-center text-zinc-500 bg-zinc-800">
-                    <Film className="w-8 h-8 opacity-50" />
+                <div className="h-32 w-48 flex items-center justify-center text-zinc-500 bg-zinc-800 flex-col">
+                    <Loader2 className="w-8 h-8 text-primary animate-spin mb-2" />
+                    <span className="text-xs">Baixando vídeo...</span>
                 </div>
             )}
         </div>
@@ -116,9 +138,11 @@ export function MessageContent({ message }: MessageContentProps) {
           <p className="text-sm font-medium truncate max-w-[180px]" title={fileName}>
             {fileName}
           </p>
-          <span className="text-[10px] opacity-70 uppercase tracking-wide">Clique para baixar</span>
+          <span className="text-[10px] opacity-70 uppercase tracking-wide flex items-center gap-1">
+             {mediaUrl ? "Clique para baixar" : "Processando..."}
+          </span>
         </div>
-        <Download className="w-4 h-4 opacity-50 group-hover:opacity-100" />
+        {mediaUrl ? <Download className="w-4 h-4 opacity-50 group-hover:opacity-100" /> : <Loader2 className="w-3 h-3 animate-spin opacity-50" />}
       </div>
     );
   }
@@ -141,15 +165,11 @@ export function MessageContent({ message }: MessageContentProps) {
     } catch(e) {}
 
     const mapsUrl = lat && long ? `https://www.google.com/maps?q=${lat},${long}` : '#';
-    const staticMapUrl = lat && long 
-        ? `https://maps.googleapis.com/maps/api/staticmap?center=${lat},${long}&zoom=15&size=400x200&maptype=roadmap&markers=color:red%7C${lat},${long}&key=YOUR_API_KEY_HERE` 
-        : ''; // Fallback visual below since we don't have API KEY in frontend env usually
 
     return (
       <div className="mt-1">
           <a href={mapsUrl} target="_blank" rel="noopener noreferrer" className="block relative overflow-hidden rounded-lg border border-white/10 group w-[260px]">
             <div className="bg-zinc-800 h-32 w-full flex items-center justify-center relative overflow-hidden">
-                {/* Visual Fake Map Pattern */}
                 <div className="absolute inset-0 bg-[#e5e7eb] opacity-80" style={{ 
                     backgroundImage: 'url("https://upload.wikimedia.org/wikipedia/commons/e/ec/World_map_blank_without_borders.svg")', 
                     backgroundSize: 'cover', 
@@ -185,14 +205,12 @@ export function MessageContent({ message }: MessageContentProps) {
              contactData.vcard = parsed.vcard || '';
              contactData.phone = parsed.phone || '';
           } else {
-             // Fallback legado
              const parts = content.split('|');
              contactData.displayName = parts[0] || 'Contato';
              contactData.vcard = parts[1] || '';
           }
       } catch(e) {}
 
-      // Tenta extrair telefone do vcard se não tiver no JSON
       if (!contactData.phone && contactData.vcard) {
           const match = contactData.vcard.match(/TEL.*:(.*)/);
           if (match) contactData.phone = match[1];
@@ -220,49 +238,53 @@ export function MessageContent({ message }: MessageContentProps) {
       );
   }
 
-  // --- 7. PIX (FIXED LOGIC) ---
-  // Apenas considera Pix se o tipo for EXPLICITAMENTE 'pix' OU se começar com "Chave Pix:"
-  // Removemos a verificação genérica de length+ponto que quebrava textos longos.
+  // --- 7. PIX (DESIGN PREMIUM) ---
+  // Verifica se é tipo Pix OU se o texto parece uma chave Pix
   const isExplicitPix = type === 'pix';
-  const isTextPix = type === 'text' && typeof content === 'string' && content.startsWith('Chave Pix:');
+  const isTextPix = type === 'text' && typeof content === 'string' && (content.startsWith('Chave Pix:') || content.includes('PIX'));
 
   if (isExplicitPix || isTextPix) {
-      const pixKey = content.replace('Chave Pix:', '').trim();
+      const pixKey = content.replace(/Chave Pix:|PIX:/gi, '').trim();
       
       return (
-          <div className={cn(
-              "p-4 mt-1 rounded-xl border space-y-3 min-w-[260px]",
-              isMe ? "bg-emerald-900/40 border-emerald-500/30" : "bg-zinc-900 border-zinc-700"
-          )}>
-              <div className="flex items-center gap-2 border-b border-white/10 pb-2">
-                  <div className="p-1.5 bg-emerald-500/20 rounded text-emerald-400">
-                      <QrCode className="w-4 h-4" />
-                  </div>
-                  <span className="font-bold text-sm text-emerald-400">Pix Copia e Cola</span>
-              </div>
-              
-              <div className="space-y-1">
-                  <p className="text-[10px] text-zinc-400 uppercase tracking-wider font-bold">Chave</p>
-                  <div className="flex items-center gap-2 bg-black/20 p-2 rounded border border-white/5">
-                      <code className="text-xs font-mono flex-1 break-all text-zinc-200 line-clamp-2">{pixKey}</code>
-                      <button 
-                        onClick={() => handleCopy(pixKey)} 
-                        className="p-1.5 hover:bg-white/10 rounded text-zinc-400 hover:text-white transition-colors shrink-0"
-                      >
-                          <Copy className="w-3.5 h-3.5" />
-                      </button>
+          <div className="mt-1 min-w-[280px] bg-[#0f172a] rounded-xl overflow-hidden border border-emerald-500/30 shadow-[0_0_20px_rgba(16,185,129,0.15)] relative">
+              {/* Header Pix */}
+              <div className="bg-emerald-600 px-4 py-3 flex items-center gap-2">
+                  <QrCode className="w-5 h-5 text-white" />
+                  <span className="font-bold text-white text-sm">Pix Copia e Cola</span>
+                  <div className="ml-auto bg-white/20 p-1 rounded">
+                      <DollarSign className="w-3 h-3 text-white" />
                   </div>
               </div>
               
-              <div className="flex items-center gap-1 text-[10px] text-zinc-500">
-                  <DollarSign className="w-3 h-3" />
-                  <span>Transferência instantânea</span>
+              <div className="p-4 space-y-3">
+                  <div className="space-y-1">
+                      <p className="text-[10px] text-zinc-400 uppercase tracking-wider font-bold">Chave de Pagamento</p>
+                      <div className="relative group">
+                          <div className="bg-black/30 border border-zinc-700 rounded-lg p-3 font-mono text-sm text-emerald-400 break-all select-all">
+                              {pixKey}
+                          </div>
+                      </div>
+                  </div>
+                  
+                  <button 
+                    onClick={() => handleCopy(pixKey)} 
+                    className="w-full flex items-center justify-center gap-2 bg-emerald-600/10 hover:bg-emerald-600/20 border border-emerald-600/50 text-emerald-500 font-bold py-2.5 rounded-lg transition-all active:scale-95 group"
+                  >
+                      <Copy className="w-4 h-4 group-hover:animate-pulse" />
+                      COPIAR CHAVE
+                  </button>
+              </div>
+              
+              <div className="bg-emerald-950/30 px-4 py-2 text-[10px] text-zinc-500 flex items-center justify-center gap-1 border-t border-emerald-900/30">
+                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                  Pagamento instantâneo e seguro
               </div>
           </div>
       );
   }
 
-  // --- 8. ENQUETE ---
+  // --- 8. ENQUETE (INTERATIVA) ---
   if (type === 'poll') {
     let pollData = { name: 'Enquete', options: [], selectableOptionsCount: 1 };
     try {
@@ -273,25 +295,52 @@ export function MessageContent({ message }: MessageContentProps) {
 
     return (
         <div className={cn(
-            "rounded-lg p-3 min-w-[250px] space-y-3 mt-1",
-            isMe ? "bg-primary/5 border border-primary/20" : "bg-zinc-900/50 border border-zinc-700"
+            "rounded-xl p-4 min-w-[280px] space-y-4 mt-1 border shadow-sm relative overflow-hidden",
+            isMe ? "bg-zinc-900 border-zinc-700" : "bg-zinc-900 border-zinc-700"
         )}>
-            <div className="flex items-start gap-2 border-b border-white/5 pb-2">
-                <BarChart2 className="w-5 h-5 text-yellow-500 shrink-0 mt-0.5" />
-                <span className="font-bold text-sm leading-tight">{pollData.name || 'Pergunta da Enquete'}</span>
+            {/* Header */}
+            <div className="flex items-start gap-3 relative z-10">
+                <div className="p-2 bg-yellow-500/10 rounded-lg text-yellow-500">
+                    <BarChart2 className="w-5 h-5" />
+                </div>
+                <div>
+                    <h4 className="font-bold text-sm text-white leading-tight">{pollData.name || 'Enquete'}</h4>
+                    <span className="text-[10px] text-zinc-500 mt-0.5 block">
+                        {pollData.selectableOptionsCount > 1 ? 'Múltipla escolha' : 'Escolha uma opção'}
+                    </span>
+                </div>
             </div>
-            <div className="space-y-2">
-                {pollData.options?.map((opt: string, idx: number) => (
-                    <div key={idx} className="flex items-center justify-between p-2 rounded bg-black/20 border border-white/5 text-xs hover:bg-white/5 cursor-pointer transition-colors group">
-                        <span className="font-medium text-zinc-300">{opt}</span>
-                        <div className="w-4 h-4 rounded-full border border-zinc-600 group-hover:border-primary/50"></div>
-                    </div>
-                ))}
+
+            {/* Options */}
+            <div className="space-y-2 relative z-10">
+                {pollData.options?.map((opt: string, idx: number) => {
+                    const isSelected = selectedPollOption === idx;
+                    return (
+                        <button 
+                            key={idx} 
+                            onClick={() => handleVote(idx)}
+                            className={cn(
+                                "w-full flex items-center justify-between p-3 rounded-lg border text-sm transition-all group active:scale-[0.98]",
+                                isSelected 
+                                    ? "bg-yellow-500/10 border-yellow-500/50 text-yellow-100" 
+                                    : "bg-black/20 border-zinc-800 text-zinc-300 hover:bg-white/5 hover:border-zinc-600"
+                            )}
+                        >
+                            <span className="font-medium truncate mr-2">{opt}</span>
+                            <div className={cn(
+                                "w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors",
+                                isSelected ? "border-yellow-500 bg-yellow-500" : "border-zinc-600 group-hover:border-zinc-400"
+                            )}>
+                                {isSelected && <CheckCircle2 className="w-3.5 h-3.5 text-black" />}
+                            </div>
+                        </button>
+                    )
+                })}
             </div>
-            <div className="text-center flex justify-center gap-2 items-center">
-                <span className="text-[10px] text-zinc-500 italic">
-                    {pollData.selectableOptionsCount > 1 ? 'Múltipla escolha' : 'Opção única'}
-                </span>
+            
+            {/* Footer Fake */}
+            <div className="text-center pt-2 border-t border-white/5">
+                <span className="text-[10px] text-zinc-500 font-medium">Selecione para votar</span>
             </div>
         </div>
     );
