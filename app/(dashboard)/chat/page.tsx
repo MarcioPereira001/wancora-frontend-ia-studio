@@ -7,7 +7,7 @@ import { useChatStore } from '@/store/useChatStore';
 import { useRealtimeStore } from '@/store/useRealtimeStore';
 import { Message } from '@/types';
 import { cn } from '@/lib/utils';
-import { Smartphone, CheckCircle2, RefreshCw, Lock } from 'lucide-react'; // Removi ícones não usados
+import { Smartphone, CheckCircle2, RefreshCw, Lock, Loader2 } from 'lucide-react';
 
 // Atomic Components
 import { ChatListSidebar } from '@/components/chat/ChatListSidebar';
@@ -41,26 +41,30 @@ export default function ChatPage() {
       }
   }, [instances, selectedInstance, setSelectedInstance]);
 
-  // --- SYNC STATE LOGIC (COMPATÍVEL COM NOVO BACKEND) ---
+  // --- SYNC STATE LOGIC (ATUALIZADO PARA NOVO BACKEND) ---
   const syncStatus = selectedInstance?.sync_status || 'completed';
-  
-  // CORREÇÃO: O backend agora manda 'syncing' quando está baixando histórico
-  const isSyncing = (syncStatus === 'syncing') && selectedInstance?.status === 'connected';
+  const status = selectedInstance?.status;
   const syncPercent = selectedInstance?.sync_percent || 0;
+
+  // Lógica de Travamento:
+  // 1. Backend diz 'syncing'
+  // 2. OU porcentagem está ativa (entre 1 e 99)
+  const isSyncing = (status === 'connected' && syncStatus === 'syncing') || (syncPercent > 0 && syncPercent < 100 && status === 'connected');
+
+  // Texto Dinâmico baseado no progresso
+  let syncLabel = "Iniciando Sincronização...";
+  let syncSubLabel = "Estabelecendo conexão segura...";
   
-  // Texto dinâmico do status
-  let syncLabel = "Sincronizando WhatsApp";
-  let syncSubLabel = "Baixando histórico de conversas recentes...";
-  
-  // Ajuste fino para feedback visual dependendo da porcentagem
-  if (syncPercent < 20) {
-      syncLabel = "Conectando...";
-      syncSubLabel = "Estabelecendo conexão segura...";
-  } else if (syncPercent < 50) {
+  if (syncPercent > 5) {
       syncLabel = "Organizando Contatos";
-      syncSubLabel = "Verificando agenda e nomes...";
-  } else {
-      syncLabel = "Finalizando Histórico";
+      syncSubLabel = "Identificando nomes e fotos da agenda...";
+  } 
+  if (syncPercent > 40) {
+      syncLabel = "Baixando Histórico";
+      syncSubLabel = "Recuperando conversas recentes...";
+  }
+  if (syncPercent > 90) {
+      syncLabel = "Finalizando";
       syncSubLabel = "Indexando últimas mensagens...";
   }
 
@@ -141,7 +145,8 @@ export default function ChatPage() {
   return (
     <div className="flex h-[calc(100vh-6rem)] md:h-[calc(100vh-4rem)] rounded-xl border border-zinc-800 bg-zinc-950/50 overflow-hidden shadow-2xl animate-in fade-in duration-500 relative">
       
-      {/* --- SMART SYNC OVERLAY (BLOQUEIO TOTAL) --- */}
+      {/* --- SMART SYNC OVERLAY (MODAL GLOBAL) --- */}
+      {/* Este modal agora cobre TUDO (z-index 9999) se estiver sincronizando */}
       {isSyncing && (
           <div className="fixed inset-0 z-[9999] bg-zinc-950/90 backdrop-blur-xl flex flex-col items-center justify-center text-center animate-in fade-in duration-500 cursor-wait">
               
@@ -224,9 +229,8 @@ export default function ChatPage() {
                     </>
                 ) : (
                     <>
-                        {/* Se não tiver instância selecionada, não mostra spinner, apenas texto */}
-                        <Smartphone className="h-10 w-10 text-zinc-700 mb-4" />
-                        <p className="text-sm text-zinc-400">Selecione ou conecte uma instância.</p>
+                        <Loader2 className="h-10 w-10 text-primary animate-spin mb-4" />
+                        <p className="text-sm text-zinc-400">Conectando à instância...</p>
                     </>
                 )}
             </div>
