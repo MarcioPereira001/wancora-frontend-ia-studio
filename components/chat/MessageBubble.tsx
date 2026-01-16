@@ -65,7 +65,7 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
             </div>
         )}
 
-        {/* Bolha da Mensagem */}
+        {/* Bolha da Mensagem - PERFORMANCE: Removido 'transition-all duration-200' */}
         <div 
             onClick={() => isSelectionMode && onSelect && onSelect()}
             className={cn(
@@ -76,8 +76,8 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
                     : "bg-zinc-800 text-zinc-100 rounded-tl-none",
                 // Estilo Seleção
                 isSelectionMode && isSelected ? "ring-2 ring-primary ring-offset-2 ring-offset-zinc-950 bg-opacity-80" : "",
-                // Hover
-                !isSelectionMode && "group transition-all duration-200 hover:shadow-md"
+                // Hover (Simplificado para performance)
+                !isSelectionMode && "group hover:shadow-md"
             )}
         >
             {/* Nome em Grupos (Apenas recebidas) */}
