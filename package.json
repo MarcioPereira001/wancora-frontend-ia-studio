@@ -3,8 +3,8 @@
   "version": "3.0.0",
   "private": true,
   "scripts": {
-    "dev": "rm -f app/chat/page.tsx && next dev --turbopack",
-    "build": "rm -f app/chat/page.tsx && next build",
+    "dev": "rm -f app/chat/page.tsx app/dashboard/page.tsx && next dev --turbopack",
+    "build": "rm -f app/chat/page.tsx app/dashboard/page.tsx && next build",
     "start": "next start",
     "lint": "next lint"
   },
