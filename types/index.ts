@@ -173,6 +173,8 @@ export interface WhatsAppInstance {
   session_id: string;
   name: string;
   status: 'connected' | 'disconnected' | 'qr_ready' | 'qrcode' | 'connecting';
+  sync_status?: 'waiting' | 'importing_contacts' | 'importing_messages' | 'completed';
+  sync_percent?: number;
   qrcode_url?: string | null;
   battery_level?: number;
   profile_pic_url?: string;
@@ -180,6 +182,11 @@ export interface WhatsAppInstance {
 }
 
 export type Instance = WhatsAppInstance;
+
+export interface PollVote {
+    optionId: number;
+    voterJid: string;
+}
 
 // SCHEMA STRICT: Enum do Postgres para message_type
 // 'text', 'image', 'video', 'audio', 'document', 'sticker', 'poll', 'location', 'contact'
@@ -193,6 +200,7 @@ export interface Message {
   // Simplificado para bater com o banco. O Frontend infere Pix/PTT via conteúdo/metadados.
   message_type: 'text' | 'image' | 'video' | 'audio' | 'document' | 'sticker' | 'location' | 'poll' | 'contact'; 
   status: 'sent' | 'delivered' | 'read' | 'failed' | 'sending';
+  poll_votes?: PollVote[]; // NOVO: Suporte a votos
   created_at: string;
   has_media?: boolean;
   media_url?: string;

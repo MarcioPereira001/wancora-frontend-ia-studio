@@ -1,6 +1,7 @@
+
 # 🗄️ Wancora CRM - Database Schema & Architecture (Source of Truth)
 
-**Versão da Documentação:** 3.9 (RLS & Security Shield)
+**Versão da Documentação:** 3.10 (Sync Protocol & Polls)
 **Status do Sistema:** Produção / Estável
 **Engine:** PostgreSQL (via Supabase)
 **Arquitetura:** Multi-tenant (Baseado em `company_id`)
@@ -84,6 +85,8 @@ CREATE TABLE public.instances (
   qrcode_url text,
   battery_level integer,
   profile_pic_url text,
+  sync_status text DEFAULT 'completed', -- 'importing_contacts', 'importing_messages', 'completed'
+  sync_percent integer DEFAULT 0,
   created_at timestamp with time zone DEFAULT timezone('utc'::text, now()),
   updated_at timestamp with time zone DEFAULT now(),
   CONSTRAINT instances_pkey PRIMARY KEY (id)
@@ -128,6 +131,7 @@ CREATE TABLE public.messages (
   message_type text DEFAULT 'text'::text,
   media_url text,
   status text DEFAULT 'sent'::text,
+  poll_votes jsonb DEFAULT '[]'::jsonb, -- Votos da Enquete
   created_at timestamp with time zone DEFAULT now(),
   company_id uuid,
   lead_id uuid,

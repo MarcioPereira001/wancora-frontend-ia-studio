@@ -5,6 +5,7 @@ import { FileText, MapPin, Download, PlayCircle, Image as ImageIcon, Film, BarCh
 import { Message } from "@/types";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/useToast";
+import { api } from '@/services/api';
 
 interface MessageContentProps {
   message: Message;
@@ -13,11 +14,10 @@ interface MessageContentProps {
 export function MessageContent({ message }: MessageContentProps) {
   const { addToast } = useToast();
   const [imgError, setImgError] = useState(false);
-  const [selectedPollOption, setSelectedPollOption] = useState<number | null>(null);
+  const [votingOptionId, setVotingOptionId] = useState<number | null>(null);
 
   const mediaUrl = message.media_url; 
   let content = message.content || message.body || "";
-  // Cast to string to handle optimistic types like 'pix', 'ptt' not present in strict DB schema
   const type = (message.message_type || 'text') as string;
   const isMe = message.from_me;
 
@@ -26,9 +26,24 @@ export function MessageContent({ message }: MessageContentProps) {
       addToast({ type: 'success', title: 'Copiado!', message: 'Chave Pix copiada.' });
   };
 
-  const handleVote = (idx: number) => {
-      setSelectedPollOption(idx);
-      addToast({ type: 'info', title: 'Voto Registrado', message: 'Interação registrada (Simulação).' });
+  // Lógica Real de Votação
+  const handleVote = async (optionId: number, pollName: string) => {
+      setVotingOptionId(optionId);
+      try {
+          await api.post('/message/vote', {
+              companyId: message.company_id,
+              sessionId: message.session_id,
+              remoteJid: message.remote_jid,
+              pollId: message.id, // O Backend precisa saber qual mensagem é a enquete
+              optionId: optionId
+          });
+          // Optimistic update seria ideal aqui, mas vamos confiar no Realtime do backend
+          addToast({ type: 'success', title: 'Voto Enviado', message: `Votou em: Opção ${optionId + 1}` });
+      } catch (error) {
+          addToast({ type: 'error', title: 'Erro', message: 'Falha ao computar voto.' });
+      } finally {
+          setVotingOptionId(null);
+      }
   };
 
   // --- 1. IMAGEM ---
@@ -238,8 +253,7 @@ export function MessageContent({ message }: MessageContentProps) {
       );
   }
 
-  // --- 7. PIX (DESIGN PREMIUM) ---
-  // Verifica se é tipo Pix OU se o texto parece uma chave Pix
+  // --- 7. PIX ---
   const isExplicitPix = type === 'pix';
   const isTextPix = type === 'text' && typeof content === 'string' && (content.startsWith('Chave Pix:') || content.includes('PIX'));
 
@@ -248,7 +262,6 @@ export function MessageContent({ message }: MessageContentProps) {
       
       return (
           <div className="mt-1 min-w-[280px] bg-[#0f172a] rounded-xl overflow-hidden border border-emerald-500/30 shadow-[0_0_20px_rgba(16,185,129,0.15)] relative">
-              {/* Header Pix */}
               <div className="bg-emerald-600 px-4 py-3 flex items-center gap-2">
                   <QrCode className="w-5 h-5 text-white" />
                   <span className="font-bold text-white text-sm">Pix Copia e Cola</span>
@@ -284,7 +297,7 @@ export function MessageContent({ message }: MessageContentProps) {
       );
   }
 
-  // --- 8. ENQUETE (INTERATIVA) ---
+  // --- 8. ENQUETE REAL (INTERATIVA) ---
   if (type === 'poll') {
     let pollData = { name: 'Enquete', options: [], selectableOptionsCount: 1 };
     try {
@@ -292,6 +305,16 @@ export function MessageContent({ message }: MessageContentProps) {
     } catch (e) {
         pollData.name = content;
     }
+
+    // Calcula estatísticas de votos baseado em message.poll_votes
+    const votes = message.poll_votes || [];
+    const totalVotes = votes.length;
+    const votesPerOption = new Map<number, number>();
+    
+    votes.forEach(v => {
+        const current = votesPerOption.get(v.optionId) || 0;
+        votesPerOption.set(v.optionId, current + 1);
+    });
 
     return (
         <div className={cn(
@@ -306,41 +329,59 @@ export function MessageContent({ message }: MessageContentProps) {
                 <div>
                     <h4 className="font-bold text-sm text-white leading-tight">{pollData.name || 'Enquete'}</h4>
                     <span className="text-[10px] text-zinc-500 mt-0.5 block">
-                        {pollData.selectableOptionsCount > 1 ? 'Múltipla escolha' : 'Escolha uma opção'}
+                        {pollData.selectableOptionsCount > 1 ? 'Múltipla escolha' : 'Escolha uma opção'} • {totalVotes} votos
                     </span>
                 </div>
             </div>
 
-            {/* Options */}
+            {/* Options com Barra de Progresso Real */}
             <div className="space-y-2 relative z-10">
                 {pollData.options?.map((opt: string, idx: number) => {
-                    const isSelected = selectedPollOption === idx;
+                    const voteCount = votesPerOption.get(idx) || 0;
+                    const percentage = totalVotes > 0 ? (voteCount / totalVotes) * 100 : 0;
+                    const isVoting = votingOptionId === idx;
+
                     return (
                         <button 
                             key={idx} 
-                            onClick={() => handleVote(idx)}
+                            onClick={() => handleVote(idx, pollData.name)}
+                            disabled={isVoting}
                             className={cn(
-                                "w-full flex items-center justify-between p-3 rounded-lg border text-sm transition-all group active:scale-[0.98]",
-                                isSelected 
-                                    ? "bg-yellow-500/10 border-yellow-500/50 text-yellow-100" 
-                                    : "bg-black/20 border-zinc-800 text-zinc-300 hover:bg-white/5 hover:border-zinc-600"
+                                "w-full relative flex items-center justify-between p-3 rounded-lg border text-sm transition-all overflow-hidden",
+                                "bg-black/20 border-zinc-800 text-zinc-300 hover:border-zinc-600 active:scale-[0.99]"
                             )}
                         >
-                            <span className="font-medium truncate mr-2">{opt}</span>
-                            <div className={cn(
-                                "w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors",
-                                isSelected ? "border-yellow-500 bg-yellow-500" : "border-zinc-600 group-hover:border-zinc-400"
-                            )}>
-                                {isSelected && <CheckCircle2 className="w-3.5 h-3.5 text-black" />}
+                            {/* Progress Bar Background */}
+                            <div 
+                                className="absolute left-0 top-0 bottom-0 bg-yellow-500/10 transition-all duration-700 ease-out" 
+                                style={{ width: `${percentage}%` }}
+                            />
+
+                            <div className="flex items-center gap-3 relative z-10">
+                                <div className={cn(
+                                    "w-4 h-4 rounded-full border-2 flex items-center justify-center transition-colors",
+                                    "border-zinc-600 group-hover:border-zinc-400"
+                                )}>
+                                    {isVoting && <Loader2 className="w-3 h-3 animate-spin text-yellow-500" />}
+                                </div>
+                                <span className="font-medium truncate mr-2 text-xs">{opt}</span>
+                            </div>
+
+                            <div className="relative z-10 flex items-center gap-2">
+                                {/* Avatares dos votantes (Simulado - pegando 3 primeiros) */}
+                                {votes.filter(v => v.optionId === idx).slice(0, 3).map((v, i) => (
+                                    <div key={i} className="w-4 h-4 rounded-full bg-zinc-700 border border-zinc-800 -ml-2 first:ml-0" title={v.voterJid} />
+                                ))}
+                                <span className="text-[10px] font-bold text-zinc-500">{voteCount}</span>
                             </div>
                         </button>
                     )
                 })}
             </div>
             
-            {/* Footer Fake */}
+            {/* Footer */}
             <div className="text-center pt-2 border-t border-white/5">
-                <span className="text-[10px] text-zinc-500 font-medium">Selecione para votar</span>
+                <span className="text-[10px] text-zinc-500 font-medium">Toque para votar</span>
             </div>
         </div>
     );

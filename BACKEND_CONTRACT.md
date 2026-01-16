@@ -1,7 +1,7 @@
 
 # 🏛️ Wancora CRM - Backend Architecture & Interface Contract
 
-**Versão do Documento:** 3.0 (Golden Master / Production Ready)
+**Versão do Documento:** 3.2 (Native Pix & Interactive)
 **Arquitetura:** Event-Driven Microservices (Node.js + Supabase + Redis)
 **Stack:** Baileys (Core), Express (API), BullMQ (Filas), PostgreSQL (Persistência).
 
@@ -32,9 +32,9 @@ O Frontend interage com o resultado do processamento do Backend através destas 
 
 | Tabela | Função Crítica | Regra de Integridade |
 | :--- | :--- | :--- |
-| **`instances`** | Estado da conexão WebSocket. | `session_id` é a chave mestra. O Backend atualiza `updated_at` como heartbeat. |
+| **`instances`** | Estado da conexão WebSocket. | `session_id` é a chave mestra. Agora inclui `sync_status` e `sync_percent`. |
 | **`contacts`** | Agenda sincronizada. | O Backend faz Upsert constante. `is_ignored` controla o fluxo de Leads. |
-| **`messages`** | Histórico de Chat. | **Sem FK restrita** para `contacts` (Suporte a LID). Chave única: `remote_jid` + `whatsapp_id`. |
+| **`messages`** | Histórico de Chat. | **Sem FK restrita** para `contacts`. Chave única: `remote_jid` + `whatsapp_id`. Agora possui `poll_votes`. |
 | **`baileys_auth_state`** | Sessão criptografada. | Armazena chaves do Signal Protocol. Nunca editar manualmente. |
 
 ### 2.2. Tabelas de Negócio (Leitura pelo Backend)
@@ -86,8 +86,23 @@ Envia mensagens com **Protocolo de Humanização** (Digitando... -> Pausa -> Env
     }
     ```
 
-*   **Comportamento de Segurança (Race Condition Fix):**
-    A rota faz um `UPSERT` na tabela `messages` imediatamente após o envio. Se o Listener do Baileys tentar salvar a mesma mensagem milissegundos depois, o banco rejeita a duplicata silenciosamente, garantindo integridade.
+**Comportamento Especial - PIX:**
+*   Se `type: 'pix'` e `text: 'chave_pix'`, o Backend **não envia texto simples**.
+*   Ele constrói um payload `interactiveMessage` (Native Flow) com um botão de ação `cta_copy` contendo a chave.
+*   O destinatário vê um card oficial "PAGAMENTO VIA PIX" com botão de copiar.
+
+#### `POST /message/vote` [NOVO]
+Envia um voto em uma enquete ativa.
+*   **Body:**
+    ```json
+    {
+      "sessionId": "...",
+      "companyId": "...",
+      "remoteJid": "...",
+      "pollId": "ID_da_Mensagem_Enquete", // ID interno ou whatsapp_id
+      "optionId": 0 // Índice da opção (0-based)
+    }
+    ```
 
 ### 3.3. Campanhas (`Campaign Controller`)
 
@@ -133,6 +148,7 @@ Ao conectar um novo WhatsApp com 50.000 mensagens:
 2.  **Prioridade:** Seleciona apenas os 100 chats mais ativos.
 3.  **Limite:** Baixa apenas as 10 últimas mensagens de cada chat.
 4.  **Chunking:** Salva no banco em lotes de 50 para não estourar a memória da instância.
+5.  **Feedback Visual:** Atualiza `instances.sync_percent` progressivamente para que o usuário veja a barra de carregamento.
 
 ### 4.4. Anti-Crash & Stubs
 O Baileys exige acesso a chaves de criptografia de mensagens antigas.
@@ -149,13 +165,13 @@ O Frontend deve escutar o Supabase para reagir a mudanças de estado.
 *   **Evento:** `UPDATE`
 *   **Ação:**
     *   Se `status == 'qrcode'`, renderizar `new.qrcode_url`.
-    *   Se `status == 'connected'`, redirecionar para Dashboard.
+    *   Se `status == 'connected'`, redirecionar para Dashboard ou mostrar barra de sync (`sync_percent`).
     *   Se `status == 'disconnected'`, mostrar botão de reconectar.
 
 ### Canal: `public:messages`
 *   **Filtro:** `company_id=eq.SEU_ID`
-*   **Evento:** `INSERT`
-*   **Ação:** Atualizar a lista de mensagens do chat aberto E atualizar o contador da Sidebar.
+*   **Evento:** `INSERT` ou `UPDATE`
+*   **Ação:** Atualizar a lista de mensagens (incluindo votos de enquetes) e contador da Sidebar.
 
 ### Canal: `public:campaigns`
 *   **Filtro:** `company_id=eq.SEU_ID`

@@ -1,6 +1,6 @@
 # 📘 WANCORA CRM - System Architecture & Master Blueprint
 
-**Versão:** 3.6 (Enterprise Gold Standard - Final Fusion)
+**Versão:** 3.8 (Native Pix & Interactive Flows)
 **Status:** Production-Ready
 **Arquitetura:** Event-Driven, Multi-Tenant, Persistent Connection
 **Stack Principal:** Next.js 14 (App Router), Node.js (Baileys Core), Supabase (PostgreSQL + Realtime).
@@ -31,6 +31,7 @@ Este é o coração pulsante. Ele não é apenas uma API REST; é um Gerenciador
     * **Saída:** API REST para o Frontend (`POST /api/message/send`).
     * **Persistência:** Gravação direta no Supabase via `supabase-js` (Service Role) ignorando RLS.
 * **Estratégia de Sincronização (Sync Strategy):**
+    * **Sync First Protocol (Visual Feedback):** Ao conectar, o Backend atualiza a tabela `instances` com `sync_status` ('importing_contacts' -> 'importing_messages' -> 'completed') e `sync_percent`. Isso permite que o Frontend exiba uma tela de bloqueio com barra de progresso real.
     * **Gerenciamento de Mídia (Supabase Storage):**
         * Bucket: `chat-media` (Público).
         * Fluxo: O Backend intercepta msg com mídia -> Baixa o buffer -> Faz upload no Storage -> Salva a URL pública na coluna `messages.media_url`.
@@ -48,6 +49,8 @@ A Fonte da Verdade. Se não está no banco, não existe.
 * Gerencia a conexão física.
 * `session_id` (Unique): Identificador da sessão do Baileys.
 * `company_id` (FK): Isolamento Multi-Tenant.
+* `sync_status`: Estado da importação inicial ('waiting', 'importing_contacts', 'importing_messages', 'completed').
+* `sync_percent`: Inteiro (0-100) para feedback visual no Frontend.
 
 **2. contacts (A Agenda Inteligente)**
 * `jid` (PK): Identificador único (`551199999999@s.whatsapp.net` p/ pessoas, `123456@g.us` p/ grupos).
@@ -86,6 +89,7 @@ A Fonte da Verdade. Se não está no banco, não existe.
 * `whatsapp_id` (Unique Index): ID vindo do Baileys.
 * `message_type`: Tipo ('text', 'image', 'audio', 'video', 'document', 'poll', 'location', 'sticker').
 * `media_url`: Link público da mídia no Supabase Storage.
+* `poll_votes` (JSONB): Armazena os votos recebidos em tempo real `[{ voterJid, optionId }]`.
 * `remote_jid`: Chave estrangeira para `contacts` (mas **sem FK estrita** para suportar LIDs).
 
 #### Camada de Performance (RPCs & Views)
@@ -137,12 +141,13 @@ O sistema suporta protocolos complexos além de texto. (`MessageContent.tsx`):
 1.  **📍 Localização (Location):**
     * **Envio:** Captura `navigator.geolocation`.
     * **Renderização:** Exibe um "Fake Static Map" (CSS Styled) com coordenadas e link para Google Maps.
-2.  **📊 Enquete (Poll):**
+2.  **📊 Enquete (Poll) [Atualizado]:**
     * **Estrutura JSON:** `{ name: "Pergunta", options: ["A", "B"], selectableOptionsCount: 1 }`.
-    * **Renderização:** Card interativo com opções selecionáveis visualmente.
-3.  **💲 Pix (Cobrança):**
-    * **Detecção:** Mensagens do tipo `pix` ou texto começando com "Chave Pix:".
-    * **UI:** Card estilizado verde com botão de "Copiar Chave" e ícone QR Code.
+    * **Renderização:** Card interativo com opções selecionáveis e **Barra de Progresso Real** baseada nos votos recebidos.
+3.  **💲 Pix Nativo (Copia e Cola):**
+    * **Backend:** Transforma `type: 'pix'` em `interactiveMessage` (Native Flow).
+    * **UX do Cliente:** Recebe um card oficial com botão **"COPIAR CHAVE PIX"** que interage com a área de transferência do sistema.
+    * **UX do Vendedor:** Vê um card estilizado verde no CRM com a chave e QR Code.
 4.  **👤 Contato (vCard):**
     * **Envio:** Envia VCard padrão (compatível com botão "Salvar" no celular).
     * **Renderização:** Card estilo VCard com botão de Download (.vcf).

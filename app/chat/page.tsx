@@ -7,7 +7,7 @@ import { ChatContact, Message, Instance, Lead } from '@/types';
 import { cleanJid, cn } from '@/lib/utils';
 import { 
     Loader2, Search, Send, Paperclip, Sparkles, Mic, 
-    Image as IconImage, FileText, BarChart2, X, Trash2, ArrowLeft, User, Smartphone, Wifi, Clock, MoreVertical, CheckSquare, BellOff, Bell, Users, Check, MapPin, DollarSign, List, Plus, Copy, Crosshair, StopCircle, Music, RefreshCw
+    Image as IconImage, FileText, BarChart2, X, Trash2, ArrowLeft, User, Smartphone, Wifi, Clock, MoreVertical, CheckSquare, BellOff, Bell, Users, Check, MapPin, DollarSign, List, Plus, Copy, Crosshair, StopCircle, Music, RefreshCw, Database
 } from 'lucide-react';
 import { MessageBubble } from '@/components/chat/MessageBubble';
 import { ChatSidebar } from '@/components/chat/ChatSidebar';
@@ -29,7 +29,7 @@ export default function ChatPage() {
   const supabase = createClient();
   const { addToast } = useToast();
   
-  // --- INSTANCES ---
+  // --- INSTANCES & SYNC STATUS ---
   const [instances, setInstances] = useState<Instance[]>([]);
   const [selectedInstance, setSelectedInstance] = useState<Instance | null>(null);
 
@@ -48,9 +48,27 @@ export default function ChatPage() {
               if (!selectedInstance) setSelectedInstance(data[0]);
           }
       };
+      
       fetchInstances();
+
+      // Realtime listener para atualização de status de sync
+      const sub = supabase.channel(`chat-instances-${user?.company_id}`)
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'instances', filter: `company_id=eq.${user?.company_id}` }, (payload) => {
+            const updated = payload.new as Instance;
+            setInstances(prev => prev.map(i => i.id === updated.id ? updated : i));
+            if(selectedInstance?.id === updated.id) {
+                setSelectedInstance(updated);
+            }
+        })
+        .subscribe();
+
+      return () => { supabase.removeChannel(sub); };
   }, [user?.company_id, supabase]); 
 
+  // --- SYNC OVERLAY LOGIC ---
+  const isSyncing = selectedInstance && selectedInstance.sync_status && selectedInstance.sync_status !== 'completed';
+  const syncPercent = selectedInstance?.sync_percent || 0;
+  
   // --- CHAT LOGIC ---
   const { contacts, loading: loadingContacts, refreshChats } = useChatList(selectedInstance?.session_id || null);
   const [searchTerm, setSearchTerm] = useState("");
@@ -68,24 +86,21 @@ export default function ChatPage() {
   const [activeContact, setActiveContact] = useState<ChatContact | null>(null);
   const [activeLead, setActiveLead] = useState<Lead | null>(null);
   
-  // --- LIVE BINDING (Sincronização em Tempo Real do Contato Ativo) ---
-  // Se o backend atualizar o nome/foto do contato (ex: via celular), reflete no chat aberto imediatamente.
+  // --- LIVE BINDING ---
   useEffect(() => {
       if (activeContact && contacts.length > 0) {
           const updatedContact = contacts.find(c => c.jid === activeContact.jid);
           if (updatedContact) {
-              // Verifica se houve mudança real para evitar re-render loops
               if (
                   updatedContact.name !== activeContact.name || 
                   updatedContact.profile_pic_url !== activeContact.profile_pic_url ||
                   updatedContact.unread_count !== activeContact.unread_count
               ) {
-                  // Preserva o ID mas atualiza os metadados visuais
                   setActiveContact(prev => prev ? { ...prev, ...updatedContact } : null);
               }
           }
       }
-  }, [contacts, activeContact?.jid]); // Dependência em contacts (que vem do Realtime Hook)
+  }, [contacts, activeContact?.jid]);
 
   // INBOX SELECTION
   const [isInboxSelectionMode, setIsInboxSelectionMode] = useState(false);
@@ -156,7 +171,6 @@ export default function ChatPage() {
       setSearchTerm("");
       setMediaMenuOpen(false); 
       
-      // Zera contador localmente para feedback instantâneo
       const updatedContact = { ...contact, unread_count: 0 };
       setActiveContact(updatedContact);
 
@@ -169,23 +183,17 @@ export default function ChatPage() {
       } catch (e) {}
   };
 
-  // --- IDENTITY UNIFICATION LOGIC ---
   const linkIdentity = async (lidJid: string, phoneJid: string) => {
       if (!user?.company_id) return;
-      console.log(`[Identity] Linking LID ${lidJid} to Phone ${phoneJid}`);
-      
       try {
           await supabase.rpc('link_identities', {
               p_lid: lidJid,
               p_phone: phoneJid,
               p_company_id: user.company_id
           });
-          // Refresh after link to get the merged messages
           const msgs = await loadMessages(0);
           setMessages(msgs);
-      } catch (e) {
-          console.error("Link failed:", e);
-      }
+      } catch (e) {}
   };
 
   const loadMessages = async (offset: number) => {
@@ -220,7 +228,6 @@ export default function ChatPage() {
       refreshChats();
   };
 
-  // --- INIT CHAT & REALTIME ---
   useEffect(() => {
       if(!activeContact || !selectedInstance) {
           setActiveLead(null);
@@ -252,16 +259,10 @@ export default function ChatPage() {
 
       const channel = supabase
         .channel(`chat-room-global`)
-        .on('postgres_changes', { 
-            event: 'INSERT', 
-            schema: 'public', 
-            table: 'messages'
-        }, async (payload) => {
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, async (payload) => {
             const newMessage = payload.new as Message;
             if (newMessage.company_id !== user?.company_id) return;
 
-            // Se a mensagem for deste chat ou de um LID relacionado, atualiza a UI
-            // O refreshChats global (useChatList) já cuida da sidebar
             refreshChats();
 
             const isLid = newMessage.remote_jid.includes('@lid');
@@ -278,10 +279,18 @@ export default function ChatPage() {
                     return [...prev, newMessage];
                 });
                 setTimeout(() => scrollToBottom('smooth'), 100);
-                
                 if (!newMessage.from_me) {
                     supabase.from('contacts').update({ unread_count: 0 }).eq('jid', activeContact.remote_jid);
                 }
+            }
+        })
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages' }, async (payload) => {
+            // LISTENER PARA ENQUETES REAIS (VOTOS)
+            const updatedMessage = payload.new as Message;
+            if (updatedMessage.company_id !== user?.company_id) return;
+            
+            if (updatedMessage.remote_jid === activeContact.remote_jid) {
+                setMessages(prev => prev.map(m => m.id === updatedMessage.id ? updatedMessage : m));
             }
         })
         .subscribe();
@@ -362,6 +371,7 @@ export default function ChatPage() {
       finally { if (fileInputRef.current) fileInputRef.current.value = ''; if (audioInputRef.current) audioInputRef.current.value = ''; }
   };
 
+  // ... (Audio recording and other handlers kept same as before)
   const startRecording = async () => {
       try {
           const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -433,8 +443,35 @@ export default function ChatPage() {
   const handleDeleteSelectedMsgs = async () => {};
 
   return (
-    <div className="flex h-[calc(100vh-6rem)] md:h-[calc(100vh-4rem)] rounded-xl border border-zinc-800 bg-zinc-950/50 overflow-hidden shadow-2xl animate-in fade-in duration-500">
+    <div className="flex h-[calc(100vh-6rem)] md:h-[calc(100vh-4rem)] rounded-xl border border-zinc-800 bg-zinc-950/50 overflow-hidden shadow-2xl animate-in fade-in duration-500 relative">
       
+      {/* SYNC OVERLAY - BLOQUEIO DE TELA DURANTE O DOWNLOAD INICIAL */}
+      {isSyncing && (
+          <div className="absolute inset-0 z-[999] bg-zinc-950/95 backdrop-blur-md flex flex-col items-center justify-center text-center animate-in fade-in zoom-in duration-300">
+              <div className="relative mb-6">
+                  <div className="absolute inset-0 bg-primary/20 rounded-full blur-2xl animate-pulse"></div>
+                  <Database className="w-16 h-16 text-primary relative z-10 animate-bounce" />
+              </div>
+              <h2 className="text-2xl font-bold text-white mb-2">Sincronizando WhatsApp...</h2>
+              <p className="text-zinc-400 max-w-md text-sm mb-6">
+                  Estamos baixando seus contatos, grupos e histórico de conversas. 
+                  Isso garante que os nomes e fotos apareçam corretamente.
+              </p>
+              
+              <div className="w-64 h-2 bg-zinc-900 rounded-full overflow-hidden border border-zinc-800">
+                  <div 
+                    className="h-full bg-primary transition-all duration-500 ease-out" 
+                    style={{ width: `${syncPercent}%` }}
+                  ></div>
+              </div>
+              <span className="text-xs font-mono text-primary mt-2">{syncPercent}% Concluído</span>
+              
+              <p className="text-[10px] text-zinc-600 mt-8 absolute bottom-10">
+                  Por favor, não feche esta janela. O processo leva cerca de 1 minuto.
+              </p>
+          </div>
+      )}
+
       {/* SIDEBAR ESQUERDA */}
       <div className={cn("w-full md:w-80 border-r border-zinc-800 flex-col bg-zinc-900/30 backdrop-blur-sm", activeContact ? "hidden md:flex" : "flex")}>
         {/* Header Inbox */}
@@ -660,6 +697,7 @@ export default function ChatPage() {
           </div>
       </Modal>
 
+      {/* ... Outros Modais (Pix, Contact, Location) mantidos inalterados ... */}
       <Modal isOpen={activeModal === 'pix'} onClose={() => setActiveModal(null)} title="Enviar Chave Pix">
           <div className="space-y-4">
               <div>
