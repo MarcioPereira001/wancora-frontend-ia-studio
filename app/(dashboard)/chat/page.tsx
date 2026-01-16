@@ -7,7 +7,7 @@ import { useChatStore } from '@/store/useChatStore';
 import { useRealtimeStore } from '@/store/useRealtimeStore';
 import { Message } from '@/types';
 import { cn } from '@/lib/utils';
-import { Smartphone, Database, Loader2, Lock, DownloadCloud, CheckCircle2 } from 'lucide-react';
+import { Smartphone, Database, Loader2, Lock, DownloadCloud, CheckCircle2, RefreshCw } from 'lucide-react';
 
 // Atomic Components
 import { ChatListSidebar } from '@/components/chat/ChatListSidebar';
@@ -41,23 +41,29 @@ export default function ChatPage() {
       }
   }, [instances, selectedInstance, setSelectedInstance]);
 
-  // --- SYNC STATE LOGIC ---
-  // O Chat só libera se status for 'completed' OU se não estiver em processo de sync pesado
+  // --- SYNC STATE LOGIC (SMART SYNC V4.0) ---
   const syncStatus = selectedInstance?.sync_status || 'completed';
-  const isSyncing = syncStatus === 'importing_contacts' || syncStatus === 'importing_messages' || syncStatus === 'waiting';
+  const isSyncing = (syncStatus === 'importing_contacts' || syncStatus === 'importing_messages' || syncStatus === 'waiting') && selectedInstance?.status === 'connected';
   const syncPercent = selectedInstance?.sync_percent || 0;
   
   // Texto dinâmico do status
-  let syncLabel = "Aguardando início...";
-  let syncSubLabel = "Preparando conexão segura";
+  let syncLabel = "Conectando...";
+  let syncSubLabel = "Estabelecendo túnel criptografado";
   
   if (syncStatus === 'importing_contacts') {
-      syncLabel = "Sincronizando Contatos";
-      syncSubLabel = "Identificando nomes e salvando agenda...";
+      syncLabel = "Organizando Agenda";
+      syncSubLabel = "Identificando contatos e nomes...";
   } else if (syncStatus === 'importing_messages') {
-      syncLabel = "Baixando Histórico";
-      syncSubLabel = "Recuperando conversas antigas (Isso pode levar alguns segundos)...";
+      syncLabel = "Sincronizando Histórico";
+      syncSubLabel = "Baixando e indexando conversas recentes...";
   }
+
+  // --- MATH FOR SVG CIRCLE ---
+  const radius = 60;
+  const circumference = 2 * Math.PI * radius;
+  // Garante que o percentual esteja entre 0 e 100
+  const safePercent = Math.min(Math.max(syncPercent, 0), 100);
+  const offset = circumference - (safePercent / 100) * circumference;
 
   // --- IDENTITY UNIFICATION (LID) ---
   const linkIdentity = async (lidJid: string, phoneJid: string) => {
@@ -130,46 +136,54 @@ export default function ChatPage() {
   return (
     <div className="flex h-[calc(100vh-6rem)] md:h-[calc(100vh-4rem)] rounded-xl border border-zinc-800 bg-zinc-950/50 overflow-hidden shadow-2xl animate-in fade-in duration-500 relative">
       
-      {/* --- BLOCKING SYNC OVERLAY (A Nova Trava) --- */}
+      {/* --- SMART SYNC OVERLAY (SVG PROGRESSIVE) --- */}
       {isSyncing && (
-          <div className="absolute inset-0 z-[9999] bg-zinc-950/90 backdrop-blur-xl flex flex-col items-center justify-center text-center animate-in fade-in duration-500 cursor-progress">
-              <div className="max-w-md w-full p-10 rounded-3xl border border-zinc-800 bg-zinc-900/80 shadow-2xl relative overflow-hidden">
+          <div className="fixed inset-0 z-[9999] bg-zinc-950/90 backdrop-blur-xl flex flex-col items-center justify-center text-center animate-in fade-in duration-500 cursor-wait">
+              
+              {/* Glow Effect de Fundo */}
+              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-primary/10 rounded-full blur-[100px] pointer-events-none"></div>
+
+              <div className="relative z-10 flex flex-col items-center space-y-8">
                   
-                  {/* Cyberpunk Glow Background */}
-                  <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-1 bg-gradient-to-r from-transparent via-primary to-transparent shadow-[0_0_20px_rgba(34,197,94,0.5)]"></div>
-                  <div className="absolute -top-20 -left-20 w-40 h-40 bg-primary/10 rounded-full blur-3xl"></div>
-                  <div className="absolute -bottom-20 -right-20 w-40 h-40 bg-blue-500/10 rounded-full blur-3xl"></div>
+                  {/* Círculo SVG */}
+                  <div className="relative w-48 h-48">
+                       {/* Background Circle */}
+                       <svg className="w-full h-full transform -rotate-90 drop-shadow-[0_0_15px_rgba(34,197,94,0.3)]">
+                         <circle
+                           cx="96" cy="96" r={radius}
+                           stroke="currentColor" strokeWidth="8" fill="transparent"
+                           className="text-zinc-800"
+                         />
+                         {/* Progress Circle */}
+                         <circle
+                           cx="96" cy="96" r={radius}
+                           stroke="currentColor" strokeWidth="8" fill="transparent"
+                           strokeDasharray={circumference}
+                           strokeDashoffset={offset}
+                           strokeLinecap="round"
+                           className="text-primary transition-all duration-700 ease-out"
+                         />
+                       </svg>
+                       
+                       {/* Percentual Centralizado */}
+                       <div className="absolute inset-0 flex flex-col items-center justify-center">
+                         <span className="text-4xl font-bold text-white font-mono tracking-tighter">
+                            {safePercent}%
+                         </span>
+                         <RefreshCw className="w-5 h-5 text-primary/80 animate-spin mt-2" />
+                       </div>
+                  </div>
 
-                  <div className="relative z-10 flex flex-col items-center">
-                      <div className="w-24 h-24 bg-zinc-950 rounded-full flex items-center justify-center mb-8 border-2 border-dashed border-zinc-700 relative">
-                          <DownloadCloud className="w-10 h-10 text-primary animate-bounce" />
-                          <div className="absolute inset-0 border-2 border-transparent border-t-primary rounded-full animate-spin"></div>
-                      </div>
-                      
-                      <h2 className="text-2xl font-bold text-white mb-2 tracking-tight">{syncLabel}</h2>
-                      <p className="text-zinc-400 text-sm mb-8 px-4 leading-relaxed">
-                          {syncSubLabel}<br/>
-                          <span className="text-zinc-500 text-xs mt-2 block">Priorizando contatos com nome para o CRM.</span>
+                  <div className="space-y-2 max-w-sm">
+                      <h2 className="text-2xl font-bold text-white tracking-tight">{syncLabel}</h2>
+                      <p className="text-zinc-400 text-sm leading-relaxed">
+                          {syncSubLabel}
                       </p>
+                  </div>
 
-                      {/* Progress Bar Real */}
-                      <div className="w-full space-y-3">
-                          <div className="flex justify-between text-xs font-bold uppercase tracking-wider text-zinc-500 px-1">
-                              <span>Progresso</span>
-                              <span className="text-primary font-mono">{syncPercent > 100 ? 100 : syncPercent}%</span>
-                          </div>
-                          <div className="w-full h-4 bg-zinc-950 rounded-full overflow-hidden border border-zinc-800 shadow-inner">
-                              <div 
-                                className="h-full bg-gradient-to-r from-primary via-emerald-400 to-primary bg-[length:200%_100%] animate-[shimmer_2s_linear_infinite] transition-all duration-300 ease-out shadow-[0_0_15px_rgba(34,197,94,0.5)]" 
-                                style={{ width: `${syncPercent > 100 ? 100 : syncPercent}%` }}
-                              ></div>
-                          </div>
-                      </div>
-
-                      <div className="mt-8 flex items-center gap-3 text-xs text-yellow-500/80 bg-yellow-500/5 px-4 py-3 rounded-xl border border-yellow-500/10">
-                          <Lock className="w-4 h-4 shrink-0" />
-                          <span>Tela bloqueada para garantir integridade dos dados.</span>
-                      </div>
+                  <div className="flex items-center gap-3 text-xs text-yellow-500/90 bg-yellow-500/10 px-6 py-2 rounded-full border border-yellow-500/20">
+                      <Lock className="w-3 h-3 shrink-0" />
+                      <span className="font-medium">O sistema está organizando seus dados para evitar duplicidade.</span>
                   </div>
               </div>
           </div>
