@@ -74,6 +74,7 @@ export interface LeadActivity {
 
 export interface LeadLink {
   id: string;
+  company_id?: string; // Adicionado para RLS Compliance
   lead_id: string;
   title: string;
   url: string;
@@ -110,6 +111,7 @@ export interface KanbanColumn {
 
 export interface ChecklistItem {
   id: string;
+  company_id?: string; // Adicionado para RLS Compliance
   lead_id: string;
   text: string;
   is_completed: boolean;

@@ -1,11 +1,11 @@
 # 🗄️ Wancora CRM - Database Schema & Architecture (Source of Truth)
 
-**Versão da Documentação:** 3.5 (Full Production Schema)
+**Versão da Documentação:** 3.9 (RLS & Security Shield)
 **Status do Sistema:** Produção / Estável
 **Engine:** PostgreSQL (via Supabase)
 **Arquitetura:** Multi-tenant (Baseado em `company_id`)
 
-Este documento é a **FONTE DA VERDADE ABSOLUTA**. Ele descreve a estrutura exata do banco de dados, regras de integridade, funções RPC e gatilhos.
+Este documento é a FONTE DA VERDADE ABSOLUTA. Ele descreve a estrutura exata do banco de dados, regras de integridade, funções RPC e gatilhos.
 
 ---
 
@@ -14,34 +14,32 @@ Este documento é a **FONTE DA VERDADE ABSOLUTA**. Ele descreve a estrutura exat
 Qualquer query ou lógica gerada deve respeitar estritamente estas 5 regras para evitar falhas catastróficas:
 
 1.  **Suporte a LID (WhatsApp ID Oculto/Privado):**
-    * A tabela `messages` **NÃO POSSUI** Foreign Key restrita para `contacts`.
-    * **Motivo:** Permitir salvar mensagens de IDs ocultos (`user@lid`) ou Status (`status@broadcast`) antes que o contato seja formalmente criado.
-    * **Proibido:** Nunca sugira adicionar `CONSTRAINT fk_messages_contacts`.
+    *   A tabela `messages` **NÃO POSSUI** Foreign Key restrita para `contacts`.
+    *   *Motivo:* Permitir salvar mensagens de IDs ocultos (`user@lid`) ou Status (`status@broadcast`) antes que o contato seja formalmente criado.
+    *   *Proibido:* Nunca sugira adicionar `CONSTRAINT fk_messages_contacts`.
 
 2.  **Unicidade de Mensagens (Upsert Seguro):**
-    * A tabela `messages` possui a constraint `messages_unique_id UNIQUE (remote_jid, whatsapp_id)`.
-    * O Backend usa isso para fazer `UPSERT`. Qualquer insert manual deve tratar conflitos nesta chave.
+    *   A tabela `messages` possui a constraint `messages_unique_id UNIQUE (remote_jid, whatsapp_id)`.
+    *   O Backend usa isso para fazer UPSERT. Qualquer insert manual deve tratar conflitos nesta chave.
 
 3.  **Visualização de Chats (Sidebar):**
-    * O Frontend **NUNCA** deve fazer `SELECT * FROM messages` para montar a lista de conversas. Isso é lento e não trata deduplicação.
-    * **Obrigatório:** Use sempre a função RPC `get_my_chat_list`. Ela retorna a lista ordenada, com contadores e última mensagem já formatada.
+    *   O Frontend **NÃO** deve fazer `SELECT * FROM messages` para montar a lista de conversas. Isso é lento e não trata deduplicação.
+    *   *Obrigatório:* Use sempre a função RPC `get_my_chat_list`. Ela retorna a lista ordenada, com contadores e última mensagem já formatada.
 
 4.  **Multi-Tenancy (Segurança de Dados):**
-    * Todas as tabelas críticas (`leads`, `messages`, `contacts`, `campaigns`) possuem a coluna `company_id`.
-    * Todas as queries devem incluir `WHERE company_id = '...'` para evitar vazamento de dados entre clientes.
+    *   Todas as tabelas críticas (`leads`, `messages`, `contacts`, `campaigns`) possuem a coluna `company_id`.
+    *   Todas as queries devem incluir `WHERE company_id = '...'` para evitar vazamento de dados entre clientes.
 
 5.  **Hierarquia de Nomes (Smart Naming):**
-    * Ao exibir o nome de um chat, a prioridade visual é:
-        1.  `leads.name` (Nome no CRM)
-        2.  `contacts.name` (Nome na Agenda salva)
-        3.  `contacts.push_name` (Nome do Perfil WhatsApp)
-        4.  `contacts.jid` (Número de telefone formatado)
+    *   Ao exibir o nome de um chat, a prioridade visual é:
+        1. `leads.name` (Nome no CRM)
+        2. `contacts.name` (Nome na Agenda salva)
+        3. `contacts.push_name` (Nome do Perfil WhatsApp)
+        4. `contacts.jid` (Número de telefone formatado)
 
 ---
 
 ## 📜 2. RAW SQL: Estrutura das Tabelas (DDL)
-
-Abaixo está o SQL exato de criação das tabelas em produção.
 
 ### 2.1. Núcleo do Sistema & Auth
 
@@ -186,6 +184,7 @@ CREATE TABLE public.leads (
   notes text,
   custom_data jsonb DEFAULT '{}'::jsonb,
   bot_status text DEFAULT 'active'::text CHECK (bot_status = ANY (ARRAY['active'::text, 'paused'::text, 'off'::text])),
+  deadline timestamp with time zone, -- Adicionado para controle de prazo
   created_at timestamp with time zone DEFAULT now(),
   updated_at timestamp with time zone DEFAULT now(),
   CONSTRAINT leads_pkey PRIMARY KEY (id),
@@ -203,6 +202,33 @@ CREATE TABLE public.lead_activities (
   created_at timestamp with time zone DEFAULT now(),
   CONSTRAINT lead_activities_pkey PRIMARY KEY (id),
   CONSTRAINT lead_activities_lead_id_fkey FOREIGN KEY (lead_id) REFERENCES public.leads(id)
+);
+
+-- TAREFAS / CHECKLIST (Atualizado v3.9)
+CREATE TABLE public.lead_checklists (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  company_id uuid NOT NULL, -- [CRÍTICO] Adicionado para RLS
+  lead_id uuid NOT NULL,
+  text text NOT NULL,
+  is_completed boolean DEFAULT false,
+  deadline timestamp with time zone,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT lead_checklists_pkey PRIMARY KEY (id),
+  CONSTRAINT lead_checklists_lead_id_fkey FOREIGN KEY (lead_id) REFERENCES public.leads(id),
+  CONSTRAINT lead_checklists_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id)
+);
+
+-- LINKS DO LEAD (Novo v3.9)
+CREATE TABLE public.lead_links (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  company_id uuid NOT NULL, -- [CRÍTICO] Adicionado para RLS
+  lead_id uuid NOT NULL,
+  title text NOT NULL,
+  url text NOT NULL,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT lead_links_pkey PRIMARY KEY (id),
+  CONSTRAINT lead_links_lead_id_fkey FOREIGN KEY (lead_id) REFERENCES public.leads(id),
+  CONSTRAINT lead_links_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id)
 );
 ```
 
@@ -227,9 +253,10 @@ CREATE TABLE public.campaigns (
   CONSTRAINT campaigns_pkey PRIMARY KEY (id)
 );
 
--- FILA DE ENVIOS DA CAMPANHA
+-- FILA DE ENVIOS DA CAMPANHA (Atualizado v3.9)
 CREATE TABLE public.campaign_leads (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
+  company_id uuid, -- [CRÍTICO] Adicionado para RLS e Performance
   campaign_id uuid,
   lead_id uuid,
   status text DEFAULT 'pending'::text CHECK (status = ANY (ARRAY['pending'::text, 'processing'::text, 'sent'::text, 'failed'::text, 'replied'::text])),
@@ -240,7 +267,7 @@ CREATE TABLE public.campaign_leads (
   CONSTRAINT campaign_leads_lead_id_fkey FOREIGN KEY (lead_id) REFERENCES public.leads(id)
 );
 
--- LOGS DE AUDITORIA DE DISPAROS
+-- LOGS DE AUDITORIA DE DISPAROS (Atualizado v3.9)
 CREATE TABLE public.campaign_logs (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   company_id uuid NOT NULL,
@@ -252,6 +279,20 @@ CREATE TABLE public.campaign_logs (
   sent_at timestamp with time zone DEFAULT now(),
   CONSTRAINT campaign_logs_pkey PRIMARY KEY (id),
   CONSTRAINT campaign_logs_campaign_id_fkey FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id)
+);
+
+-- AGENDAMENTOS DE MENSAGENS (Novo v3.9)
+CREATE TABLE public.scheduled_messages (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  company_id uuid NOT NULL,
+  lead_id uuid,
+  contact_jid text NOT NULL,
+  content text NOT NULL,
+  scheduled_at timestamp with time zone NOT NULL,
+  status text DEFAULT 'pending'::text CHECK (status = ANY (ARRAY['pending'::text, 'sent'::text, 'failed'::text, 'cancelled'::text])),
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT scheduled_messages_pkey PRIMARY KEY (id),
+  CONSTRAINT scheduled_messages_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id)
 );
 ```
 
@@ -288,10 +329,8 @@ CREATE TABLE public.automations (
 
 ## 📜 3. RAW SQL: Funções RPC (Lógica do Backend)
 
-Estas funções são executadas no Postgres e são vitais para a performance do Frontend.
-
 ### `get_my_chat_list` (Vital para Sidebar)
-Recupera a lista de conversas, fazendo join com leads, contatos e mensagens, aplicando deduplicação.
+Recupera a lista de conversas com suporte a LIDs e sincronização de identidade (usando LEFT JOIN).
 
 ```sql
 CREATE OR REPLACE FUNCTION public.get_my_chat_list(p_company_id uuid, p_session_id text DEFAULT NULL::text)
@@ -308,8 +347,8 @@ BEGIN
         ORDER BY m.remote_jid, m.created_at DESC
     )
     SELECT 
-        c.jid as remote_jid,
-        COALESCE(l.name, c.name, c.push_name, split_part(c.jid, '@', 1)) as contact_name,
+        lm.remote_jid,
+        COALESCE(l.name, c.name, c.push_name, split_part(lm.remote_jid, '@', 1)) as contact_name,
         c.push_name as contact_push_name,
         c.profile_pic_url as contact_pic,
         COALESCE(c.jid LIKE '%@g.us', false) as is_group,
@@ -322,19 +361,18 @@ BEGIN
         l.name as lead_name,
         l.profile_pic_url as lead_pic,
         c.updated_at as contact_updated_at
-    FROM contacts c
-    INNER JOIN LatestMessages lm ON c.jid = lm.remote_jid
-    LEFT JOIN leads l ON (l.company_id = c.company_id AND l.phone = split_part(c.jid, '@', 1))
-    WHERE c.company_id = p_company_id
-    AND (c.is_ignored IS FALSE OR c.is_ignored IS NULL)
+    FROM LatestMessages lm
+    LEFT JOIN contacts c ON c.jid = lm.remote_jid -- LEFT JOIN permite que mensagens LID sem contato apareçam
+    LEFT JOIN leads l ON (l.company_id = p_company_id AND l.phone = split_part(lm.remote_jid, '@', 1))
+    WHERE 
+        (c.company_id = p_company_id OR c.company_id IS NULL)
+        AND (c.is_ignored IS FALSE OR c.is_ignored IS NULL)
     ORDER BY lm.created_at DESC;
 END;
 $function$
 ```
 
 ### `get_gamification_ranking` (Ranking de Vendas)
-Calcula XP e Rank dos usuários baseado em leads ganhos.
-
 ```sql
 CREATE OR REPLACE FUNCTION public.get_gamification_ranking(p_company_id uuid, p_start_date timestamp with time zone, p_end_date timestamp with time zone)
  RETURNS TABLE(user_id uuid, user_name text, avatar_url text, total_sales numeric, leads_won bigint, xp numeric, rank bigint)
@@ -361,8 +399,6 @@ $function$
 ```
 
 ### `get_recent_activity` (Feed Dashboard)
-Une criação de leads e vendas fechadas em um único feed cronológico.
-
 ```sql
 CREATE OR REPLACE FUNCTION public.get_recent_activity(p_company_id uuid, p_limit integer)
  RETURNS TABLE(id text, type text, title text, description text, created_at timestamp with time zone)
@@ -385,13 +421,28 @@ END;
 $function$
 ```
 
+### `increment_campaign_count` (Worker Atomic Update)
+```sql
+CREATE OR REPLACE FUNCTION increment_campaign_count(p_campaign_id uuid, p_field text)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  IF p_field = 'processed_count' THEN
+    UPDATE campaigns SET processed_count = COALESCE(processed_count, 0) + 1 WHERE id = p_campaign_id;
+  ELSIF p_field = 'failed_count' THEN
+    UPDATE campaigns SET failed_count = COALESCE(failed_count, 0) + 1 WHERE id = p_campaign_id;
+  END IF;
+END;
+$$;
+```
+
 ---
 
 ## 🔒 4. Triggers de Automação
 
 ### `enforce_ignored_contact_rule` (Anti-Ghost)
-Se um contato for marcado como 'is_ignored', deleta automaticamente o lead correspondente.
-
 ```sql
 CREATE OR REPLACE FUNCTION public.enforce_ignored_contact_rule()
  RETURNS trigger LANGUAGE plpgsql
@@ -409,4 +460,135 @@ $function$
 
 ---
 
-**Fim do Schema.**
+## 🧩 5. Identity & Unification (LID vs Phone)
+
+Sistema para corrigir a fragmentação de identidade do WhatsApp (iOS/Android Multi-Device).
+
+### Estrutura e Funções de Unificação
+
+```sql
+-- 1. Tabela de Mapeamento de Identidade (A "Pedra de Roseta")
+CREATE TABLE IF NOT EXISTS public.identity_map (
+    lid_jid text NOT NULL,
+    phone_jid text NOT NULL,
+    company_id uuid NOT NULL,
+    created_at timestamp with time zone DEFAULT now(),
+    CONSTRAINT identity_map_pkey PRIMARY KEY (lid_jid, company_id)
+);
+
+-- 2. Função para Criar o Vínculo (Chamada pelo Frontend)
+CREATE OR REPLACE FUNCTION public.link_identities(p_lid text, p_phone text, p_company_id uuid)
+ RETURNS void
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+    -- Só insere se não existir, atualiza se necessário
+    INSERT INTO public.identity_map (lid_jid, phone_jid, company_id)
+    VALUES (p_lid, p_phone, p_company_id)
+    ON CONFLICT (lid_jid, company_id) 
+    DO UPDATE SET phone_jid = EXCLUDED.phone_jid;
+    
+    -- Efeito Reterorativo: Corrige mensagens passadas desse LID
+    UPDATE messages 
+    SET remote_jid = p_phone 
+    WHERE remote_jid = p_lid 
+    AND company_id = p_company_id;
+    
+    -- Limpa contato duplicado do LID se existir
+    UPDATE contacts 
+    SET is_ignored = true 
+    WHERE jid = p_lid AND company_id = p_company_id;
+END;
+$function$;
+
+-- 3. Trigger de Auto-Correção (O "Porteiro")
+-- Intercepta mensagens novas. Se o LID já for conhecido, troca pelo Phone JID na hora.
+CREATE OR REPLACE FUNCTION public.normalize_message_jid()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+    v_real_jid text;
+BEGIN
+    -- Se for LID, procura no mapa
+    IF NEW.remote_jid LIKE '%@lid' THEN
+        SELECT phone_jid INTO v_real_jid
+        FROM identity_map
+        WHERE lid_jid = NEW.remote_jid
+        AND company_id = NEW.company_id;
+        
+        -- Se achou mapeamento, corrige o ID antes de salvar
+        IF v_real_jid IS NOT NULL THEN
+            NEW.remote_jid := v_real_jid;
+        END IF;
+    END IF;
+    return NEW;
+END;
+$function$;
+
+-- Aplica o Trigger
+DROP TRIGGER IF EXISTS on_message_normalize ON public.messages;
+CREATE TRIGGER on_message_normalize
+BEFORE INSERT ON public.messages
+FOR EACH ROW
+EXECUTE FUNCTION public.normalize_message_jid();
+```
+
+### `sync_lid_to_phone_contact` (Trigger de UX)
+Atualiza a conversa principal (Phone) quando chega mensagem no canal secundário (LID), para garantir que ela suba no topo da lista.
+
+```sql
+CREATE OR REPLACE FUNCTION public.sync_lid_to_phone_contact()
+ RETURNS trigger LANGUAGE plpgsql
+AS $function$
+BEGIN
+    IF NEW.remote_jid LIKE '%@lid' AND NEW.lead_id IS NOT NULL THEN
+        UPDATE contacts c
+        SET updated_at = NOW(), 
+            unread_count = unread_count + 1
+        FROM leads l
+        WHERE l.id = NEW.lead_id
+        AND c.jid LIKE (l.phone || '%');
+    END IF;
+    RETURN NEW;
+END;
+$function$;
+
+CREATE TRIGGER on_message_lid_sync
+AFTER INSERT ON public.messages
+FOR EACH ROW
+EXECUTE FUNCTION public.sync_lid_to_phone_contact();
+```
+
+---
+
+## 🛡️ 6. Segurança & RLS (Row Level Security)
+
+**Política Universal (Tenant Isolation):**
+Implementado na v3.9 para garantir isolamento total entre empresas (Multi-tenancy). Todas as tabelas sensíveis possuem a seguinte política aplicada:
+
+```sql
+CREATE POLICY "Tenant Isolation Policy" ON public.nome_tabela
+FOR ALL
+TO authenticated
+USING (company_id = getting_user_company_id())
+WITH CHECK (company_id = getting_user_company_id())
+```
+
+**Função Auxiliar de Segurança:**
+```sql
+CREATE FUNCTION getting_user_company_id() RETURNS uuid AS $$
+  SELECT company_id FROM public.profiles WHERE id = auth.uid() LIMIT 1;
+$$ LANGUAGE sql SECURITY DEFINER;
+```
+
+**Tabelas Protegidas:**
+* `instances`, `contacts`, `messages`, `leads`
+* `lead_activities`, `lead_checklists`, `lead_links`
+* `pipelines`, `pipeline_stages`
+* `campaigns`, `campaign_leads`, `campaign_logs`, `scheduled_messages`
+* `agents`, `automations`, `identity_map`
+
+---
+
+Fim do Schema.

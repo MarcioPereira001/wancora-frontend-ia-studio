@@ -109,13 +109,14 @@ export function useLeadData(leadId?: string, leadPhone?: string) {
   };
 
   const addCheckitem = async (text: string, deadline?: string) => {
-      if(!leadId) return;
+      if(!leadId || !user?.company_id) return;
       
       // 1. Optimistic Update (Cria ID temporário)
       const tempId = `temp-${Date.now()}`;
       const tempItem: ChecklistItem = {
           id: tempId,
           lead_id: leadId,
+          company_id: user.company_id, // Local update consistency
           text,
           is_completed: false,
           deadline: deadline,
@@ -127,12 +128,19 @@ export function useLeadData(leadId?: string, leadPhone?: string) {
       // 2. Server Call
       const { data, error } = await supabase
         .from('lead_checklists')
-        .insert({ lead_id: leadId, text, is_completed: false, deadline: deadline || null })
+        .insert({ 
+            lead_id: leadId, 
+            company_id: user.company_id, // RLS Requirement
+            text, 
+            is_completed: false, 
+            deadline: deadline || null 
+        })
         .select()
         .single();
       
       // 3. Reconcile or Rollback
       if(error) {
+          console.error("Erro insert task:", error);
           setChecklist(prev => prev.filter(i => i.id !== tempId));
           addToast({ type: 'error', title: 'Erro', message: 'Erro ao salvar tarefa.' });
       } else if (data) {
@@ -167,16 +175,30 @@ export function useLeadData(leadId?: string, leadPhone?: string) {
 
   // --- LINKS ACTIONS ---
   const addLink = async (title: string, url: string) => {
-      if(!leadId) return;
+      if(!leadId || !user?.company_id) return;
       let finalUrl = url;
       if (!/^https?:\/\//i.test(url)) finalUrl = 'https://' + url;
 
       const tempId = `temp-${Date.now()}`;
-      const tempLink: LeadLink = { id: tempId, lead_id: leadId, title, url: finalUrl, created_at: new Date().toISOString() };
+      const tempLink: LeadLink = { 
+          id: tempId, 
+          lead_id: leadId, 
+          company_id: user.company_id, // Local update
+          title, 
+          url: finalUrl, 
+          created_at: new Date().toISOString() 
+      };
       setLinks(prev => [tempLink, ...prev]);
 
-      const { data, error } = await supabase.from('lead_links').insert({ lead_id: leadId, title, url: finalUrl }).select().single();
+      const { data, error } = await supabase.from('lead_links').insert({ 
+          lead_id: leadId, 
+          company_id: user.company_id, // RLS Requirement
+          title, 
+          url: finalUrl 
+      }).select().single();
+
       if(error) {
+          console.error("Erro insert link:", error);
           setLinks(prev => prev.filter(l => l.id !== tempId));
           addToast({ type: 'error', title: 'Erro', message: 'Falha ao salvar link.' });
       } else if(data) {
