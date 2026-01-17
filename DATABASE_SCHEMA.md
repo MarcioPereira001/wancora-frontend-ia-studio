@@ -124,6 +124,25 @@ Calendário e reuniões.
 * `status`: text ('pending', 'confirmed', 'cancelled')
 * `meet_link`: text
 * `ai_summary`: text (Resumo gerado pela IA pós-reunião)
+* `origin`: text (Default: 'internal')
+* `reminder_sent`: boolean
+* `confirmation_sent`: boolean
+* `cancel_reason`: text
+
+### `availability_rules` (Agendamento Inteligente)
+Define as regras de horários para o sistema de agendamento (tipo Calendly).
+* `id`: uuid (PK)
+* `company_id`: uuid (FK)
+* `user_id`: uuid (FK - Nullable) - Se null, é uma agenda global/time.
+* `name`: text - Nome descritivo (ex: "Mentoria 30min")
+* `slug`: text (Unique) - URL amigável.
+* `days_of_week`: integer[] - Array de dias ativos (0-6).
+* `start_hour`: time
+* `end_hour`: time
+* `slot_duration`: integer
+* `buffer_before`: integer
+* `buffer_after`: integer
+* `is_active`: boolean
 
 ### `automations` (Workflow)
 Regras de automação (Gatilho -> Ação).
@@ -190,6 +209,16 @@ Feed unificado de atividades recentes (Novos leads + Vendas ganhas) para o Dashb
 
 ### `link_identities`
 Função crítica que vincula um `LID` (ID oculto) ao `Phone JID` real, unificando o histórico de conversas e impedindo leads duplicados.
+
+### `get_public_availability_by_slug`
+Busca dados de uma regra de agendamento (`availability_rules`) de forma segura para usuários não logados.
+* Parâmetros: `p_slug` (text)
+* Retorna: Detalhes da regra + nome e avatar do dono.
+* Segurança: `SECURITY DEFINER` (Bypassa RLS de leitura).
+
+### `get_busy_slots`
+Retorna horários ocupados (`start_time`, `end_time`) de um usuário em uma data específica para cálculo de disponibilidade.
+* Parâmetros: `p_rule_id` (uuid), `p_date` (date)
 
 ### `get_my_chat_list`
 Retorna a lista de conversas da Inbox com dados agregados (não lidas, última mensagem, dados do lead).
