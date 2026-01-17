@@ -7,7 +7,7 @@ import { useChatStore } from '@/store/useChatStore';
 import { useRealtimeStore } from '@/store/useRealtimeStore';
 import { Message } from '@/types';
 import { cn } from '@/lib/utils';
-import { Smartphone, CheckCircle2 } from 'lucide-react';
+import { Smartphone } from 'lucide-react';
 
 // Atomic Components
 import { ChatListSidebar } from '@/components/chat/ChatListSidebar';
@@ -29,22 +29,21 @@ export default function ChatPage() {
   } = useChatStore();
 
   // --- AUTO-SELECT INSTANCE ---
+  // Seleciona automaticamente a primeira instância disponível para garantir que o chat funcione
   useEffect(() => {
       if (!selectedInstance && instances.length > 0) {
           const connected = instances.find(i => i.status === 'connected') || instances[0];
           if (connected) setSelectedInstance(connected);
       }
+      // Se a instância selecionada sumiu (foi deletada), seleciona outra
       if (selectedInstance && instances.length > 0 && !instances.find(i => i.session_id === selectedInstance.session_id)) {
           const connected = instances.find(i => i.status === 'connected') || instances[0];
           setSelectedInstance(connected || null);
       }
   }, [instances, selectedInstance, setSelectedInstance]);
 
-  // --- SYNC STATE LOGIC ---
-  const syncStatus = selectedInstance?.sync_status || 'completed';
-  const isSyncing = (syncStatus === 'importing_contacts' || syncStatus === 'importing_messages') && selectedInstance?.status === 'connected';
-
   // --- IDENTITY UNIFICATION (LID) ---
+  // Mantém a lógica de unificar contatos duplicados em background
   const linkIdentity = async (lidJid: string, phoneJid: string) => {
       if (!user?.company_id) return;
       try {
@@ -56,7 +55,8 @@ export default function ChatPage() {
       } catch (e) {}
   };
 
-  // --- REALTIME LISTENERS ---
+  // --- REALTIME LISTENERS (CORE) ---
+  // Atualiza dados do Lead quando o contato muda
   useEffect(() => {
       if(!activeContact || !user?.company_id) {
           setActiveLead(null);
@@ -70,6 +70,7 @@ export default function ChatPage() {
       refreshLead();
   }, [activeContact?.id, user?.company_id]);
 
+  // Escuta novas mensagens em Tempo Real
   useEffect(() => {
       if (!user?.company_id) return;
 
@@ -78,12 +79,15 @@ export default function ChatPage() {
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `company_id=eq.${user.company_id}` }, async (payload) => {
             const newMessage = payload.new as Message;
             
+            // Lógica de LID (Background)
             if (activeContact && newMessage.remote_jid.includes('@lid') && activeContact.remote_jid.includes('@s.whatsapp.net')) {
                 await linkIdentity(newMessage.remote_jid, activeContact.remote_jid);
             }
 
+            // Injeta mensagem na tela SE for do contato ativo (Instantâneo)
             if (activeContact && (newMessage.remote_jid === activeContact.remote_jid || newMessage.remote_jid.includes('@lid'))) {
                 addMessage(newMessage);
+                // Zera contador visualmente
                 if (!newMessage.from_me) {
                     supabase.from('contacts').update({ unread_count: 0 }).eq('jid', activeContact.remote_jid).eq('company_id', user.company_id);
                 }
@@ -91,6 +95,7 @@ export default function ChatPage() {
         })
         .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages', filter: `company_id=eq.${user.company_id}` }, async (payload) => {
             const updatedMessage = payload.new as Message;
+            // Atualiza status (ex: lido/entregue) em tempo real
             if (activeContact && updatedMessage.remote_jid === activeContact.remote_jid) {
                 setMessages(prev => prev.map(m => m.id === updatedMessage.id ? updatedMessage : m));
             }
@@ -108,64 +113,44 @@ export default function ChatPage() {
   };
 
   return (
-    <div className="flex h-[calc(100vh-6rem)] md:h-[calc(100vh-4rem)] rounded-xl border border-zinc-800 bg-zinc-950/50 overflow-hidden shadow-2xl animate-in fade-in duration-500 relative">
+    <div className="flex h-[calc(100vh-6rem)] md:h-[calc(100vh-4rem)] rounded-xl border border-zinc-800 bg-zinc-950/50 overflow-hidden shadow-2xl animate-in fade-in duration-300 relative">
       
-      {/* LEFT SIDEBAR */}
+      {/* 1. LISTA LATERAL (Inbox) */}
       <ChatListSidebar />
 
-      {/* MAIN CONTENT AREA */}
+      {/* 2. ÁREA PRINCIPAL (Chat ou Empty State) */}
       <div className={cn("flex-1 flex-col bg-[#09090b] relative", activeContact ? "flex" : "hidden md:flex")}>
         {activeContact && selectedInstance ? (
+            // MODO CHAT ATIVO: Renderização Direta e Limpa
             <>
-                {/* Se estiver sincronizando, mostra um aviso discreto no topo, mas permite usar o chat */}
-                {isSyncing && (
-                    <div className="h-1 bg-zinc-800 w-full relative overflow-hidden">
-                        <div className="absolute inset-0 bg-primary/50 animate-progress-indeterminate"></div>
-                    </div>
-                )}
-                
                 <ChatHeader />
                 <ChatWindow />
                 <ChatInputArea />
             </>
         ) : (
-            <div className="flex h-full items-center justify-center flex-col text-zinc-500 bg-zinc-950/20 p-4 text-center">
+            // MODO EMPTY STATE: Apenas um placeholder estático, sem spinners de "carregando"
+            <div className="flex h-full items-center justify-center flex-col text-zinc-500 bg-zinc-950/20 p-4 text-center select-none">
                 {selectedInstance ? (
                     <>
-                        <div className="w-24 h-24 bg-zinc-900 rounded-full flex items-center justify-center mb-6 border border-zinc-800 shadow-[0_0_40px_rgba(0,0,0,0.5)] group hover:border-primary/50 transition-colors">
-                            <Smartphone className="h-10 w-10 text-zinc-700 group-hover:text-primary transition-colors" />
+                        <div className="w-24 h-24 bg-zinc-900 rounded-full flex items-center justify-center mb-6 border border-zinc-800 shadow-[0_0_40px_rgba(0,0,0,0.5)]">
+                            <Smartphone className="h-10 w-10 text-zinc-700" />
                         </div>
                         <h3 className="text-xl font-bold text-zinc-200 mb-2">Wancora CRM</h3>
-                        <p className="text-sm opacity-60 max-w-xs">Selecione uma conversa ao lado para iniciar o atendimento.</p>
-                        
-                        {/* Status de Conexão */}
-                        <div className="mt-6 flex items-center gap-2 text-xs px-3 py-1.5 rounded-full border border-zinc-800 bg-zinc-900/50">
-                            {isSyncing ? (
-                                <>
-                                    <span className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse" />
-                                    <span className="text-yellow-500">Sincronizando em 2º plano</span>
-                                </>
-                            ) : (
-                                <>
-                                    <CheckCircle2 className="w-3 h-3 text-emerald-500" />
-                                    <span className="text-emerald-500">Sistema Pronto</span>
-                                </>
-                            )}
-                        </div>
+                        <p className="text-sm opacity-60 max-w-xs">Selecione uma conversa para iniciar.</p>
                     </>
                 ) : (
                     <div className="flex flex-col items-center">
                         <div className="w-16 h-16 bg-zinc-900 rounded-full flex items-center justify-center mb-4 opacity-50">
                             <Smartphone className="h-8 w-8 text-zinc-600" />
                         </div>
-                        <p className="text-sm text-zinc-500">Aguardando conexão...</p>
+                        <p className="text-sm text-zinc-500">Nenhuma conexão ativa.</p>
                     </div>
                 )}
             </div>
         )}
       </div>
 
-      {/* RIGHT SIDEBAR */}
+      {/* 3. SIDEBAR DIREITA (Dados do Lead) */}
       {activeContact && selectedInstance && (
           <ChatSidebar contact={activeContact} lead={activeLead} refreshLead={refreshLeadData} />
       )}
