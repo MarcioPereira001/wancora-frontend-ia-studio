@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { GlobalSyncIndicator } from '@/components/layout/GlobalSyncIndicator';
 
 export default function DashboardLayout({
   children,
@@ -44,10 +45,13 @@ export default function DashboardLayout({
       </div>
 
       {/* Main Content */}
-      <main className="flex-1 w-full md:ml-0 overflow-y-auto bg-zinc-950/50 p-4 md:p-8 pt-16 md:pt-8">
+      <main className="flex-1 w-full md:ml-0 overflow-y-auto bg-zinc-950/50 p-4 md:p-8 pt-16 md:pt-8 relative">
         <div className="mx-auto max-w-7xl animate-in fade-in slide-in-from-bottom-4 duration-500">
             {children}
         </div>
+        
+        {/* Indicador Global de Sincronização (Persistente) */}
+        <GlobalSyncIndicator />
       </main>
     </div>
   );
