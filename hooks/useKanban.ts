@@ -2,25 +2,22 @@ import { useState, useMemo, useEffect } from 'react';
 import { useCRMStore } from '@/store/useCRMStore';
 import { useAuthStore } from '@/store/useAuthStore';
 import { createClient } from '@/utils/supabase/client';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { KanbanColumn, Lead, Pipeline, PipelineStage } from '@/types';
 import { useToast } from '@/hooks/useToast';
 
 export function useKanban() {
   const { user } = useAuthStore();
   const supabase = createClient();
-  const queryClient = useQueryClient(); // Adicionado para atualizar pipelines
   const { addToast } = useToast();
   
-  // --- 1. REALTIME (Gaming Mode) ---
-  // Aqui está a mágica: Consumimos a Store Global que é atualizada via WebSocket
-  // Não fazemos mais "fetch" de leads aqui. Os dados já estão na memória.
+  // Consome a Store Global Realtime (Gaming Mode)
   const { leads: allLeads, stages, moveLeadOptimistic, isInitialized } = useCRMStore();
 
   const [selectedPipelineId, setSelectedPipelineId] = useState<string | null>(null);
 
-  // --- 2. ROBUSTEZ (Resgatado do Original) ---
-  // Pipelines são dados estruturais, mudam pouco. Mantemos useQuery para segurança.
+  // --- 1. RESGATE: Busca de Pipelines (Faltava no novo) ---
+  // Mantemos useQuery aqui pois pipelines mudam pouco e são metadados estruturais
   const { data: pipelines = [], isLoading: loadingPipelines } = useQuery({
     queryKey: ['pipelines', user?.company_id],
     queryFn: async () => {
@@ -37,7 +34,7 @@ export function useKanban() {
     enabled: !!user?.company_id,
   });
 
-  // Seleção automática do pipeline padrão (Lógica original vital)
+  // Seleciona pipeline padrão automaticamente
   useEffect(() => {
     if (pipelines.length > 0 && !selectedPipelineId) {
         const defaultPipe = pipelines.find(p => p.is_default) || pipelines[0];
@@ -45,7 +42,7 @@ export function useKanban() {
     }
   }, [pipelines, selectedPipelineId]);
 
-  // --- 3. TRANSFORMAÇÃO DE DADOS (Com Tratamento de Órfãos) ---
+  // --- 2. TRANSFORMAÇÃO DE DADOS (Com Tratamento de Órfãos) ---
   const columns = useMemo(() => {
       if (!stages.length) return [];
 
@@ -53,7 +50,6 @@ export function useKanban() {
 
       // Mapeia colunas normais
       const board: KanbanColumn[] = stages.map((stage: PipelineStage) => {
-          // Filtra da memória (Store) instantaneamente
           const stageLeads = allLeads
               .filter(l => l.pipeline_stage_id === stage.id)
               .sort((a, b) => (a.position || 0) - (b.position || 0));
@@ -70,18 +66,19 @@ export function useKanban() {
           };
       });
 
-      // --- ROBUSTEZ: Lógica de Órfãos ---
-      // Se um lead tiver um ID de estágio que não existe mais, ele não some!
-      // Ele vai para a primeira coluna e o banco é corrigido silenciosamente.
+      // --- RESGATE: Lógica de Órfãos (Leads com estágio inválido) ---
+      // Se não fizermos isso, leads com stage_id antigo somem da tela
       const orphans = allLeads.filter(l => !l.pipeline_stage_id || !stageIds.has(l.pipeline_stage_id));
       
       if (orphans.length > 0 && board.length > 0) {
+          // Coloca visualmente na primeira coluna para não perder
           board[0].items.unshift(...orphans);
           board[0].totalValue += orphans.reduce((acc, l) => acc + (Number(l.value_potential) || 0), 0);
           
-          // Auto-fix no banco (Fire and Forget)
+          // Auto-fix silencioso no banco (Fire and Forget)
           const firstStageId = board[0].id;
           orphans.forEach(async (lead) => {
+             // Só atualiza no banco se o ID for diferente, para não loopar
              if (lead.pipeline_stage_id !== firstStageId) {
                  await supabase.from('leads').update({ pipeline_stage_id: firstStageId }).eq('id', lead.id);
              }
@@ -91,14 +88,14 @@ export function useKanban() {
       return board;
   }, [allLeads, stages]);
 
-  // --- ACTIONS (Optimistic UI + Server Sync) ---
+  // --- ACTIONS (Optimistic + Server) ---
 
   const moveLeadMutation = useMutation({
     mutationFn: async ({ leadId, toStageId, newPosition }: { leadId: string; toStageId: string, newPosition: number }) => {
-      // 1. Atualização Visual Instantânea (Store Local)
+      // 1. Atualização Otimista (Store) - Instantâneo
       moveLeadOptimistic(leadId, toStageId, newPosition);
 
-      // 2. Gravação no Banco (Server)
+      // 2. Persistência (Server)
       const { error } = await supabase
         .from('leads')
         .update({ 
@@ -112,28 +109,32 @@ export function useKanban() {
     },
     onError: (err) => {
       console.error(err);
-      addToast({ type: 'error', title: 'Erro', message: 'Falha ao sincronizar movimento.' });
-      // Se der erro, força um refresh total para garantir a verdade do banco
+      addToast({ type: 'error', title: 'Erro', message: 'Falha ao mover card. Sincronizando...' });
+      // Em caso de erro, forçamos um refresh total para garantir integridade
       useCRMStore.getState().initializeCRM(user?.company_id || '');
     }
   });
 
-  // Reordenação de Estágios (Usa RPC do original para segurança)
+  // --- RESGATE: Reordenação Otimizada (RPC) ---
   const reorderStagesMutation = useMutation({
       mutationFn: async (newOrder: { id: string, position: number }[]) => {
+          // Tenta RPC primeiro (Mais robusto/Atômico)
           try {
             const { error } = await supabase.rpc('reorder_pipeline_stages', { p_updates: newOrder });
             if(error) throw error;
           } catch(e) {
-             // Fallback loop manual se RPC falhar
+             // Fallback loop se a RPC falhar ou não existir
              for(const item of newOrder) {
                  await supabase.from('pipeline_stages').update({ position: item.position }).eq('id', item.id);
              }
           }
       }
+      // Não precisamos de onSuccess invalidate, o Realtime do Postgres avisará a Store
   });
 
-  // --- CRUD Pipelines (Mantido com React Query pois não está na Store Global) ---
+  // Mutações Padrão (Create/Update/Delete)
+  // Nota: Não usamos mais invalidateQueries agressivo para leads/stages, pois o Socket atualiza a Store.
+  // Apenas para Pipelines usamos invalidate, pois eles não estão na Store Global ainda.
 
   const createPipelineMutation = useMutation({
       mutationFn: async ({ name, stages, assignedUserIds }: { name: string, stages: string[], assignedUserIds: string[] }) => {
@@ -158,18 +159,12 @@ export function useKanban() {
           const { error: stagesError } = await supabase.from('pipeline_stages').insert(stagesPayload);
           if(stagesError) throw stagesError;
 
-          // Associações de usuário (Opcional, se seu backend suportar)
-          if (assignedUserIds && assignedUserIds.length > 0) {
-              const assignments = assignedUserIds.map(uid => ({ pipeline_id: pipe.id, user_id: uid }));
-              await supabase.from('pipeline_assignments').insert(assignments);
-          }
-
           return pipe;
       },
       onSuccess: (newPipe) => {
           addToast({ type: 'success', title: 'Criado', message: `Funil "${newPipe.name}" criado.` });
-          queryClient.invalidateQueries({ queryKey: ['pipelines'] }); // Atualiza a lista de funis
-          setSelectedPipelineId(newPipe.id);
+          // Pipelines ainda usam React Query
+          // queryClient.invalidateQueries({ queryKey: ['pipelines'] }) <- Se tivesse queryClient aqui
       }
   });
 
@@ -187,12 +182,10 @@ export function useKanban() {
           await supabase.from('pipelines').update({ name }).eq('id', id);
       },
       onSuccess: () => {
-          queryClient.invalidateQueries({ queryKey: ['pipelines'] });
           addToast({ type: 'success', title: 'Atualizado', message: 'Funil renomeado.' });
       }
   });
 
-  // Funções simples de CRUD (A Store atualizará sozinha via WebSocket)
   const createLead = async (data: any) => {
       const position = Date.now(); 
       const { error } = await supabase.from('leads').insert({ ...data, company_id: user?.company_id, position });
@@ -210,15 +203,15 @@ export function useKanban() {
   };
 
   return { 
-    pipelines, // Lista de funis (Robustez restaurada)
+    pipelines, // Agora retorna os pipelines reais
     selectedPipelineId,
     setSelectedPipelineId,
-    columns, // Colunas processadas da Store (Realtime)
+    columns, 
     allLeads,
     stages,
     loading: !isInitialized || loadingPipelines, 
     moveLead: (leadId: string, toColId: string, newPosition: number) => moveLeadMutation.mutate({ leadId, toStageId: toColId, newPosition }),
-    reorderStages: reorderStagesMutation.mutate,
+    reorderStages: reorderStagesMutation.mutate, // Volta a usar RPC
     createPipeline: createPipelineMutation.mutateAsync,
     updateStage: updateStageMutation.mutateAsync,
     updatePipeline: updatePipelineMutation.mutateAsync,

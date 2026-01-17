@@ -173,7 +173,7 @@ export interface WhatsAppInstance {
   session_id: string;
   name: string;
   status: 'connected' | 'disconnected' | 'qr_ready' | 'qrcode' | 'connecting';
-  sync_status?: 'waiting' | 'importing_contacts' | 'importing_messages' | 'completed';
+  sync_status?: 'waiting' | 'importing_contacts' | 'importing_messages' | 'completed' | 'processing_history' | 'syncing';
   sync_percent?: number;
   qrcode_url?: string | null;
   battery_level?: number;
@@ -247,4 +247,39 @@ export interface ScheduledMessage {
   content: string;
   scheduled_at: string;
   status: 'pending' | 'sent' | 'failed' | 'cancelled';
+}
+
+// --- SCHEDULING (AGENDAMENTOS) ---
+export interface AvailabilityRule {
+  id: string;
+  company_id: string;
+  user_id?: string | null; // Nullable para agendas de time
+  name: string;
+  slug: string;
+  days_of_week: number[]; // 0=Domingo, 6=Sábado
+  start_hour: string; // Formato HH:MM:SS
+  end_hour: string; // Formato HH:MM:SS
+  slot_duration: number; // Em minutos
+  buffer_before: number; // Em minutos
+  buffer_after: number; // Em minutos
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Appointment {
+  id: string;
+  lead_id: string;
+  user_id: string; // Responsável
+  title: string;
+  start_time: string; // ISO String
+  end_time: string; // ISO String
+  status: 'pending' | 'confirmed' | 'cancelled';
+  origin: 'internal' | 'public_link';
+  reminder_sent: boolean;
+  confirmation_sent: boolean;
+  cancel_reason?: string;
+  meet_link?: string;
+  ai_summary?: string;
+  created_at?: string;
 }

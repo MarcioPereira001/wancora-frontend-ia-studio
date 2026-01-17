@@ -42,7 +42,7 @@ export function formatPhone(jid: string): string {
   return `+${clean}`;
 }
 
-// LÓGICA DE OURO: HIERARQUIA DE NOMES
+// LÓGICA DE OURO: HIERARQUIA DE NOMES INTELIGENTE v2.0
 export function getDisplayName(contact: any): string {
     if (!contact) return "Usuário";
 
@@ -54,18 +54,18 @@ export function getDisplayName(contact: any): string {
     }
     
     // 2. Contato Salvo na Agenda (contact.name)
-    // Ignora se o nome for igual ao ID (alguns backends fazem isso)
+    // Ignora se o nome for igual ao ID (alguns backends salvam o ID no nome por erro)
     if (contact.name && contact.name !== contact.remote_jid && !contact.name.includes('@') && !contact.name.includes(':')) {
         return contact.name;
     }
     
-    // 3. Nome do Perfil (push_name)
-    // Isso é crucial para quem não está na agenda
+    // 3. Nome do Perfil (push_name) - O Fallback Inteligente
+    // Isso resolve 90% dos casos de "sem nome"
     if (contact.push_name && contact.push_name !== contact.remote_jid) {
         return contact.push_name;
     }
     
-    // 4. Fallback: Formatação do Número
+    // 4. Fallback Final: Formatação bonita do Número
     return formatPhone(contact.remote_jid || contact.jid);
 }
 

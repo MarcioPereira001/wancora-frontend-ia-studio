@@ -12,16 +12,16 @@ interface RealtimeState {
   initialize: (companyId: string) => Promise<void>;
   disconnect: () => void;
   setInstances: (instances: Instance[]) => void;
+  // Ação para forçar atualização manual se necessário
   refreshInstances: (companyId: string) => Promise<void>;
 }
 
 export const useRealtimeStore = create<RealtimeState>((set, get) => {
   let channel: RealtimeChannel | null = null;
-  let heartbeatInterval: NodeJS.Timeout | null = null;
 
   return {
     isConnected: false,
-    instances: [],
+    instances: [], // Começa vazio, mas será preenchido IMEDIATAMENTE no initialize
     unreadCount: 0,
 
     setInstances: (instances) => set({ instances }),
@@ -34,44 +34,30 @@ export const useRealtimeStore = create<RealtimeState>((set, get) => {
             .eq('company_id', companyId);
         
         if (data && !error) {
-            // Se mudou algo, atualiza (evita re-renders desnecessários se for igual)
-            const current = get().instances;
-            const hasChanges = JSON.stringify(current) !== JSON.stringify(data);
-            
-            if (hasChanges) {
-                console.log(`⚡ [Realtime] Dados atualizados: ${data.length} instâncias encontradas.`);
-                set({ instances: data });
-            }
+            console.log("⚡ [Realtime] Estado atualizado (Snapshot):", data.length, "instâncias");
+            set({ instances: data });
         }
     },
 
     initialize: async (companyId: string) => {
-      // 1. Limpeza preventiva
-      if (channel) get().disconnect();
-      if (heartbeatInterval) clearInterval(heartbeatInterval);
+      // 1. Evita duplicidade, mas garante que os dados estejam frescos
+      if (channel && get().isConnected) {
+          // Se já está conectado, apenas atualiza os dados para garantir
+          get().refreshInstances(companyId);
+          return;
+      }
 
       const supabase = createClient();
-      console.log(`🔥 [Realtime] Conectando para empresa: ${companyId}`);
+      console.log(`🔥 [Realtime] Iniciando conexão AGRESSIVA para empresa: ${companyId}`);
 
-      // 2. FETCH INICIAL (SNAPSHOT)
+      // 2. FETCH INICIAL (SNAPSHOT) - O Segredo do "Modo Jogo"
+      // Carrega os dados IMEDIATAMENTE, não espera evento do socket
       await get().refreshInstances(companyId);
 
-      // 3. HEARTBEAT DE SEGURANÇA (O "F5 AUTOMÁTICO")
-      // Verifica o banco a cada 3 segundos caso o WebSocket falhe ou demore
-      heartbeatInterval = setInterval(async () => {
-         // Só faz o polling se não tiver instâncias ou se estiver sincronizando (para garantir a barra fluida)
-         const current = get().instances;
-         const isSyncing = current.some(i => i.sync_status === 'syncing');
-         const isEmpty = current.length === 0;
-
-         if (isEmpty || isSyncing) {
-             // console.log("💓 [Heartbeat] Verificando dados...");
-             await get().refreshInstances(companyId);
-         }
-      }, 3000);
-
-      // 4. CANAL REALTIME
+      // 3. Configura o Canal
       channel = supabase.channel(`company-room:${companyId}`)
+        
+        // --- MONITORAMENTO DE INSTÂNCIAS (ALTA FREQUÊNCIA) ---
         .on('postgres_changes', { 
           event: '*', 
           schema: 'public', 
@@ -80,40 +66,53 @@ export const useRealtimeStore = create<RealtimeState>((set, get) => {
         }, (payload) => {
             const currentInstances = get().instances;
             
+            // Lógica de Atualização Otimista (Instantânea)
             if (payload.eventType === 'DELETE') {
-                console.log("❌ [Realtime] DELETE detectado");
+                console.log("❌ [Realtime] Instância removida:", payload.old.id);
                 set({ instances: currentInstances.filter(i => i.id !== payload.old.id) });
-            } 
-            else if (payload.eventType === 'INSERT') {
-                console.log("✨ [Realtime] INSERT detectado");
-                set({ instances: [...currentInstances, payload.new as Instance] });
-            } 
-            else if (payload.eventType === 'UPDATE') {
+            } else if (payload.eventType === 'INSERT') {
+                console.log("✨ [Realtime] Nova instância:", payload.new.id);
+                // Verifica duplicidade antes de adicionar
+                if (!currentInstances.find(i => i.id === payload.new.id)) {
+                    set({ instances: [...currentInstances, payload.new as Instance] });
+                }
+            } else if (payload.eventType === 'UPDATE') {
+                // Atualização crítica para a barra de progresso (Sync)
                 const updated = payload.new as Instance;
-                // console.log(`🔄 [Realtime] UPDATE: ${updated.sync_percent}%`);
+                // console.log(`🔄 [Realtime] Update ${updated.session_id}: ${updated.sync_status} (${updated.sync_percent}%)`);
+                
                 set({ 
-                    instances: currentInstances.map(i => i.id === updated.id ? updated : i) 
+                    instances: currentInstances.map(i => 
+                        i.id === updated.id ? updated : i
+                    ) 
                 });
             }
         })
-        .subscribe((status) => {
+
+        // --- MONITORAMENTO DE STATUS DE CONEXÃO ---
+        .subscribe(async (status) => {
           if (status === 'SUBSCRIBED') {
+            console.log('🟢 [Realtime] Conectado e Sincronizado!');
             set({ isConnected: true });
+            // Se reconectou, busca dados de novo para garantir que não perdeu nada no "blink"
+            await get().refreshInstances(companyId);
           } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
-            console.warn('🔴 [Realtime] Desconectado.');
+            console.warn('🔴 [Realtime] Desconectado. Tentando reconectar...');
             set({ isConnected: false });
           }
         });
     },
 
     disconnect: () => {
-      if (heartbeatInterval) clearInterval(heartbeatInterval);
       if (channel) {
+        console.log('💤 [Realtime] Desconectando...');
         const supabase = createClient();
         supabase.removeChannel(channel);
         channel = null;
+        set({ isConnected: false });
+        // Nota: Não limpamos 'instances' aqui para evitar "flicker" na tela (tela branca)
+        // deixamos os dados antigos até a nova conexão substituir.
       }
-      set({ isConnected: false });
     }
   };
 });

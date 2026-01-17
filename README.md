@@ -1,6 +1,6 @@
 # 📘 WANCORA CRM - System Architecture & Master Blueprint
 
-**Versão:** 4.0 (Next.js 15 & React 19 Core)
+**Versão:** 4.2 (Gaming Mode & AI Agents)
 **Status:** Production-Ready / Secure
 **Arquitetura:** Event-Driven, Multi-Tenant, Persistent Connection
 **Stack Principal:** Next.js 15 (App Router), React 19, Node.js (Baileys Core), Supabase (PostgreSQL + Realtime).
@@ -22,11 +22,17 @@ O Wancora CRM é um Sistema Operacional de Vendas para WhatsApp. Diferente de fe
 
 ### A. O Frontend (Next.js 15 + React 19)
 Atualizado para a arquitetura mais moderna e segura do React.
-*   **Framework:** Next.js 15.1.3 (App Router).
-*   **UI Library:** React 19 + TailwindCSS + Shadcn/UI.
-*   **Data Fetching:** TanStack Query v5 (Gerenciamento de cache e estado assíncrono).
-*   **Excel Export:** `exceljs` (Substituindo `xlsx` por motivos de segurança e performance). Gera planilhas nativas com formatação e filtros.
-*   **State Management:** Zustand (Persistência local de sessão).
+* **AI Security (Server Actions):** Toda a comunicação com LLMs (Gemini) é feita exclusivamente via **Next.js Server Actions** (`app/actions/gemini.ts`). Isso garante que a `API_KEY` do Google nunca seja exposta no bundle do cliente (browser), prevenindo vazamento de credenciais.
+* **Framework:** Next.js 15.1.3 (App Router).
+* **UI Library:** React 19 + TailwindCSS + Shadcn/UI.
+* **Data Fetching:** TanStack Query v5 (Gerenciamento de cache e estado assíncrono).
+* **Excel Export:** `exceljs` (Substituindo `xlsx` por motivos de segurança e performance). Gera planilhas nativas com formatação e filtros.
+* **State Management:** Zustand (Persistência local de sessão).
+* **Arquitetura "Gaming Mode" (Realtime Agressivo):** Implementada nos módulos críticos (CRM/Kanban).
+    * **Snapshot Inicial:** Carrega dados via REST/Supabase SDK ao montar.
+    * **WebSocket Subscription:** Mantém a store atualizada via canal `postgres_changes`.
+    * **Optimistic UI:** Ações do usuário (ex: mover card) refletem em 0ms na tela antes da confirmação do servidor.
+* **Global Sync Indicator:** Componente flutuante (`GlobalSyncIndicator.tsx`) que intercepta estados de `syncing` do backend para mostrar progresso de importação em tempo real, sobrepondo qualquer rota.
 
 ### B. O Core Backend (Node.js + @whiskeysockets/baileys)
 Este é o coração pulsante. Ele não é apenas uma API REST; é um Gerenciador de Estado Persistente.
@@ -195,13 +201,30 @@ Agora possui navegação por **Abas** para organizar a densidade de informaçõe
     * Cálculo: A nova posição é a média matemática: `(Posição Anterior + Posição Posterior) / 2`.
 * **Master List View:** Visualização em tabela para Admins verem todos os leads da empresa.
 
-### 🤖 Módulo 3: IA Sentinela (Intelligence Layer)
-* **Smart Reply:** Backend recebe as últimas msgs + Contexto -> Envia para LLM -> Retorna sugestão de texto.
+### 🤖 Módulo 3: Agentes de IA & Automação (Gemini 3 Flash)
+* **Gestão de Personas:** Interface dedicada (`/agents`) para configurar o "System Prompt" e "Base de Conhecimento".
+* **Simulador (Sandbox):** Chat de teste integrado para validar as respostas do Agente antes de ativá-lo em produção.
+* **Otimizador de Prompt:** Função de IA que reescreve instruções do usuário para torná-las mais eficientes para o LLM.
 
 ### 📢 Módulo 4: Campanhas e Agendamentos
 * **Agendamento:** Botão relógio no input -> Salva em `scheduled_messages` com status `pending` -> Cronjob dispara.
 * **Campanhas:** Disparo em massa com delay aleatório para evitar banimento.
 
+### 🛡️ Módulo 5: Controle de Acesso (RBAC)
+O sistema implementa uma hierarquia de permissões estrita baseada na coluna `role` da tabela `profiles`:
+
+1.  **Owner (Proprietário):**
+    *   Acesso irrestrito a todos os módulos.
+    *   Gestão de Assinatura/Billing.
+    *   Pode deletar a empresa.
+2.  **Admin (Gerente):**
+    *   **Visão de Deus:** Vê todos os leads de todos os vendedores no Kanban e Dashboard.
+    *   Gestão de Equipe (Convidar/Remover membros).
+    *   Gestão de Pipelines e Conexões WhatsApp.
+3.  **Agent (Vendedor):**
+    *   **Visão de Túnel:** Só visualiza e edita leads onde ele é o `owner_id`.
+    *   Dashboard restrito às suas próprias métricas de venda.
+    *   Não acessa configurações globais da empresa.
 ---
 
 ## 4. Fluxos Críticos (Core Business Rules)
@@ -238,24 +261,50 @@ O WhatsApp moderno utiliza dois identificadores:
 
 ---
 
-## 5. Diretrizes para Desenvolvimento com IA (Google AI Studio)
+## 5. Configuração / Variáveis de Ambiente (.env)
+O Backend exige as seguintes variáveis para operar:
 
-Ao gerar código para este projeto, você **DEVE** seguir estas regras estritas:
+```env
+PORT=3001
+SUPABASE_URL="[https://sua-url.supabase.co](https://sua-url.supabase.co)"
+SUPABASE_KEY="sua-service-role-key" # Necessário para ignorar RLS nos Workers
+REDIS_URL="redis://..." # Obrigatório para filas de campanha
+WEB_CONCURRENCY=1 # Opcional, para Render/Heroku
+NODE_VERSION=20.20.0
+6. Deploy e Infraestrutura (Render)
+O serviço Backend é configurado para rodar como um Web Service no Render (ou similar).
 
-1.  **Integridade do Schema:**
-    * NUNCA invente colunas. Consulte este README e o arquivo SQL.
-    * Use `lead_activities` para logs, **não** crie campos JSON dentro de `leads`.
-    * Use a FK `created_by` apontando para `profiles` (não `auth.users`) ao listar atividades.
-2.  **Data Fetching:**
-    * Para listar chats, **SEMPRE** use a RPC `get_my_chat_list`. Nunca tente fazer joins manuais complexos no Frontend, pois é lento e perde dados de Grupos/Mute.
-3.  **Componentes Globais:**
-    * Use `useLeadData` e `useLeadActivities` para garantir que Chat e Kanban mostrem os mesmos dados em tempo real.
-    * Reutilize `DeadlineTimer.tsx` para consistência visual dos cronômetros.
-4.  **Tipagem:** Respeite os tipos `poll`, `location`, `contact` no envio de mensagens (`whatsappController.js` e `routes.js` já estão adaptados para receber payloads estruturados).
-5.  **Performance:**
-    * Use **Optimistic UI** em interações de checklist, notas e cronômetros. O usuário não pode esperar o banco responder para ver a alteração.
+Docker/Node: Roda sobre Node.js 20.
 
----
+Healthcheck: O Render deve monitorar a rota /health.
 
-✅ **Instruções Finais para o Usuário**
-Este arquivo `README.md` é a **Verdade Absoluta**. Ele detalha tabelas, fluxos, UX e regras de negócio. Qualquer alteração no banco de dados (SQL) deve ser refletida aqui imediatamente para manter a consistência entre o "Manual" e a "Máquina".
+Redis: Um serviço Redis externo é necessário para gerenciar a fila de campanhas (bullmq).
+
+7. Diretrizes para Desenvolvimento com IA (Google AI Studio)
+Ao gerar código para este projeto, você DEVE seguir estas regras estritas:
+
+Integridade do Schema:
+
+NUNCA invente colunas. Consulte este README e o arquivo SQL.
+
+Use lead_activities para logs, não crie campos JSON dentro de leads.
+
+Use a FK created_by apontando para profiles (não auth.users) ao listar atividades.
+
+Data Fetching:
+
+Para listar chats, SEMPRE use a RPC get_my_chat_list. Nunca tente fazer joins manuais complexos no Frontend, pois é lento e perde dados de Grupos/Mute.
+
+Componentes Globais:
+
+Use useLeadData e useLeadActivities para garantir que Chat e Kanban mostrem os mesmos dados em tempo real.
+
+Reutilize DeadlineTimer.tsx para consistência visual dos cronômetros.
+
+Tipagem: Respeite os tipos poll, location, contact no envio de mensagens (whatsappController.js e routes.js já estão adaptados para receber payloads estruturados).
+
+Performance:
+
+Use Optimistic UI em interações de checklist, notas e cronômetros. O usuário não pode esperar o banco responder para ver a alteração.
+
+✅ Instruções Finais para o Usuário Este arquivo README.md é a Verdade Absoluta. Ele detalha tabelas, fluxos, UX e regras de negócio. Qualquer alteração no banco de dados (SQL) deve ser refletida aqui imediatamente para manter a consistência entre o "Manual" e a "Máquina".
