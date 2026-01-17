@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { GlobalSyncIndicator } from '@/components/layout/GlobalSyncIndicator';
+// REMOVIDO: import { GlobalSyncIndicator } from '@/components/layout/GlobalSyncIndicator';
 
 export default function DashboardLayout({
   children,
@@ -50,8 +50,7 @@ export default function DashboardLayout({
             {children}
         </div>
         
-        {/* Indicador Global de Sincronização (Persistente) */}
-        <GlobalSyncIndicator />
+        {/* O GlobalSyncIndicator foi movido para app/layout.tsx para cobrir toda a aplicação */}
       </main>
     </div>
   );
