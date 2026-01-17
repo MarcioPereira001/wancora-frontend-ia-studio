@@ -4,8 +4,9 @@ import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import AuthProvider from "@/providers/AuthProvider";
 import QueryProvider from "@/providers/QueryProvider";
-import RealtimeProvider from "@/providers/RealtimeProvider"; // NOVO
+import RealtimeProvider from "@/providers/RealtimeProvider"; 
 import { ToastProvider } from "@/context/ToastContext";
+import { GlobalSyncIndicator } from '@/components/layout/GlobalSyncIndicator'; // NOVO IMPORT
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 const jetbrains = JetBrains_Mono({ subsets: ["latin"], variable: "--font-jetbrains" });
@@ -29,6 +30,8 @@ export default function RootLayout({
               {/* RealtimeProvider deve estar DENTRO do AuthProvider para acessar o user */}
               <RealtimeProvider>
                 {children}
+                {/* INDICADOR GLOBAL FLUTUANTE (Acima de tudo) */}
+                <GlobalSyncIndicator />
               </RealtimeProvider>
             </AuthProvider>
           </ToastProvider>
