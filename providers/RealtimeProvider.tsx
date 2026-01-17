@@ -3,31 +3,34 @@
 import React, { useEffect } from 'react';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useRealtimeStore } from '@/store/useRealtimeStore';
+import { useCRMStore } from '@/store/useCRMStore'; // Novo Import
 import { whatsappService } from '@/services/whatsappService';
 
 export default function RealtimeProvider({ children }: { children?: React.ReactNode }) {
   const { user } = useAuthStore();
-  const { initialize, disconnect, setInstances } = useRealtimeStore();
+  const { initialize: initConnections, disconnect, setInstances } = useRealtimeStore();
+  const { initializeCRM } = useCRMStore(); // Novo Hook
 
   useEffect(() => {
     if (user?.company_id) {
-      // 1. Carga Inicial de Dados (Snapshot)
+      // 1. WhatsApp Connections (Snapshot + Socket)
       whatsappService.getAllInstances().then(data => {
           setInstances(data);
       });
+      initConnections(user.company_id);
 
-      // 2. Assinatura do Socket
-      initialize(user.company_id);
+      // 2. CRM / Kanban (Snapshot + Socket) - GAMING MODE ON
+      // Inicializa em background assim que o usuário loga
+      initializeCRM(user.company_id);
+
     } else {
       disconnect();
     }
 
-    // Cleanup ao desmontar ou deslogar
     return () => {
-      // Não desconectamos imediatamente para evitar flicker em navegação rápida,
-      // a store gerencia a reconexão se o ID mudar.
+      // Cleanup gerido pelas stores
     };
-  }, [user?.company_id, initialize, disconnect, setInstances]);
+  }, [user?.company_id, initConnections, disconnect, setInstances, initializeCRM]);
 
   return <>{children}</>;
 }
