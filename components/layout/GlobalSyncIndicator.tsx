@@ -2,21 +2,42 @@
 
 import React, { useEffect, useState } from 'react';
 import { useRealtimeStore } from '@/store/useRealtimeStore';
-import { RefreshCw, CheckCircle2, CloudDownload, Database } from 'lucide-react';
+import { RefreshCw, CheckCircle2, CloudDownload } from 'lucide-react';
 
 export function GlobalSyncIndicator() {
   const { instances } = useRealtimeStore();
   const [show, setShow] = useState(false);
 
+  // LOG DE DIAGNÓSTICO: Verifique o console do navegador (F12)
+  useEffect(() => {
+    if (instances.length > 0) {
+        // Descomente se quiser ver o fluxo bruto
+        // console.log("🔍 [GlobalSync DEBUG] Instances carregadas:", instances);
+    }
+  }, [instances]);
+
   // Encontra QUALQUER instância que esteja sincronizando ou com progresso pendente
-  // Verifica os status conhecidos do backend ('importing_contacts', 'importing_messages') e também percentual
   const syncingInstance = instances.find(i => {
-    const status = i.sync_status || '';
-    const isSyncStatus = status === 'syncing' || status === 'importing_contacts' || status === 'importing_messages';
-    const isPendingPercent = (i.sync_percent !== undefined && i.sync_percent >= 0 && i.sync_percent < 100);
+    // Lógica Relaxada: Acreditamos no status de sync ou na porcentagem
+    // Mesmo que o status principal seja 'connecting' ou 'open'
     
-    // Só mostra se estiver conectado E (com status de sync OU percentual pendente)
-    return i.status === 'connected' && (isSyncStatus || isPendingPercent);
+    const status = i.sync_status || '';
+    const percent = i.sync_percent !== undefined ? i.sync_percent : 100;
+
+    // Verifica status novo ('syncing') e antigos
+    const isSyncStatus = status === 'syncing' || status === 'importing_contacts' || status === 'importing_messages';
+    
+    // Verifica se a porcentagem está "viva" (entre 1 e 99)
+    const isPercentageActive = percent > 0 && percent < 100;
+
+    // Só exibimos se houver atividade real
+    const isActive = isSyncStatus || isPercentageActive;
+    
+    if (isActive) {
+        console.log(`[GlobalSync] Ativando para sessão ${i.session_id}: ${status} (${percent}%)`);
+    }
+
+    return isActive;
   });
 
   useEffect(() => {
@@ -38,12 +59,18 @@ export function GlobalSyncIndicator() {
   const currentStatus = syncingInstance?.sync_status;
 
   let statusLabel = 'Sincronizando...';
-  if (currentStatus === 'importing_contacts') statusLabel = 'Importando Contatos';
+  if (currentStatus === 'syncing') {
+     if (percent < 20) statusLabel = 'Organizando Contatos';
+     else if (percent < 80) statusLabel = 'Baixando Histórico';
+     else statusLabel = 'Finalizando...';
+  }
+  else if (currentStatus === 'importing_contacts') statusLabel = 'Importando Contatos';
   else if (currentStatus === 'importing_messages') statusLabel = 'Baixando Histórico';
-  else if (isComplete) statusLabel = 'Sincronização Concluída';
+  
+  if (isComplete) statusLabel = 'Sincronização Concluída';
 
   return (
-    <div className="fixed bottom-4 right-4 md:bottom-6 md:right-6 z-[99999] pointer-events-none">
+    <div className="fixed bottom-4 right-4 md:bottom-6 md:right-6 z-[99999] pointer-events-auto">
       {/* Card Flutuante com Sombra Forte e Animação */}
       <div className="bg-[#09090b] border border-zinc-800 rounded-xl shadow-[0_0_50px_rgba(0,0,0,0.8)] p-4 w-80 animate-in slide-in-from-right-10 fade-in duration-500 pointer-events-auto ring-1 ring-white/5">
         
@@ -61,7 +88,7 @@ export function GlobalSyncIndicator() {
                 {statusLabel}
               </span>
               <span className="text-[10px] text-zinc-400 font-medium">
-                {isComplete ? 'Sistema atualizado.' : 'Não feche esta aba.'}
+                {isComplete ? 'Sistema atualizado.' : 'Não feche o sistema.'}
               </span>
             </div>
           </div>
