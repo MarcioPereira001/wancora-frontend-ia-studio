@@ -1,3 +1,4 @@
+
 'use client';
 
 import React from 'react';
@@ -13,7 +14,8 @@ import {
   Settings, 
   LogOut, 
   X,
-  Zap
+  Zap,
+  Calendar // Novo Import
 } from 'lucide-react';
 import { useAuthStore } from '@/store/useAuthStore';
 import { cn } from '@/lib/utils';
@@ -29,6 +31,7 @@ const menuItems = [
   { icon: MessageSquare, label: 'Chat Inbox', href: '/chat' },
   { icon: Send, label: 'Campanhas', href: '/campaigns' },
   { icon: Bot, label: 'Agentes IA', href: '/agents' },
+  { icon: Calendar, label: 'Agendamento', href: '/calendar/settings' }, // Novo Item
   { icon: QrCode, label: 'Conexões', href: '/connections' },
   { icon: Settings, label: 'Configurações', href: '/settings' },
 ];
