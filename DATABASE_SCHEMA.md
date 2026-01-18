@@ -10,9 +10,9 @@ Gerencia o estado físico da conexão com o WhatsApp.
 * `id`: uuid (PK)
 * `company_id`: uuid (FK -> companies)
 * `session_id`: text (Unique)
-* `status`: text ('qrcode', 'connected', 'disconnected')
+* `status`: text ('qrcode', 'connected', 'disconnected', 'connecting')
 * `qrcode_url`: text
-* `sync_status`: text ('waiting', 'importing_contacts', 'importing_messages', 'completed')
+* `sync_status`: text ('waiting', 'importing_contacts', 'importing_messages', 'processing_history', 'completed')
 * `sync_percent`: integer (0-100)
 * `updated_at`: timestamptz
 

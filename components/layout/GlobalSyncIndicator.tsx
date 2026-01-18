@@ -5,14 +5,17 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useRealtimeStore } from '@/store/useRealtimeStore';
 import { createClient } from '@/utils/supabase/client';
 import { RefreshCw, CheckCircle2, Database, Users, MessageSquare, Radio, Loader2, Map as MapIcon, HardDrive } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 export function GlobalSyncIndicator() {
   const { instances, forcedSyncId, clearSyncAnimation } = useRealtimeStore();
   const [show, setShow] = useState(false);
+  const [isVisible, setIsVisible] = useState(false); // Controle de Animação CSS
   const [localPercent, setLocalPercent] = useState(0);
   const [localStatus, setLocalStatus] = useState<string>('waiting');
   
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const closingRef = useRef(false); // Lock para evitar múltiplos triggers de fechamento
 
   // Lógica Híbrida:
   // 1. Prioridade Absoluta: ID forçado pelo modal (Conexão Manual)
@@ -24,11 +27,16 @@ export function GlobalSyncIndicator() {
   )?.id;
 
   useEffect(() => {
-    // Se não tem alvo e não está mostrando, sai
+    // Se não tem alvo e não estamos em processo de fechamento
     if (!targetInstanceId) {
-        if (show && !forcedSyncId) {
-             const timeout = setTimeout(() => { if(!targetInstanceId) setShow(false); }, 1000);
-             return () => clearTimeout(timeout);
+        if (show && !forcedSyncId && !closingRef.current) {
+             // Animação de saída se perdeu o alvo
+             closingRef.current = true;
+             setIsVisible(false);
+             setTimeout(() => { 
+                 setShow(false); 
+                 closingRef.current = false; 
+             }, 500);
         }
         return;
     }
@@ -36,7 +44,8 @@ export function GlobalSyncIndicator() {
     // Se temos um ID forçado (Gatilho Manual), mostramos imediatamente
     if (forcedSyncId && !show) {
         setShow(true);
-        setLocalStatus('waiting'); // Feedback instantâneo
+        setTimeout(() => setIsVisible(true), 50); // Animação de entrada
+        setLocalStatus('waiting'); 
         setLocalPercent(0);
     }
 
@@ -53,33 +62,56 @@ export function GlobalSyncIndicator() {
             const dbSyncStatus = data.sync_status || 'waiting';
             const dbPercent = data.sync_percent || 0;
 
-            setLocalStatus(dbSyncStatus);
-            setLocalPercent(dbPercent);
+            // CRITÉRIO DE SUCESSO: Status completed OU 100% atingido
+            // Isso corrige o problema de "não fechar no 100%"
+            const isDone = dbSyncStatus === 'completed' || dbPercent >= 100;
 
-            // FINALIZAÇÃO
-            if (dbSyncStatus === 'completed') {
-                if (show) {
-                    setLocalPercent(100);
+            if (isDone) {
+                setLocalPercent(100);
+                setLocalStatus('completed');
+
+                // FINALIZAÇÃO AUTOMÁTICA
+                if (show && !closingRef.current) {
+                    closingRef.current = true;
+                    console.log("✅ [Sync] Concluído. Iniciando fechamento...");
+
+                    // Mantém visível por 3 segundos para usuário ver o 100% verde
                     setTimeout(() => {
-                        setShow(false);
-                        if(forcedSyncId) clearSyncAnimation(); // Limpa o gatilho manual
-                    }, 4000);
+                        setIsVisible(false); // Trigger CSS Exit
+                        
+                        // Desmonta após animação CSS (500ms)
+                        setTimeout(() => {
+                            setShow(false);
+                            if(forcedSyncId) clearSyncAnimation(); 
+                            closingRef.current = false;
+                        }, 500);
+                    }, 3000);
                 }
                 return;
             }
 
-            // EXIBIÇÃO CONTÍNUA
-            // Se estamos num fluxo forçado OU o status é válido, mantém visível
-            if (show || forcedSyncId || (data.status === 'connected' && dbSyncStatus !== 'completed')) {
-                if (!show) setShow(true);
-            } else if (data.status === 'disconnected') {
-                setShow(false);
-                if(forcedSyncId) clearSyncAnimation();
+            // EXIBIÇÃO CONTÍNUA (ENQUANTO CARREGA)
+            setLocalStatus(dbSyncStatus);
+            setLocalPercent(dbPercent);
+
+            if (data.status === 'disconnected') {
+                // Se desconectou, fecha mais rápido
+                if (!closingRef.current) {
+                    setIsVisible(false);
+                    setTimeout(() => {
+                        setShow(false);
+                        if(forcedSyncId) clearSyncAnimation();
+                    }, 500);
+                }
+            } else if (!show && !closingRef.current) {
+                // Se conectou e não estava mostrando, mostra agora
+                setShow(true);
+                setTimeout(() => setIsVisible(true), 50);
             }
         }
     };
 
-    // Polling Agressivo
+    // Polling Agressivo (1s)
     fetchDirectStatus(); 
     intervalRef.current = setInterval(fetchDirectStatus, 1000);
 
@@ -133,8 +165,11 @@ export function GlobalSyncIndicator() {
   }
 
   return (
-    <div className="fixed bottom-6 right-6 z-[99999] pointer-events-auto">
-      <div className="bg-[#09090b] border border-zinc-800 rounded-xl shadow-[0_0_80px_rgba(0,0,0,0.8)] p-4 w-80 animate-in slide-in-from-bottom-20 fade-in duration-500 ring-1 ring-white/10 relative overflow-hidden backdrop-blur-2xl">
+    <div className={cn(
+        "fixed bottom-6 right-6 z-[99999] pointer-events-auto transition-all duration-700 cubic-bezier(0.16, 1, 0.3, 1)",
+        isVisible ? "translate-y-0 opacity-100" : "translate-y-20 opacity-0"
+    )}>
+      <div className="bg-[#09090b] border border-zinc-800 rounded-xl shadow-[0_0_80px_rgba(0,0,0,0.8)] p-4 w-80 ring-1 ring-white/10 relative overflow-hidden backdrop-blur-2xl">
         
         {/* Efeito de Fundo */}
         <div className={`absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent ${isComplete ? 'via-emerald-500' : 'via-blue-600'} to-transparent opacity-75`} />

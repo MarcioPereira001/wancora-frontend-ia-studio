@@ -57,6 +57,11 @@ Este é o coração pulsante. Ele não é apenas uma API REST; é um Gerenciador
 ### C. O Banco de Dados (Supabase / PostgreSQL)
 A Fonte da Verdade. Se não está no banco, não existe.
 
+### ⚡ Configuração de Realtime (Gaming Mode)
+Para garantir a atualização instantânea da UI (Optimistic UI + Server Sync), as tabelas críticas (`instances`, `leads`, `messages`) foram configuradas com **REPLICA IDENTITY FULL**.
+
+Isso obriga o PostgreSQL a enviar o registro completo (old + new) no payload do WebSocket, permitindo que o Frontend atualize listas e estados complexos sem necessidade de refetch via API.
+
 #### Schema Crítico & Relacionamentos
 
 **1. instances (As Conexões)**

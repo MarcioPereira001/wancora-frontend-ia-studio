@@ -179,6 +179,11 @@ O processo de sincronização inicial (messaging-history.set) utiliza uma arquit
 3. Data Propagation: Ao descobrir um nome real via WhatsApp, o backend propaga essa atualização automaticamente para a tabela leads, garantindo que o Kanban e o Chat reflitam a identidade correta do contato.
 4. Optimistic Sync Delay: Um atraso de 300ms é aplicado antes do upsertMessage para garantir que o contato e o lead já tenham sido criados/atualizados, evitando erros de chave estrangeira.
 
+### 4.1.1. Regra de Higiene de Nomes (Database Enforced)
+Um *Trigger* (`sanitize_contact_data`) no banco de dados garante que números de telefone nunca sejam salvos na coluna `name`.
+- Se o Backend enviar o JID no campo `name`, o banco converterá para `NULL`.
+- O campo `name` é exclusivo para nomes salvos na agenda ou identificados via Perfil Público (`push_name`).
+
 ### 4.2. Campaign Worker (Fila Inteligente)
 Gerencia o disparo em massa.
 * **Rate Limiting:** Delay aleatório entre **15s e 40s** por mensagem.
@@ -264,13 +269,29 @@ Esta seção detalha os indicadores técnicos emitidos pelo Backend para monitor
 - Enviado: Sucesso no processamento de um job de disparo.
 - Falha: Erro no envio para um lead específico (log salvo em campaign_logs).
 
-### 8.5. STATUS DE INSTÂNCIA (TABELA: instances)
-- STATUS: connecting | SIGNIFICADO: Socket inicializando | AÇÃO: Mostrar Spinner.
-- STATUS: qrcode | SIGNIFICADO: Aguardando leitura | AÇÃO: Renderizar QR Code.
-- STATUS: connected | SIGNIFICADO: Conexão estabelecida | AÇÃO: Ícone Verde.
-- STATUS: syncing | SIGNIFICADO: Processando histórico | AÇÃO: Barra de Progresso.
-- STATUS: online | SIGNIFICADO: Sistema estável | AÇÃO: Liberar Funções.
-- STATUS: disconnected | SIGNIFICADO: Sessão encerrada | AÇÃO: Botão Reconectar.
+### 8.5. STATUS DE INSTÂNCIA & SYNC (TABELA: instances)
+A atualização destes campos dispara o `GlobalSyncIndicator` no Frontend via WebSocket.
+
+- **STATUS DE CONEXÃO (`status`):**
+  - `connecting`: Socket inicializando (Spinner amarelo).
+  - `qrcode`: Aguardando leitura (QR Code visível).
+  - `connected`: Conexão estabelecida (Ícone Verde).
+  - `disconnected`: Sessão encerrada ou falha crítica.
+
+- **ESTÁGIOS DE SINCRONIZAÇÃO (`sync_status`):**
+  1. `waiting`: Conectado, aguardando início do download.
+  2. `importing_contacts`: Baixando lista de contatos e metadados.
+  3. `importing_messages`: Baixando histórico de mensagens (Chunking).
+  4. `processing_history`: Indexando mensagens e rodando IA (Se ativado).
+  5. `completed`: Sincronização finalizada. Barra em 100%.
+
+// Anterior(Consultar) ### 8.5. STATUS DE INSTÂNCIA (TABELA: instances)
+// Anterior(Consultar)- STATUS: connecting | SIGNIFICADO: Socket inicializando | AÇÃO: Mostrar Spinner.
+// Anterior(Consultar)- STATUS: qrcode | SIGNIFICADO: Aguardando leitura | AÇÃO: Renderizar QR Code.
+// Anterior(Consultar)- STATUS: connected | SIGNIFICADO: Conexão estabelecida | AÇÃO: Ícone Verde.
+// Anterior(Consultar)- STATUS: syncing | SIGNIFICADO: Processando histórico | AÇÃO: Barra de Progresso.
+// Anterior(Consultar)- STATUS: online | SIGNIFICADO: Sistema estável | AÇÃO: Liberar Funções.
+// Anterior(Consultar)- STATUS: disconnected | SIGNIFICADO: Sessão encerrada | AÇÃO: Botão Reconectar.
 
 ### 8.6. TIPOS DE MENSAGEM (TABELA: messages)
 - ENUMS SUPORTADOS: text, image, video, audio, document, sticker, poll, location, contact, pix.
