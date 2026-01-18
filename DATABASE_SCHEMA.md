@@ -1,4 +1,4 @@
-# 🗄️ WANCORA CRM - Database Schema Definitions v3.7
+# 🗄️ WANCORA CRM - Database Schema Definitions v4.2
 
 Este documento define a estrutura oficial do Banco de Dados Supabase (PostgreSQL).
 **Regra:** Qualquer SQL gerado deve ser validado contra este arquivo.
@@ -113,21 +113,25 @@ Logs detalhados de execução para auditoria.
 * `error_message`: text
 * `status`: text
 
-### `appointments` (Agendamentos)
-Calendário e reuniões.
+### `appointments` (Agenda Integrada & Tarefas)
+Unificação de calendário e gerenciador de tarefas.
 * `id`: uuid (PK)
-* `lead_id`: uuid (FK)
-* `user_id`: uuid (FK - Responsável)
+* `user_id`: uuid (FK - Responsável/Dono da agenda)
+* `lead_id`: uuid (FK - Opcional) -> Nullable pois pode ser tarefa pessoal.
 * `title`: text
+* `description`: text
 * `start_time`: timestamptz
 * `end_time`: timestamptz
 * `status`: text ('pending', 'confirmed', 'cancelled')
+* `is_task`: boolean (Default: false) -> Define se é Tarefa (Check) ou Evento (Tempo).
+* `completed_at`: timestamptz -> Se preenchido, a tarefa foi concluída.
+* `category`: text -> Categoria visual (ex: 'Reunião', 'Pessoal').
+* `color`: text -> Hex code para UI.
+* `recurrence_rule`: jsonb -> Ex: `{ frequency: 'weekly', interval: 1, count: 5 }`.
 * `meet_link`: text
-* `ai_summary`: text (Resumo gerado pela IA pós-reunião)
 * `origin`: text (Default: 'internal')
+* `ai_summary`: text
 * `reminder_sent`: boolean
-* `confirmation_sent`: boolean
-* `cancel_reason`: text
 
 ### `availability_rules` (Agendamento Inteligente)
 Define as regras de horários para o sistema de agendamento (tipo Calendly).
@@ -316,3 +320,11 @@ idx_contacts_company_id
 idx_messages_remote_jid_company (Vital para carregar histórico de chat)
 
 idx_agents_company
+
+
+### Atualização v4.2 (Módulo Agenda Híbrida)
+Alterações na tabela `appointments` para suportar tarefas e recorrência.
+* `is_task`: boolean - Diferencia tarefas (checklist) de eventos de tempo.
+* `recurrence_rule`: jsonb - Armazena regras de repetição (RFC 5545 simplificado).
+* `category`: text - Categorização visual.
+* `completed_at`: timestamptz - Data de conclusão para tarefas.

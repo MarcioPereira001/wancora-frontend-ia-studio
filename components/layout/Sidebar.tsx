@@ -15,7 +15,7 @@ import {
   LogOut, 
   X,
   Zap,
-  Calendar // Novo Import
+  Calendar // Mantido
 } from 'lucide-react';
 import { useAuthStore } from '@/store/useAuthStore';
 import { cn } from '@/lib/utils';
@@ -31,7 +31,7 @@ const menuItems = [
   { icon: MessageSquare, label: 'Chat Inbox', href: '/chat' },
   { icon: Send, label: 'Campanhas', href: '/campaigns' },
   { icon: Bot, label: 'Agentes IA', href: '/agents' },
-  { icon: Calendar, label: 'Agendamento', href: '/calendar/settings' }, // Novo Item
+  { icon: Calendar, label: 'Agenda', href: '/calendar' }, // MUDANÇA AQUI: Rota /calendar e Label "Agenda"
   { icon: QrCode, label: 'Conexões', href: '/connections' },
   { icon: Settings, label: 'Configurações', href: '/settings' },
 ];
@@ -68,6 +68,7 @@ export function Sidebar({ onClose }: SidebarProps) {
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-6 px-3 space-y-1">
         {menuItems.map((item) => {
+          // Ajuste na lógica de active para cobrir subrotas
           const isActive = pathname === item.href || pathname?.startsWith(item.href + '/');
           return (
             <Link 
