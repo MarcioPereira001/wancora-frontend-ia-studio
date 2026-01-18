@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -12,6 +13,7 @@ import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/input';
 import { createClient } from '@/utils/supabase/client';
 import { QRCodeSVG } from 'qrcode.react';
+import { useRealtimeStore } from '@/store/useRealtimeStore'; // Import Store
 
 const PLAN_LIMITS = {
   starter: 1,
@@ -22,6 +24,7 @@ const PLAN_LIMITS = {
 export default function ConnectionsPage() {
   const { addToast } = useToast();
   const { company } = useCompany();
+  const { triggerSyncAnimation } = useRealtimeStore(); // Hook do gatilho
   const [instances, setInstances] = useState<Instance[]>([]);
   const [loading, setLoading] = useState(true);
   const supabase = createClient();
@@ -73,6 +76,12 @@ export default function ConnectionsPage() {
 
         if (status.status === 'connected') {
             setStep('success');
+            // GATILHO EXPLÍCITO: Força o GlobalSyncIndicator a aparecer AGORA
+            // Não espera WebSocket, não espera delay. É instantâneo.
+            if(status.id) {
+                triggerSyncAnimation(status.id);
+            }
+            
             if (intervalRef.current) clearInterval(intervalRef.current);
         } else if (status.qrcode_url && status.qrcode_url.length > 10) {
             setStep('qr_scan');
@@ -86,7 +95,7 @@ export default function ConnectionsPage() {
     return () => {
         if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [isModalOpen, currentInstance?.session_id]);
+  }, [isModalOpen, currentInstance?.session_id, triggerSyncAnimation]);
 
   const resetModal = () => {
       setStep('input');
@@ -283,7 +292,7 @@ export default function ConnectionsPage() {
                           <h3 className="text-2xl font-bold text-white">Sincronizado com Sucesso!</h3>
                           <p className="text-zinc-400 mt-2">
                               A instância <strong>{currentInstance?.name}</strong> está online.<br/>
-                              Importando conversas e contatos...
+                              Iniciando importação de histórico...
                           </p>
                       </div>
                       <Button onClick={() => { setIsModalOpen(false); fetchInstances(); }} className="bg-zinc-800 hover:bg-zinc-700 text-white min-w-[150px]">

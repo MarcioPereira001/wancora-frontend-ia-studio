@@ -9,11 +9,16 @@ interface RealtimeState {
   instances: Instance[];
   unreadCount: number;
   
+  // Novo Estado para Gatilho Manual
+  forcedSyncId: string | null;
+  
   // Actions
   initialize: (companyId: string) => Promise<void>;
   disconnect: () => void;
   setInstances: (instances: Instance[]) => void;
   refreshInstances: (companyId: string) => Promise<void>;
+  triggerSyncAnimation: (instanceId: string) => void; // Ação do Gatilho
+  clearSyncAnimation: () => void;
 }
 
 export const useRealtimeStore = create<RealtimeState>((set, get) => {
@@ -23,8 +28,13 @@ export const useRealtimeStore = create<RealtimeState>((set, get) => {
     isConnected: false,
     instances: [], 
     unreadCount: 0,
+    forcedSyncId: null,
 
     setInstances: (instances) => set({ instances }),
+
+    // Gatilho para forçar a barra aparecer instantaneamente
+    triggerSyncAnimation: (instanceId) => set({ forcedSyncId: instanceId }),
+    clearSyncAnimation: () => set({ forcedSyncId: null }),
 
     refreshInstances: async (companyId: string) => {
         const supabase = createClient();
@@ -34,16 +44,14 @@ export const useRealtimeStore = create<RealtimeState>((set, get) => {
             .eq('company_id', companyId);
         
         if (data && !error) {
-            // console.log("⚡ [Realtime] Snapshot atualizado:", data.length, "instâncias");
             set({ instances: data });
         }
     },
 
     initialize: async (companyId: string) => {
-      // Fetch inicial (Snapshot) obrigatório ao montar
       await get().refreshInstances(companyId);
 
-      if (channel) return; // Evita duplicação de canais
+      if (channel) return; 
 
       const supabase = createClient();
       console.log(`🔥 [Realtime] Monitorando Instâncias: ${companyId}`);
@@ -60,13 +68,10 @@ export const useRealtimeStore = create<RealtimeState>((set, get) => {
             if (payload.eventType === 'DELETE') {
                 set({ instances: currentInstances.filter(i => i.id !== payload.old.id) });
             } else if (payload.eventType === 'INSERT') {
-                // Adiciona novas instâncias instantaneamente
                 if (!currentInstances.find(i => i.id === payload.new.id)) {
                     set({ instances: [...currentInstances, payload.new as Instance] });
                 }
             } else if (payload.eventType === 'UPDATE') {
-                // Atualização crítica: Isso dispara a re-renderização do GlobalSyncIndicator
-                // porque o `activeInstance` lá depende dessa lista.
                 const updated = payload.new as Instance;
                 set({ 
                     instances: currentInstances.map(i => 
