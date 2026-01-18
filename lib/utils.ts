@@ -1,3 +1,4 @@
+
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
 
@@ -18,7 +19,7 @@ export function cleanJid(jid: string) {
   return jid.split('@')[0].split(':')[0];
 }
 
-export function formatPhone(jid: string): string {
+export function formatPhone(jid: string | null | undefined): string {
   if (!jid) return 'Desconhecido';
   const clean = cleanJid(jid);
   
@@ -42,7 +43,8 @@ export function formatPhone(jid: string): string {
   return `+${clean}`;
 }
 
-// LÓGICA DE OURO: HIERARQUIA DE NOMES INTELIGENTE v2.0
+// LÓGICA DE OURO: HIERARQUIA DE NOMES INTELIGENTE v2.1 (NULL SAFE)
+// Garante que NUNCA retorne null para evitar crashes de .charAt()
 export function getDisplayName(contact: any): string {
     if (!contact) return "Usuário";
 
@@ -54,19 +56,19 @@ export function getDisplayName(contact: any): string {
     }
     
     // 2. Contato Salvo na Agenda (contact.name)
-    // Ignora se o nome for igual ao ID (alguns backends salvam o ID no nome por erro)
-    if (contact.name && contact.name !== contact.remote_jid && !contact.name.includes('@') && !contact.name.includes(':')) {
+    // Agora aceita validação de null explícita
+    if (contact.name && contact.name.trim() !== '' && contact.name !== contact.remote_jid && !contact.name.includes('@') && !contact.name.includes(':')) {
         return contact.name;
     }
     
     // 3. Nome do Perfil (push_name) - O Fallback Inteligente
-    // Isso resolve 90% dos casos de "sem nome"
     if (contact.push_name && contact.push_name !== contact.remote_jid) {
         return contact.push_name;
     }
     
     // 4. Fallback Final: Formatação bonita do Número
-    return formatPhone(contact.remote_jid || contact.jid);
+    // Se tudo falhar, retorna o número formatado ou "Desconhecido"
+    return formatPhone(contact.remote_jid || contact.jid || contact.phone || '');
 }
 
 export const delay = (ms: number) => new Promise(res => setTimeout(res, ms));

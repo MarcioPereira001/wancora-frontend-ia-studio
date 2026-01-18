@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useMemo } from 'react';
 import { Search, RefreshCw, Filter, Loader2, DollarSign, GripVertical, Settings2, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -35,10 +36,15 @@ export function KanbanBoard() {
       return columns.map(col => ({
           ...col,
           items: col.items.filter(item => {
+              // SAFE SEARCH: Garante que name nunca seja null antes do toLowerCase
+              const itemName = (item.name || '').toLowerCase();
+              const itemPhone = (item.phone || '').toLowerCase();
+              const searchLower = searchTerm.toLowerCase();
+
               const matchesSearch = !searchTerm || 
-                  item.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                  item.phone.includes(searchTerm) ||
-                  item.tags?.some(t => t.toLowerCase().includes(searchTerm.toLowerCase()));
+                  itemName.includes(searchLower) || 
+                  itemPhone.includes(searchLower) ||
+                  item.tags?.some(t => t.toLowerCase().includes(searchLower));
               
               const matchesUser = selectedUserId === 'all' || item.owner_id === selectedUserId;
               

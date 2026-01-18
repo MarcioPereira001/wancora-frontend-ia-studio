@@ -1,3 +1,4 @@
+
 'use client';
 
 import React from 'react';
@@ -12,6 +13,9 @@ export function ChatHeader() {
 
   if (!activeContact) return null;
 
+  // SAFE RENDER
+  const displayName = activeContact.name || activeContact.push_name || activeContact.phone_number || "Desconhecido";
+
   return (
     <div className="h-16 border-b border-zinc-800 flex items-center justify-between px-4 md:px-6 bg-zinc-900/50 backdrop-blur-md z-10 shrink-0">
         <div className="flex items-center gap-3">
@@ -20,7 +24,7 @@ export function ChatHeader() {
                     {activeContact.profile_pic_url ? <img src={activeContact.profile_pic_url} className="w-full h-full object-cover" /> : (activeContact.is_group ? <Users className="w-5 h-5 text-zinc-500" /> : <User className="w-5 h-5 text-zinc-500" />)}
             </div>
             <div className="flex-1 min-w-0">
-                <h3 className="font-medium text-white truncate">{activeContact.name}</h3>
+                <h3 className="font-medium text-white truncate">{displayName}</h3>
                 <p className="text-xs text-zinc-400 font-mono">{cleanJid(activeContact.remote_jid)}</p>
             </div>
         </div>

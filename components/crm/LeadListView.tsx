@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Lead, PipelineStage } from '@/types';
 import { useTeam } from '@/hooks/useTeam';
@@ -16,12 +17,16 @@ export function LeadListView({ leads, stages }: LeadListViewProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   
-  // Filtering
-  const filteredLeads = leads.filter(lead => 
-      lead.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      lead.phone.includes(searchTerm) ||
-      lead.tags?.some(t => t.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+  // Filtering (Safe for NULLs)
+  const filteredLeads = leads.filter(lead => {
+      const searchLower = searchTerm.toLowerCase();
+      // Proteção contra nome nulo
+      const nameMatch = (lead.name || '').toLowerCase().includes(searchLower);
+      const phoneMatch = (lead.phone || '').includes(searchLower);
+      const tagsMatch = lead.tags?.some(t => t.toLowerCase().includes(searchLower));
+      
+      return nameMatch || phoneMatch || tagsMatch;
+  });
 
   const getStageName = (stageId: string) => {
       const stage = stages.find(s => s.id === stageId);
@@ -68,6 +73,10 @@ export function LeadListView({ leads, stages }: LeadListViewProps) {
                         const stageInfo = getStageName(lead.pipeline_stage_id);
                         const ownerName = getOwnerName(lead.owner_id);
                         
+                        // Fallback seguro
+                        const displayName = lead.name || lead.phone || 'Sem Nome';
+                        const displayInitial = (displayName || '?').charAt(0).toUpperCase();
+
                         return (
                             <tr 
                                 key={lead.id} 
@@ -79,10 +88,10 @@ export function LeadListView({ leads, stages }: LeadListViewProps) {
                                         <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center text-xs font-bold text-zinc-500 border border-zinc-700">
                                             {lead.profile_pic_url ? (
                                                 <img src={lead.profile_pic_url} className="w-full h-full rounded-full object-cover" />
-                                            ) : lead.name[0]}
+                                            ) : displayInitial}
                                         </div>
                                         <div>
-                                            <div className="font-medium text-zinc-200 group-hover:text-primary transition-colors">{lead.name}</div>
+                                            <div className="font-medium text-zinc-200 group-hover:text-primary transition-colors">{displayName}</div>
                                             <div className="text-xs text-zinc-500">{lead.phone}</div>
                                         </div>
                                     </div>

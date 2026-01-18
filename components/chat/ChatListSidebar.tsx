@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useMemo } from 'react';
@@ -32,9 +33,9 @@ export function ChatListSidebar() {
       if (!searchTerm) return contacts;
       const lower = searchTerm.toLowerCase();
       return contacts.filter(c => 
-          c.name.toLowerCase().includes(lower) || 
-          c.push_name?.toLowerCase().includes(lower) ||
-          c.phone_number?.includes(lower)
+          (c.name || '').toLowerCase().includes(lower) || 
+          (c.push_name || '').toLowerCase().includes(lower) ||
+          (c.phone_number || '').includes(lower)
       );
   }, [contacts, searchTerm]);
 
@@ -121,8 +122,9 @@ export function ChatListSidebar() {
                 const isSelected = selectedInboxIds.has(contact.jid);
                 const isNewLead = contact.updated_at && (new Date().getTime() - new Date(contact.updated_at).getTime() < 24 * 60 * 60 * 1000);
                 
-                // PRIORITY NAME LOGIC: Agenda Name > Push Name > Formatted Phone
+                // PRIORITY NAME LOGIC (SAFE): Agenda Name > Push Name > Formatted Phone
                 const displayName = contact.name || contact.push_name || contact.phone_number || "Usuário";
+                const displayInitial = (displayName || '?').charAt(0).toUpperCase();
 
                 return (
                     <div key={contact.id} onClick={() => handleContactSelect(contact)} className={cn("p-4 border-b border-zinc-800/30 cursor-pointer hover:bg-zinc-800/50 relative transition-colors", activeContact?.id === contact.id && !isInboxSelectionMode ? 'bg-primary/5 border-l-2 border-l-primary' : '', isSelected ? "bg-primary/10" : "")}>
@@ -130,7 +132,7 @@ export function ChatListSidebar() {
                             {isInboxSelectionMode && (<div className="mr-3 mt-1"><Checkbox checked={isSelected} onCheckedChange={() => handleInboxSelect(contact.jid)} className="border-zinc-600 data-[state=checked]:bg-primary" /></div>)}
                             <div className="flex items-center gap-3 overflow-hidden flex-1">
                                  <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center shrink-0 border border-zinc-700 overflow-hidden relative">
-                                    {contact.profile_pic_url ? (<img src={contact.profile_pic_url} className="w-full h-full object-cover" />) : contact.is_group ? (<Users className="w-5 h-5 text-zinc-500" />) : (<span className="text-zinc-500 font-bold">{displayName.charAt(0).toUpperCase()}</span>)}
+                                    {contact.profile_pic_url ? (<img src={contact.profile_pic_url} className="w-full h-full object-cover" />) : contact.is_group ? (<Users className="w-5 h-5 text-zinc-500" />) : (<span className="text-zinc-500 font-bold">{displayInitial}</span>)}
                                  </div>
                                  <div className="min-w-0 flex-1">
                                     <div className="flex justify-between items-center">

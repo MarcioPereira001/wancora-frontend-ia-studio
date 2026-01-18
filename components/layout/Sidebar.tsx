@@ -46,6 +46,10 @@ export function Sidebar({ onClose }: SidebarProps) {
     router.push('/auth/login');
   };
 
+  // SAFE USER NAME
+  const userName = user?.name || 'Usuário';
+  const userInitial = userName.charAt(0).toUpperCase();
+
   return (
     <div className="flex flex-col h-full w-64 bg-zinc-950 border-r border-zinc-800">
       {/* Header */}
@@ -87,11 +91,11 @@ export function Sidebar({ onClose }: SidebarProps) {
       {/* User / Footer */}
       <div className="p-4 border-t border-zinc-800">
         <div className="flex items-center gap-3 mb-4 px-2">
-          <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center text-xs font-bold text-zinc-400 border border-zinc-700">
-            {user?.name?.[0] || 'U'}
+          <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center text-xs font-bold text-zinc-400 border border-zinc-700 overflow-hidden">
+            {user?.avatar_url ? <img src={user.avatar_url} className="w-full h-full object-cover" /> : userInitial}
           </div>
           <div className="overflow-hidden">
-            <p className="text-sm font-medium text-white truncate">{user?.name || 'Usuário'}</p>
+            <p className="text-sm font-medium text-white truncate">{userName}</p>
             <p className="text-xs text-zinc-500 truncate">{user?.email}</p>
           </div>
         </div>

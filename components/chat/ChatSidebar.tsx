@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { useAuthStore } from '@/store/useAuthStore';
@@ -83,7 +84,7 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
 
         // Load Lead (CRM) Data
         if (lead) {
-            setLeadName(lead.name);
+            setLeadName(lead.name || ''); // PROTEÇÃO CONTRA NULL
             setValue(lead.value_potential || 0);
             setTags(lead.tags || []);
             setBotStatus(lead.bot_status || 'active');
@@ -98,7 +99,7 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
                 setDeadlineTime('');
             }
         } else {
-            setLeadName(contact.name || contact.push_name || '');
+            setLeadName(contact.name || contact.push_name || contact.phone_number || '');
             setValue(0);
             setTags([]);
             setHasDeadline(false);
@@ -155,7 +156,7 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
               const { error } = await supabase.from('leads').insert({
                   company_id: user.company_id,
                   pipeline_stage_id: stageId,
-                  name: leadName || contactName || contact.push_name || 'Novo Lead',
+                  name: leadName || contactName || contact.push_name || cleanPhone || 'Novo Lead',
                   phone: cleanPhone,
                   status: 'new',
                   owner_id: user.id,
@@ -272,6 +273,9 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
       setNewLinkUrl('');
   };
 
+  // SAFE RENDER NAME
+  const displayContactName = contactName || contact.push_name || contact.phone_number || "Desconhecido";
+
   return (
     <div className="w-80 border-l border-zinc-800 bg-zinc-900/50 flex flex-col h-full overflow-hidden animate-in slide-in-from-right-4">
         
@@ -302,7 +306,7 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
                 ) : (
                     <div className="flex items-center justify-center gap-2">
                         <h3 className="font-bold text-white text-lg leading-tight truncate max-w-[200px]">
-                            {contactName || contact.push_name || 'Desconhecido'}
+                            {displayContactName}
                         </h3>
                         <button onClick={() => setIsEditingContact(true)} className="opacity-0 group-hover:opacity-100 transition-opacity text-zinc-500 hover:text-white">
                             <Edit2 className="w-3 h-3" />

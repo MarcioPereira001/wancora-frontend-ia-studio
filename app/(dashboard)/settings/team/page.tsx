@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState } from 'react';
@@ -116,14 +117,14 @@ export default function TeamSettingsPage() {
               {members.map(member => (
                   <div key={member.id} className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-4 flex items-center justify-between group hover:border-zinc-700 transition-colors">
                       <div className="flex items-center gap-4">
-                          <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center border border-zinc-700 text-lg font-bold text-zinc-400">
+                          <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center border border-zinc-700 text-lg font-bold text-zinc-400 overflow-hidden">
                               {member.avatar_url ? (
-                                  <img src={member.avatar_url} className="w-full h-full rounded-full object-cover" />
-                              ) : member.name[0]}
+                                  <img src={member.avatar_url} className="w-full h-full object-cover" />
+                              ) : (member.name || '?').charAt(0).toUpperCase()}
                           </div>
                           <div>
                               <div className="flex items-center gap-2">
-                                  <h4 className="font-medium text-white">{member.name}</h4>
+                                  <h4 className="font-medium text-white">{member.name || 'Sem Nome'}</h4>
                                   <span className={cn("text-[10px] px-2 py-0.5 rounded-full border uppercase font-bold", 
                                       member.role === 'owner' ? "bg-purple-500/10 text-purple-400 border-purple-500/20" :
                                       member.role === 'admin' ? "bg-blue-500/10 text-blue-400 border-blue-500/20" :

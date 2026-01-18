@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Calendar, MessageCircle, Flame, User, Tag, Clock } from 'lucide-react';
 import { Lead, TeamMember } from '@/types';
@@ -23,6 +24,10 @@ export function KanbanCard({ lead, owner, onDragStart, onClick }: KanbanCardProp
 
   const temp = getTempConfig(lead.temperature);
 
+  // SAFE RENDER: Fallback seguro para nome nulo
+  const displayName = lead.name || lead.phone || "Sem Nome";
+  const displayInitial = (displayName || "?").charAt(0).toUpperCase();
+
   return (
     <div
       draggable
@@ -38,9 +43,9 @@ export function KanbanCard({ lead, owner, onDragStart, onClick }: KanbanCardProp
         <div className="flex items-center gap-3 overflow-hidden">
           <div className="w-9 h-9 rounded-full bg-zinc-800 flex items-center justify-center shrink-0 border border-zinc-700 relative">
             {lead.profile_pic_url ? (
-              <img src={lead.profile_pic_url} alt={lead.name} className="w-full h-full object-cover rounded-full" />
+              <img src={lead.profile_pic_url} alt={displayName} className="w-full h-full object-cover rounded-full" />
             ) : (
-              <span className="text-xs font-bold text-zinc-400">{lead.name.charAt(0).toUpperCase()}</span>
+              <span className="text-xs font-bold text-zinc-400">{displayInitial}</span>
             )}
             
             {/* Responsável Mini Avatar */}
@@ -49,13 +54,13 @@ export function KanbanCard({ lead, owner, onDragStart, onClick }: KanbanCardProp
                     {owner.avatar_url ? (
                         <img src={owner.avatar_url} alt={owner.name} className="w-full h-full object-cover" />
                     ) : (
-                        <span className="text-[8px] font-bold text-zinc-400">{owner.name.charAt(0)}</span>
+                        <span className="text-[8px] font-bold text-zinc-400">{(owner.name || '?').charAt(0)}</span>
                     )}
                 </div>
             )}
           </div>
           <div className="min-w-0">
-            <h4 className="text-sm font-semibold text-zinc-100 truncate leading-tight">{lead.name}</h4>
+            <h4 className="text-sm font-semibold text-zinc-100 truncate leading-tight">{displayName}</h4>
             <p className="text-[11px] text-zinc-500 font-mono truncate mt-0.5">{lead.phone}</p>
           </div>
         </div>

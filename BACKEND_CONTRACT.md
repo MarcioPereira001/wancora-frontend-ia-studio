@@ -9,7 +9,7 @@
 
 Este documento é a **Bíblia Técnica** do Backend. Ele descreve a comunicação entre Frontend e Backend.
 
-📂 Estrutura Global do Projeto (Project Blueprint)
+📂 Estrutura Global do Projeto Validado e Existente (Project Blueprint)
 wancora-backend/
 ├── 📁 auth/
 │   └── 📄 supabaseAuth.js       # Gerenciamento de estado e persistência Baileys no Supabase
