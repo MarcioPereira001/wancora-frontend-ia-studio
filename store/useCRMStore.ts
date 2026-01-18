@@ -1,6 +1,7 @@
+
 import { create } from 'zustand';
 import { createClient } from '@/utils/supabase/client';
-import { Lead, PipelineStage, KanbanColumn } from '@/types';
+import { Lead, PipelineStage } from '@/types';
 import { RealtimeChannel } from '@supabase/supabase-js';
 
 interface CRMState {
@@ -23,31 +24,32 @@ export const useCRMStore = create<CRMState>((set, get) => {
     stages: [],
 
     initializeCRM: async (companyId: string) => {
-        // Evita re-inicialização se já estiver conectado e com dados
-        if (get().isInitialized && channel) return;
-
+        // Se já inicializou para esta empresa, não refaz o fetch pesado
+        // Mas podemos querer reconectar o socket se ele caiu.
+        const currentIsInit = get().isInitialized;
+        
         const supabase = createClient();
-        console.log(`🚀 [CRM Realtime] Iniciando Motor Gaming Mode para: ${companyId}`);
+        console.log(`🚀 [Gaming Mode] Inicializando Engine CRM: ${companyId}`);
 
-        // 1. SNAPSHOT PARALELO (Leads + Stages)
+        // 1. SNAPSHOT (Load Inicial) - Executa sempre para garantir consistência ao focar na aba
         const [leadsRes, stagesRes] = await Promise.all([
             supabase.from('leads').select('*').eq('company_id', companyId).neq('status', 'archived'),
             supabase.from('pipeline_stages').select('*').eq('company_id', companyId).order('position')
         ]);
 
-        if (leadsRes.error || stagesRes.error) {
-            console.error("Erro no Snapshot CRM:", leadsRes.error || stagesRes.error);
-            return;
+        if (!leadsRes.error && !stagesRes.error) {
+            set({ 
+                leads: leadsRes.data as Lead[], 
+                stages: stagesRes.data as PipelineStage[],
+                isInitialized: true 
+            });
         }
 
-        set({ 
-            leads: leadsRes.data as Lead[], 
-            stages: stagesRes.data as PipelineStage[],
-            isInitialized: true 
-        });
-
-        // 2. SUBSCRIPTION (Realtime Listener)
-        if (channel) supabase.removeChannel(channel);
+        // 2. WEBSOCKET SUBSCRIPTION (Event Driven)
+        if (channel) {
+             // Se já existe canal, remove para evitar duplicidade de ouvintes
+             supabase.removeChannel(channel);
+        }
 
         channel = supabase.channel(`crm-gaming-mode:${companyId}`)
             .on('postgres_changes', { 
@@ -58,40 +60,43 @@ export const useCRMStore = create<CRMState>((set, get) => {
             }, (payload) => {
                 const currentLeads = get().leads;
 
-                // INSERT
+                // INSERT: Novo Lead entra no topo ou na posição correta
                 if (payload.eventType === 'INSERT') {
                     const newLead = payload.new as Lead;
                     if (!currentLeads.find(l => l.id === newLead.id)) {
+                        console.log("⚡ [CRM] Novo Lead recebido:", newLead.name);
                         set({ leads: [newLead, ...currentLeads] });
                     }
                 }
-                // UPDATE
+                // UPDATE: Atualização de campo (mover card, mudar valor, etc)
                 else if (payload.eventType === 'UPDATE') {
                     const updatedLead = payload.new as Lead;
+                    // Mapeia e substitui. O React detectará a mudança e renderizará.
                     set({ 
                         leads: currentLeads.map(l => l.id === updatedLead.id ? updatedLead : l) 
                     });
                 }
-                // DELETE
+                // DELETE: Remoção
                 else if (payload.eventType === 'DELETE') {
                     set({ 
                         leads: currentLeads.filter(l => l.id !== payload.old.id) 
                     });
                 }
             })
+            // Escuta mudanças nos Estágios (Stages) também
             .on('postgres_changes', {
                 event: '*',
                 schema: 'public',
                 table: 'pipeline_stages',
                 filter: `company_id=eq.${companyId}`
-            }, async (payload) => {
-                // Para Stages, como a ordem importa muito, fazemos um refetch rápido para garantir integridade
-                // Isso é raro acontecer, então o custo é baixo.
+            }, async () => {
+                // Se mudou estrutura do funil (nome, ordem), faz refresh dos stages
                 const { data } = await supabase.from('pipeline_stages').select('*').eq('company_id', companyId).order('position');
                 if(data) set({ stages: data as PipelineStage[] });
             })
             .subscribe((status) => {
-                if(status === 'SUBSCRIBED') console.log("🟢 [CRM] Sincronização Ativa.");
+                if(status === 'SUBSCRIBED') console.log("🟢 [CRM] Sincronização em Tempo Real Ativa.");
+                if(status === 'CHANNEL_ERROR') console.error("🔴 [CRM] Erro na conexão Realtime.");
             });
     },
 
