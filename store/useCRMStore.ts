@@ -24,14 +24,11 @@ export const useCRMStore = create<CRMState>((set, get) => {
     stages: [],
 
     initializeCRM: async (companyId: string) => {
-        // Se já inicializou para esta empresa, não refaz o fetch pesado
-        // Mas podemos querer reconectar o socket se ele caiu.
-        const currentIsInit = get().isInitialized;
-        
         const supabase = createClient();
         console.log(`🚀 [Gaming Mode] Inicializando Engine CRM: ${companyId}`);
 
         // 1. SNAPSHOT (Load Inicial) - Executa sempre para garantir consistência ao focar na aba
+        // Isso previne que dados fiquem "stale" se a conexão websocket piscar
         const [leadsRes, stagesRes] = await Promise.all([
             supabase.from('leads').select('*').eq('company_id', companyId).neq('status', 'archived'),
             supabase.from('pipeline_stages').select('*').eq('company_id', companyId).order('position')
@@ -47,7 +44,7 @@ export const useCRMStore = create<CRMState>((set, get) => {
 
         // 2. WEBSOCKET SUBSCRIPTION (Event Driven)
         if (channel) {
-             // Se já existe canal, remove para evitar duplicidade de ouvintes
+             // Se já existe canal, remove para evitar duplicidade de ouvintes (Memory Leak Protection)
              supabase.removeChannel(channel);
         }
 
@@ -63,6 +60,7 @@ export const useCRMStore = create<CRMState>((set, get) => {
                 // INSERT: Novo Lead entra no topo ou na posição correta
                 if (payload.eventType === 'INSERT') {
                     const newLead = payload.new as Lead;
+                    // Evita duplicata se o Optimistic UI já tiver inserido (embora raro aqui)
                     if (!currentLeads.find(l => l.id === newLead.id)) {
                         console.log("⚡ [CRM] Novo Lead recebido:", newLead.name);
                         set({ leads: [newLead, ...currentLeads] });
@@ -71,7 +69,7 @@ export const useCRMStore = create<CRMState>((set, get) => {
                 // UPDATE: Atualização de campo (mover card, mudar valor, etc)
                 else if (payload.eventType === 'UPDATE') {
                     const updatedLead = payload.new as Lead;
-                    // Mapeia e substitui. O React detectará a mudança e renderizará.
+                    // Mapeia e substitui. O React detectará a mudança de referência e renderizará.
                     set({ 
                         leads: currentLeads.map(l => l.id === updatedLead.id ? updatedLead : l) 
                     });
@@ -83,20 +81,21 @@ export const useCRMStore = create<CRMState>((set, get) => {
                     });
                 }
             })
-            // Escuta mudanças nos Estágios (Stages) também
+            // Escuta mudanças nos Estágios (Stages) também para consistência do Kanban
             .on('postgres_changes', {
                 event: '*',
                 schema: 'public',
                 table: 'pipeline_stages',
                 filter: `company_id=eq.${companyId}`
             }, async () => {
-                // Se mudou estrutura do funil (nome, ordem), faz refresh dos stages
+                // Se mudou estrutura do funil (nome, ordem), faz refresh total dos stages
+                // É mais seguro fazer fetch aqui do que tentar "patch" na lista ordenada
                 const { data } = await supabase.from('pipeline_stages').select('*').eq('company_id', companyId).order('position');
                 if(data) set({ stages: data as PipelineStage[] });
             })
             .subscribe((status) => {
                 if(status === 'SUBSCRIBED') console.log("🟢 [CRM] Sincronização em Tempo Real Ativa.");
-                if(status === 'CHANNEL_ERROR') console.error("🔴 [CRM] Erro na conexão Realtime.");
+                if(status === 'CHANNEL_ERROR') console.error("🔴 [CRM] Erro na conexão Realtime. Verifique logs.");
             });
     },
 
