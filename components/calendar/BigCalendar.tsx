@@ -11,18 +11,18 @@ import { Clock, CheckCircle2, Circle, User } from 'lucide-react';
 
 interface BigCalendarProps {
   onDateClick: (date: Date) => void;
-  onEventClick: (appointment: Appointment) => void; // Nova Prop
+  onEventClick: (appointment: Appointment) => void;
 }
 
 export function BigCalendar({ onDateClick, onEventClick }: BigCalendarProps) {
-  const { selectedDate, appointments, toggleTaskCompletionOptimistic } = useCalendarStore();
+  const { selectedDate, appointments, toggleTaskCompletionOptimistic, viewMode } = useCalendarStore();
 
-  const monthStart = startOfMonth(selectedDate);
-  const monthEnd = endOfMonth(monthStart);
-  const startDate = startOfWeek(monthStart);
-  const endDate = endOfWeek(monthEnd);
+  const isWeekly = viewMode === 'week';
 
-  const dateFormat = "d";
+  // Lógica de Grid baseada no View Mode
+  const startDate = isWeekly ? startOfWeek(selectedDate) : startOfWeek(startOfMonth(selectedDate));
+  const endDate = isWeekly ? endOfWeek(selectedDate) : endOfWeek(endOfMonth(selectedDate));
+
   const rows = [];
   let days = [];
   let day = startDate;
@@ -30,12 +30,12 @@ export function BigCalendar({ onDateClick, onEventClick }: BigCalendarProps) {
 
   while (day <= endDate) {
     for (let i = 0; i < 7; i++) {
-      formattedDate = format(day, dateFormat);
+      formattedDate = format(day, "d");
       const cloneDay = day;
       
       const dayApps = appointments.filter(app => isSameDay(parseISO(app.start_time), cloneDay));
       
-      const tasks = dayApps.filter(a => a.is_task).sort((a, b) => (a.completed_at ? 1 : 0) - (b.completed_at ? 1 : 0)); // Concluídas p/ baixo
+      const tasks = dayApps.filter(a => a.is_task).sort((a, b) => (a.completed_at ? 1 : 0) - (b.completed_at ? 1 : 0));
       const events = dayApps.filter(a => !a.is_task).sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
 
       days.push(
@@ -43,20 +43,24 @@ export function BigCalendar({ onDateClick, onEventClick }: BigCalendarProps) {
           key={day.toString()}
           onClick={() => onDateClick(cloneDay)}
           className={cn(
-            "min-h-[120px] p-2 border border-zinc-800/50 relative group transition-colors hover:bg-zinc-900/30 cursor-pointer flex flex-col gap-1",
-            !isSameMonth(day, monthStart) ? "bg-zinc-950/30 text-zinc-700" : "bg-zinc-900/10 text-zinc-400",
+            "p-2 border border-zinc-800/50 relative group transition-colors hover:bg-zinc-900/30 cursor-pointer flex flex-col gap-1",
+            isWeekly ? "min-h-[400px]" : "min-h-[120px]", // Altura maior para modo semanal
+            !isSameMonth(day, selectedDate) && !isWeekly ? "bg-zinc-950/30 text-zinc-700" : "bg-zinc-900/10 text-zinc-400",
             isToday(day) ? "bg-primary/5" : ""
           )}
         >
           {/* Header do Dia */}
           <div className="flex justify-between items-center mb-1">
-              <span className={cn(
-                  "text-sm font-medium w-7 h-7 flex items-center justify-center rounded-full",
-                  isToday(day) ? "bg-primary text-white shadow-lg shadow-green-500/20" : ""
-              )}>
-                  {formattedDate}
-              </span>
-              {dayApps.length > 0 && <span className="text-[10px] text-zinc-600 font-mono">{dayApps.length}</span>}
+              <div className="flex flex-col items-center">
+                  {isWeekly && <span className="text-[10px] uppercase font-bold text-zinc-500 mb-1">{format(day, 'EEE', { locale: ptBR })}</span>}
+                  <span className={cn(
+                      "text-sm font-medium w-7 h-7 flex items-center justify-center rounded-full",
+                      isToday(day) ? "bg-primary text-white shadow-lg shadow-green-500/20" : ""
+                  )}>
+                      {formattedDate}
+                  </span>
+              </div>
+              {!isWeekly && dayApps.length > 0 && <span className="text-[10px] text-zinc-600 font-mono">{dayApps.length}</span>}
           </div>
 
           {/* Lista de Eventos (Meetings) */}
@@ -65,7 +69,7 @@ export function BigCalendar({ onDateClick, onEventClick }: BigCalendarProps) {
                   <div 
                     key={event.id} 
                     onClick={(e) => {
-                        e.stopPropagation(); // Impede abrir o modal de "Novo"
+                        e.stopPropagation();
                         onEventClick(event);
                     }}
                     className={cn(
@@ -78,7 +82,6 @@ export function BigCalendar({ onDateClick, onEventClick }: BigCalendarProps) {
                           <Clock size={10} className="shrink-0" />
                           <span>{format(parseISO(event.start_time), 'HH:mm')} {event.title}</span>
                       </div>
-                      {/* Exibe Nome do Lead se existir */}
                       {event.lead && (
                           <div className="flex items-center gap-1 text-[9px] text-blue-400/70 pl-3.5">
                               <User size={8} /> {event.lead.name.split(' ')[0]}
@@ -138,17 +141,20 @@ export function BigCalendar({ onDateClick, onEventClick }: BigCalendarProps) {
     days = [];
   }
 
-  const daysHeader = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map(d => (
+  // Header só no modo Mensal (No semanal já está dentro da célula)
+  const daysHeader = !isWeekly ? ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map(d => (
       <div key={d} className="text-center py-2 text-xs font-bold text-zinc-500 uppercase border-b border-zinc-800 bg-zinc-900/50">
           {d}
       </div>
-  ));
+  )) : null;
 
   return (
     <div className="bg-zinc-950 border border-zinc-800 rounded-xl overflow-hidden shadow-2xl">
-      <div className="grid grid-cols-7">
-          {daysHeader}
-      </div>
+      {daysHeader && (
+          <div className="grid grid-cols-7">
+              {daysHeader}
+          </div>
+      )}
       <div>{rows}</div>
     </div>
   );

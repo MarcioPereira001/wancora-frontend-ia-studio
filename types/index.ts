@@ -34,6 +34,33 @@ export interface Appointment {
   };
 }
 
+export interface NotificationTrigger {
+    id: string;
+    type: 'on_booking' | 'before_event';
+    time_amount?: number;
+    time_unit?: 'minutes' | 'hours' | 'days';
+    template: string;
+    active: boolean;
+}
+
+export interface AvailabilityRule {
+    id: string;
+    company_id: string;
+    user_id: string;
+    name: string;
+    slug: string;
+    days_of_week: number[];
+    start_hour: string;
+    end_hour: string;
+    slot_duration: number;
+    is_active: boolean;
+    notification_config?: {
+        admin_phone: string | null;
+        admin_notifications: NotificationTrigger[];
+        lead_notifications: NotificationTrigger[];
+    };
+}
+
 export interface User {
   id: string;
   email: string;

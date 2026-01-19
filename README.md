@@ -215,7 +215,16 @@ Agora possui navegação por **Abas** para organizar a densidade de informaçõe
 * **Agendamento:** Botão relógio no input -> Salva em `scheduled_messages` com status `pending` -> Cronjob dispara.
 * **Campanhas:** Disparo em massa com delay aleatório para evitar banimento.
 
-### 🛡️ Módulo 5: Controle de Acesso (RBAC)
+### 📅 Módulo 5: Agenda 2.0 & Automação
+Sistema completo de agendamento público e interno.
+* **Visão Híbrida:** Botão flutuante para alternar instantaneamente entre Mês e Semana (Grid adaptativo).
+* **Link Público (/agendar):** Página de booking externa otimizada com verificação de conflitos em tempo real via RPC.
+* **Engine de Automação de Avisos:**
+    * **Gatilhos Configuráveis:** Envio de mensagem ao agendar (`on_booking`) ou lembretes pré-reunião (`before_event`).
+    * **Templates Dinâmicos:** Suporte a variáveis como `[lead_name]`, `[data]`, `[hora]`.
+    * **Multicanal:** Configuração distinta para avisos ao Admin (Dono da agenda) e ao Cliente (Lead).
+
+### 🛡️ Módulo 6: Controle de Acesso (RBAC)
 O sistema implementa uma hierarquia de permissões estrita baseada na coluna `role` da tabela `profiles`:
 
 1.  **Owner (Proprietário):**
@@ -275,41 +284,27 @@ SUPABASE_URL="[https://sua-url.supabase.co](https://sua-url.supabase.co)"
 SUPABASE_KEY="sua-service-role-key" # Necessário para ignorar RLS nos Workers
 REDIS_URL="redis://..." # Obrigatório para filas de campanha
 WEB_CONCURRENCY=1 # Opcional, para Render/Heroku
-NODE_VERSION=20.20.0
-6. Deploy e Infraestrutura (Render)
+NODE_VERSION=20.20.0```
+
+## 6. Deploy e Infraestrutura (Render)
 O serviço Backend é configurado para rodar como um Web Service no Render (ou similar).
-
 Docker/Node: Roda sobre Node.js 20.
-
 Healthcheck: O Render deve monitorar a rota /health.
-
 Redis: Um serviço Redis externo é necessário para gerenciar a fila de campanhas (bullmq).
 
-7. Diretrizes para Desenvolvimento com IA (Google AI Studio)
+## 7. Diretrizes para Desenvolvimento com IA (Google AI Studio)
 Ao gerar código para este projeto, você DEVE seguir estas regras estritas:
-
 Integridade do Schema:
-
 NUNCA invente colunas. Consulte este README e o arquivo SQL.
-
 Use lead_activities para logs, não crie campos JSON dentro de leads.
-
 Use a FK created_by apontando para profiles (não auth.users) ao listar atividades.
-
 Data Fetching:
-
 Para listar chats, SEMPRE use a RPC get_my_chat_list. Nunca tente fazer joins manuais complexos no Frontend, pois é lento e perde dados de Grupos/Mute.
-
 Componentes Globais:
-
 Use useLeadData e useLeadActivities para garantir que Chat e Kanban mostrem os mesmos dados em tempo real.
-
 Reutilize DeadlineTimer.tsx para consistência visual dos cronômetros.
-
 Tipagem: Respeite os tipos poll, location, contact no envio de mensagens (whatsappController.js e routes.js já estão adaptados para receber payloads estruturados).
-
 Performance:
-
 Use Optimistic UI em interações de checklist, notas e cronômetros. O usuário não pode esperar o banco responder para ver a alteração.
 
 ✅ Instruções Finais para o Usuário Este arquivo README.md é a Verdade Absoluta. Ele detalha tabelas, fluxos, UX e regras de negócio. Qualquer alteração no banco de dados (SQL) deve ser refletida aqui imediatamente para manter a consistência entre o "Manual" e a "Máquina".

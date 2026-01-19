@@ -147,6 +147,20 @@ Define as regras de horários para o sistema de agendamento (tipo Calendly).
 * `buffer_before`: integer
 * `buffer_after`: integer
 * `is_active`: boolean
+* `notification_config`: jsonb (NOVO) - Configurações de automação de avisos.
+  * Estrutura JSON: 
+    ```json
+    { 
+      "admin_phone": "5511999999999", 
+      "admin_notifications": [
+        { "type": "on_booking", "active": true, "template": "Novo agendamento..." }
+      ], 
+      "lead_notifications": [
+        { "type": "before_event", "time_amount": 1, "time_unit": "hours", "template": "Lembrete..." }
+      ] 
+    }
+    ```
+
 
 ### `automations` (Workflow)
 Regras de automação (Gatilho -> Ação).

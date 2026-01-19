@@ -201,6 +201,19 @@ O motor de disparos em massa opera sob regras rígidas de segurança:
 * **Smart Throttling:** Além do delay humano, o worker aplica um intervalo aleatório entre 15s e 40s entre cada job de envio.
 * **Spintax Engine:** Suporte nativo para variações de texto no formato {Olá|Oi|Bom dia}, reduzindo a pegada de similaridade das mensagens enviadas.
 * **Atomic Stats:** Atualização de contadores (processed_count, failed_count) via RPC no Postgres para garantir precisão em tempo real.
+
+### 4.5. Agenda Automation Worker (Notification Engine)
+Este worker é responsável por processar as regras de aviso configuradas na tabela `availability_rules`.
+* **Frequência:** Cron Job a cada 5 ou 10 minutos.
+* **Lógica de Execução:**
+    1.  Busca agendamentos (`appointments`) futuros (próximas 24h).
+    2.  Faz Join com `availability_rules` para ler o `notification_config`.
+    3.  Verifica se existe gatilho pendente (Ex: `before_event` com `time_amount: 1 hour`).
+    4.  **Disparo:** Se o horário atual bater com a regra ( `start_time - time_amount`), envia a mensagem via `whatsappController`.
+    5.  **Idempotência:** Marca o agendamento como notificado (`reminder_sent = true`) para evitar spam.
+
+* **Gatilhos Imediatos (`on_booking`):**
+    *   Devem ser disparados via **Database Webhook** ou processados imediatamente após a inserção do agendamento, sem esperar o Cron.
 ---
 
 ## 5. 📡 Realtime & WebSocket Events (Webhook Specs)

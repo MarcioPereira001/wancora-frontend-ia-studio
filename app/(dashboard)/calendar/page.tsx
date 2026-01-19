@@ -8,15 +8,15 @@ import { DailySummary } from '@/components/calendar/DailySummary';
 import { BigCalendar } from '@/components/calendar/BigCalendar';
 import { NewAppointmentModal } from '@/components/calendar/NewAppointmentModal';
 import { Button } from '@/components/ui/button';
-import { Calendar as CalIcon, ChevronLeft, ChevronRight, Plus, Settings } from 'lucide-react';
-import { format, addMonths, subMonths } from 'date-fns';
+import { Calendar as CalIcon, ChevronLeft, ChevronRight, Plus, Settings, LayoutGrid, CalendarRange } from 'lucide-react';
+import { format, addMonths, subMonths, addWeeks, subWeeks } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useRouter } from 'next/navigation';
 import { Appointment } from '@/types';
 
 export default function CalendarPage() {
   const { user } = useAuthStore();
-  const { initializeCalendar, selectedDate, setSelectedDate, isLoading } = useCalendarStore();
+  const { initializeCalendar, selectedDate, setSelectedDate, viewMode, setViewMode } = useCalendarStore();
   const router = useRouter();
   
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -29,8 +29,15 @@ export default function CalendarPage() {
       }
   }, [user?.company_id]);
 
-  const handlePrevMonth = () => setSelectedDate(subMonths(selectedDate, 1));
-  const handleNextMonth = () => setSelectedDate(addMonths(selectedDate, 1));
+  const handlePrev = () => {
+      if (viewMode === 'week') setSelectedDate(subWeeks(selectedDate, 1));
+      else setSelectedDate(subMonths(selectedDate, 1));
+  };
+
+  const handleNext = () => {
+      if (viewMode === 'week') setSelectedDate(addWeeks(selectedDate, 1));
+      else setSelectedDate(addMonths(selectedDate, 1));
+  };
   
   const handleDateClick = (date: Date) => {
       setEditingEvent(null);
@@ -49,8 +56,12 @@ export default function CalendarPage() {
       setIsModalOpen(true);
   }
 
+  const toggleViewMode = () => {
+      setViewMode(viewMode === 'month' ? 'week' : 'month');
+  };
+
   return (
-    <div className="flex flex-col h-[calc(100vh-6rem)] animate-in fade-in duration-500">
+    <div className="flex flex-col h-[calc(100vh-6rem)] animate-in fade-in duration-500 relative">
         
         {/* Topbar Navigation */}
         <div className="flex items-center justify-between mb-6">
@@ -62,9 +73,9 @@ export default function CalendarPage() {
                     </h1>
                 </div>
                 <div className="flex gap-1 bg-zinc-900 rounded-lg p-1 border border-zinc-800">
-                    <button onClick={handlePrevMonth} className="p-1 hover:bg-zinc-800 rounded text-zinc-400 hover:text-white"><ChevronLeft size={18} /></button>
+                    <button onClick={handlePrev} className="p-1 hover:bg-zinc-800 rounded text-zinc-400 hover:text-white"><ChevronLeft size={18} /></button>
                     <button onClick={() => setSelectedDate(new Date())} className="px-3 text-xs font-bold text-zinc-300 hover:text-white">Hoje</button>
-                    <button onClick={handleNextMonth} className="p-1 hover:bg-zinc-800 rounded text-zinc-400 hover:text-white"><ChevronRight size={18} /></button>
+                    <button onClick={handleNext} className="p-1 hover:bg-zinc-800 rounded text-zinc-400 hover:text-white"><ChevronRight size={18} /></button>
                 </div>
             </div>
 
@@ -85,6 +96,17 @@ export default function CalendarPage() {
                 onDateClick={handleDateClick} 
                 onEventClick={handleEventClick}
             />
+        </div>
+
+        {/* Botão Flutuante de View Mode */}
+        <div className="absolute bottom-6 left-6 z-50">
+            <Button 
+                onClick={toggleViewMode} 
+                className="rounded-full w-14 h-14 bg-zinc-900 border border-zinc-700 shadow-xl hover:bg-zinc-800 hover:scale-105 transition-all text-primary"
+                title={viewMode === 'month' ? "Ver Semanal" : "Ver Mensal"}
+            >
+                {viewMode === 'month' ? <LayoutGrid size={24} /> : <CalendarRange size={24} />}
+            </Button>
         </div>
 
         <NewAppointmentModal 
