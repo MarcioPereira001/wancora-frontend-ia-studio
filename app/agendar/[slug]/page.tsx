@@ -82,10 +82,31 @@ export default function PublicSchedulePage() {
       }
 
       setBookingLoading(true);
+
+      // --- CORREÇÃO DE TIMEZONE ---
+      // O Banco (RPC) espera strings de data/hora e as combina em UTC.
+      // Se enviarmos '2023-10-25' e '00:15' (Local), o banco salva '00:15 UTC' (que é 21:15 do dia anterior no Brasil).
+      // Precisamos converter a escolha do usuário para UTC antes de enviar.
+      
+      // 1. Criar objeto Date representando o momento exato no navegador do usuário
+      const localDateTimeStr = `${format(selectedDate, 'yyyy-MM-dd')}T${selectedTime}:00`;
+      const localDateObj = new Date(localDateTimeStr);
+
+      // 2. Extrair componentes UTC desse momento
+      const utcYear = localDateObj.getUTCFullYear();
+      const utcMonth = String(localDateObj.getUTCMonth() + 1).padStart(2, '0');
+      const utcDay = String(localDateObj.getUTCDate()).padStart(2, '0');
+      const utcHours = String(localDateObj.getUTCHours()).padStart(2, '0');
+      const utcMinutes = String(localDateObj.getUTCMinutes()).padStart(2, '0');
+
+      // 3. Montar strings UTC para enviar à RPC
+      const dateToSend = `${utcYear}-${utcMonth}-${utcDay}`;
+      const timeToSend = `${utcHours}:${utcMinutes}`;
+
       const result = await bookAppointment({
           slug,
-          date: format(selectedDate, 'yyyy-MM-dd'),
-          time: selectedTime,
+          date: dateToSend, // Envia data em UTC
+          time: timeToSend, // Envia hora em UTC
           ...formData
       });
 
@@ -257,6 +278,7 @@ export default function PublicSchedulePage() {
                 </div>
             ) : (
                 <div className="h-full flex flex-col animate-in fade-in">
+                    {/* Header Calendário */}
                     <div className="flex items-center justify-between mb-6">
                         <h2 className="text-lg font-bold text-white capitalize">
                             {format(currentMonth, 'MMMM yyyy', { locale: ptBR })}
@@ -271,6 +293,7 @@ export default function PublicSchedulePage() {
                         </div>
                     </div>
 
+                    {/* Grid Dias */}
                     <div className="grid grid-cols-7 gap-2 mb-2">
                         {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map(d => (
                             <div key={d} className="text-center text-xs font-bold text-zinc-500 uppercase py-2">
@@ -282,6 +305,7 @@ export default function PublicSchedulePage() {
                         {renderCalendar()}
                     </div>
 
+                    {/* Slots List */}
                     <div className="mt-8 border-t border-zinc-800 pt-6 flex-1">
                         <h3 className="text-sm font-bold text-zinc-300 mb-4 flex items-center justify-between">
                             <span>Horários Disponíveis</span>

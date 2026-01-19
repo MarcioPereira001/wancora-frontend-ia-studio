@@ -3,6 +3,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useAuthStore } from '@/store/useAuthStore';
+import { useRealtimeStore } from '@/store/useRealtimeStore'; // Import adicionado
 import { useToast } from '@/hooks/useToast';
 import { getMyAvailability, saveAvailabilityRules, type AvailabilityFormData } from '@/app/actions/calendar';
 import { Button } from '@/components/ui/button';
@@ -28,6 +29,7 @@ const DURATIONS = [15, 30, 45, 60, 90, 120];
 
 export default function CalendarSettingsPage() {
   const { user } = useAuthStore();
+  const { instances } = useRealtimeStore(); // Hook para pegar sessões ativas
   const { addToast } = useToast();
   const supabase = createClient();
   
@@ -107,11 +109,7 @@ export default function CalendarSettingsPage() {
   const handleSave = async () => {
       setIsSaving(true);
       try {
-          // Merge notification config into payload if API supports it (Updated Action needed or pass via specific field)
-          // For now assuming saveAvailabilityRules handles dynamic fields or we updated the type.
-          // IMPORTANT: Check backend contract. We added notification_config to DB. 
-          // We need to pass it. The Zod schema in action might strip it if not updated.
-          // Updating the action call to include it.
+          // Merge notification config into payload
           const payload = { ...formData, notification_config: notifConfig };
           
           const result = await saveAvailabilityRules(payload);
@@ -173,9 +171,13 @@ export default function CalendarSettingsPage() {
 
   const testNotification = async (phone: string, text: string) => {
       if(!phone || !text) return;
+      
+      // Busca uma sessão válida (conectada)
+      const activeSession = instances.find(i => i.status === 'connected')?.session_id || 'default';
+
       try {
           await api.post('/message/send', {
-              sessionId: 'default', // Usa a sessão padrão
+              sessionId: activeSession, // Usa a sessão real encontrada
               companyId: user?.company_id,
               to: phone,
               type: 'text',
@@ -183,13 +185,12 @@ export default function CalendarSettingsPage() {
           });
           addToast({ type: 'success', title: 'Enviado', message: 'Mensagem de teste enviada.' });
       } catch (e) {
-          addToast({ type: 'error', title: 'Erro', message: 'Falha ao enviar teste.' });
+          addToast({ type: 'error', title: 'Erro', message: 'Falha ao enviar teste. Verifique se o WhatsApp está conectado.' });
       }
   };
 
   if (isLoading) return <div className="flex items-center justify-center h-[calc(100vh-100px)]"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
 
-  // New URL Structure
   const publicUrl = `https://wancora-crm.netlify.app/agendar/${formData.slug}`;
 
   return (

@@ -84,7 +84,8 @@ export function BigCalendar({ onDateClick, onEventClick }: BigCalendarProps) {
                       </div>
                       {event.lead && (
                           <div className="flex items-center gap-1 text-[9px] text-blue-400/70 pl-3.5">
-                              <User size={8} /> {event.lead.name.split(' ')[0]}
+                              {/* CORREÇÃO AQUI: Fallback para nome nulo */}
+                              <User size={8} /> {(event.lead.name || 'Lead').split(' ')[0]}
                           </div>
                       )}
                   </div>
