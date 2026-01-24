@@ -4,7 +4,7 @@
 import React, { useState } from 'react';
 import { Message } from '@/types';
 import { MessageContent } from './MessageContent';
-import { Check, CheckCheck, Clock, Ban, Smile, ChevronDown, Trash2, Info } from 'lucide-react';
+import { Check, CheckCheck, Clock, Ban, Smile, ChevronDown, Trash2, Info, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Checkbox } from '@/components/ui/checkbox';
 import { api } from '@/services/api';
@@ -22,6 +22,8 @@ interface MessageBubbleProps {
 }
 
 const COMMON_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+// Janela de segurança: 72 horas em milissegundos
+const REVOKE_WINDOW_MS = 72 * 60 * 60 * 1000; 
 
 export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }: MessageBubbleProps) {
   const isMe = message.from_me;
@@ -70,7 +72,6 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
               msgId: message.id,
               reaction: emoji
           });
-          // Optimistic UI handled by global store, but feedback is nice
       } catch (error) {
           addToast({ type: 'error', title: 'Erro', message: 'Falha ao reagir.' });
       }
@@ -87,7 +88,6 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
               everyone
           });
           setShowDeleteModal(false);
-          // O backend fará o soft delete e o realtime atualizará a UI
       } catch (error) {
           addToast({ type: 'error', title: 'Erro', message: 'Falha ao apagar.' });
       } finally {
@@ -95,15 +95,15 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
       }
   };
 
-  const reactions: any[] = (message as any).reactions || [];
-  
-  // Logic to prevent deleting old messages for everyone
-  const canDeleteForEveryone = () => {
-      const msgDate = new Date(message.created_at);
-      const now = new Date();
-      const diffHours = (now.getTime() - msgDate.getTime()) / (1000 * 60 * 60);
-      return diffHours < 48; // Limite de 48h (aprox 2 dias)
+  // Lógica de Segurança Anti-Ban
+  const canRevoke = () => {
+      if (!message.created_at) return false;
+      const msgTime = new Date(message.created_at).getTime();
+      const now = Date.now();
+      return (now - msgTime) < REVOKE_WINDOW_MS;
   };
+
+  const reactions: any[] = (message as any).reactions || [];
 
   return (
     <div 
@@ -249,25 +249,34 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
             <div className="space-y-4">
                 <p className="text-sm text-zinc-400">Você pode apagar mensagens apenas para você ou para todos os participantes.</p>
                 <div className="flex flex-col gap-2 justify-end">
-                    {isMe && canDeleteForEveryone() && (
-                        <Button 
-                            variant="destructive" 
-                            onClick={() => handleDelete(true)} 
-                            disabled={isDeleting}
-                            className="justify-start bg-zinc-800 border-zinc-700 text-red-400 hover:bg-red-500/10"
-                        >
-                            Apagar para todos (Revoke)
-                        </Button>
+                    {/* AQUI ESTÁ A TRAVA DE SEGURANÇA (72H) */}
+                    {isMe && (
+                        <div className="flex flex-col gap-1 w-full">
+                            <Button 
+                                variant="destructive" 
+                                onClick={() => handleDelete(true)} 
+                                disabled={isDeleting || !canRevoke()}
+                                className="justify-start bg-zinc-800 border-zinc-700 text-red-400 hover:bg-red-500/10 w-full"
+                            >
+                                Apagar para todos (Revoke)
+                            </Button>
+                            {!canRevoke() && (
+                                <span className="text-[10px] text-zinc-500 flex items-center gap-1 pl-1">
+                                    <AlertTriangle className="w-3 h-3 text-yellow-500" /> 
+                                    Indisponível para mensagens antigas (Segurança Anti-Ban)
+                                </span>
+                            )}
+                        </div>
                     )}
                     <Button 
                         variant="outline" 
                         onClick={() => handleDelete(false)} 
                         disabled={isDeleting}
-                        className="justify-start border-zinc-700"
+                        className="justify-start border-zinc-700 w-full"
                     >
                         Apagar para mim
                     </Button>
-                    <Button variant="ghost" onClick={() => setShowDeleteModal(false)} className="mt-2">Cancelar</Button>
+                    <Button variant="ghost" onClick={() => setShowDeleteModal(false)} className="mt-2 w-full">Cancelar</Button>
                 </div>
             </div>
         </Modal>

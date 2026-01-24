@@ -63,7 +63,6 @@ export function ChatHeader() {
       if (!dateStr) return '';
       const date = new Date(dateStr);
       const now = new Date();
-      // Se for hoje, mostra só hora. Se não, mostra data e hora.
       if (date.toDateString() === now.toDateString()) {
           return `visto hoje às ${date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
       }
