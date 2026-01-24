@@ -41,7 +41,7 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
-  // Status Icon Logic (Realtime)
+  // Status Icon Logic (Realtime - The Hammer)
   const renderStatusIcon = () => {
     if (!isMe) return null;
 
@@ -50,10 +50,12 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
 
     if (status === 'sending') return <Clock className={cn(iconClass, "text-zinc-400")} />;
     if (status === 'sent') return <Check className={cn(iconClass, "text-zinc-400")} />;
+    // Delivered (2 tiques cinza)
     if (status === 'delivered') return <CheckCheck className={cn(iconClass, "text-zinc-400")} />;
-    // Se for 'read' OU se tiver data de leitura no timestamp (backup logic)
+    // Read (2 tiques azuis)
     if (status === 'read' || (message as any).read_at) return <CheckCheck className={cn(iconClass, "text-blue-400")} />;
 
+    // Fallback padrão: 1 tick
     return <Check className={cn(iconClass, "text-zinc-400")} />;
   };
 
@@ -68,6 +70,7 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
               msgId: message.id,
               reaction: emoji
           });
+          // Optimistic UI handled by global store, but feedback is nice
       } catch (error) {
           addToast({ type: 'error', title: 'Erro', message: 'Falha ao reagir.' });
       }
@@ -84,6 +87,7 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
               everyone
           });
           setShowDeleteModal(false);
+          // O backend fará o soft delete e o realtime atualizará a UI
       } catch (error) {
           addToast({ type: 'error', title: 'Erro', message: 'Falha ao apagar.' });
       } finally {
@@ -92,6 +96,14 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
   };
 
   const reactions: any[] = (message as any).reactions || [];
+  
+  // Logic to prevent deleting old messages for everyone
+  const canDeleteForEveryone = () => {
+      const msgDate = new Date(message.created_at);
+      const now = new Date();
+      const diffHours = (now.getTime() - msgDate.getTime()) / (1000 * 60 * 60);
+      return diffHours < 48; // Limite de 48h (aprox 2 dias)
+  };
 
   return (
     <div 
@@ -206,12 +218,12 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
             {/* 4. REAÇÕES (Fora da bolha, coladas nela) */}
             {reactions.length > 0 && !(message as any).is_deleted && (
                 <div className={cn(
-                    "absolute -bottom-2 z-10 flex gap-1",
+                    "absolute -bottom-2 z-20 flex gap-1 animate-in zoom-in duration-300",
                     isMe ? "right-2" : "left-2"
                 )}>
-                    <div className="flex items-center bg-zinc-900 border border-zinc-700 rounded-full px-1.5 py-0.5 shadow-md scale-90">
+                    <div className="flex items-center bg-zinc-900 border border-zinc-700 rounded-full px-1.5 py-0.5 shadow-md scale-90 hover:scale-105 transition-transform cursor-pointer">
                         {reactions.slice(0, 3).map((r, i) => (
-                            <span key={i} className="text-[10px] animate-in zoom-in cursor-default" title={r.actor}>{r.text}</span>
+                            <span key={i} className="text-[12px]" title={r.actor}>{r.text}</span>
                         ))}
                         {reactions.length > 3 && (
                             <span className="text-[9px] text-zinc-400 ml-1">+{reactions.length - 3}</span>
@@ -237,7 +249,7 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
             <div className="space-y-4">
                 <p className="text-sm text-zinc-400">Você pode apagar mensagens apenas para você ou para todos os participantes.</p>
                 <div className="flex flex-col gap-2 justify-end">
-                    {isMe && (
+                    {isMe && canDeleteForEveryone() && (
                         <Button 
                             variant="destructive" 
                             onClick={() => handleDelete(true)} 
