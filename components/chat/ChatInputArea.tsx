@@ -1,7 +1,8 @@
+
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Paperclip, Mic, Send, Trash2, Image as IconImage, FileText, Music, MapPin, User, BarChart2, DollarSign, CheckSquare, Loader2, Crosshair } from 'lucide-react';
+import { Paperclip, Mic, Send, Trash2, Image as IconImage, FileText, Music, MapPin, User, BarChart2, DollarSign, CheckSquare, Loader2, Crosshair, Sticker, Smile } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useChatStore } from '@/store/useChatStore';
 import { useAuthStore } from '@/store/useAuthStore';
@@ -11,7 +12,8 @@ import { uploadChatMedia } from '@/utils/supabase/storage';
 import { Message } from '@/types';
 import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/input';
-import { SendMessageSchema } from '@/lib/schemas'; // Zod Import
+import { SendMessageSchema } from '@/lib/schemas'; 
+import EmojiPicker, { Theme } from 'emoji-picker-react';
 
 export function ChatInputArea() {
   const { user } = useAuthStore();
@@ -23,7 +25,9 @@ export function ChatInputArea() {
 
   const [input, setInput] = useState("");
   const [mediaMenuOpen, setMediaMenuOpen] = useState(false);
+  const [emojiPickerOpen, setEmojiPickerOpen] = useState(false); // NOVO
   const mediaMenuRef = useRef<HTMLDivElement>(null);
+  const emojiRef = useRef<HTMLDivElement>(null); // NOVO
   
   // Gravador
   const [isRecording, setIsRecording] = useState(false);
@@ -35,6 +39,7 @@ export function ChatInputArea() {
   // Refs de Input
   const fileInputRef = useRef<HTMLInputElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
+  const stickerInputRef = useRef<HTMLInputElement>(null);
 
   // Modais de Anexo
   const [activeModal, setActiveModal] = useState<'poll'|'pix'|'contact'|'location'|null>(null);
@@ -50,21 +55,29 @@ export function ChatInputArea() {
   const [locLng, setLocLng] = useState<number | null>(null);
   const [locLoading, setLocLoading] = useState(false);
 
-  // Fecha menu ao clicar fora
+  // Fecha menus ao clicar fora
   useEffect(() => {
       function handleClickOutside(event: MouseEvent) {
           if (mediaMenuRef.current && !mediaMenuRef.current.contains(event.target as Node)) {
               setMediaMenuOpen(false);
+          }
+          // Fecha Emoji Picker se clicar fora
+          if (emojiRef.current && !emojiRef.current.contains(event.target as Node)) {
+              setEmojiPickerOpen(false);
           }
       }
       document.addEventListener("mousedown", handleClickOutside);
       return () => { document.removeEventListener("mousedown", handleClickOutside); };
   }, []);
 
+  const onEmojiClick = (emojiData: any) => {
+      setInput(prev => prev + emojiData.emoji);
+      // setEmojiPickerOpen(false); // Opcional: Manter aberto para múltiplos emojis
+  };
+
   const dispatchMessage = async (payload: any) => {
       if(!activeContact || !user?.company_id || !selectedInstance) return;
       
-      // Construção do Payload API
       const apiPayload = {
           sessionId: selectedInstance.session_id,
           companyId: user.company_id,
@@ -81,7 +94,6 @@ export function ChatInputArea() {
           ptt: payload.ptt
       };
 
-      // VALIDAÇÃO ZOD (Hardening)
       const validation = SendMessageSchema.safeParse(apiPayload);
       if (!validation.success) {
           console.error("Payload Inválido:", validation.error.format());
@@ -89,7 +101,6 @@ export function ChatInputArea() {
           return;
       }
 
-      // Optimistic UI
       const tempId = `temp-${Date.now()}`;
       let contentDisplay = payload.text;
       
@@ -97,6 +108,7 @@ export function ChatInputArea() {
       if (payload.type === 'poll') contentDisplay = payload.content?.name || 'Enquete';
       if (payload.type === 'location') contentDisplay = 'Localização';
       if (payload.type === 'contact') contentDisplay = 'Contato';
+      if (payload.type === 'sticker') contentDisplay = 'Figurinha';
       if (payload.caption) contentDisplay = payload.caption;
 
       const tempMsg: Message = {
@@ -123,7 +135,7 @@ export function ChatInputArea() {
       }
   };
 
-  const handleSendText = () => { if(input.trim()) { dispatchMessage({ type: 'text', text: input }); setInput(""); }};
+  const handleSendText = () => { if(input.trim()) { dispatchMessage({ type: 'text', text: input }); setInput(""); setEmojiPickerOpen(false); }};
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
@@ -138,10 +150,16 @@ export function ChatInputArea() {
           if (file.type.startsWith('image/')) type = 'image';
           else if (file.type.startsWith('video/')) type = 'video';
           else if (file.type.startsWith('audio/')) { type = 'audio'; ptt = false; }
+          else if (file.type === 'image/webp') type = 'sticker'; 
+
           await dispatchMessage({ type, url: publicUrl, caption: input, fileName: fileName, mimetype: file.type, ptt: ptt }); 
           setInput("");
       } catch (e: any) { addToast({ type: 'error', title: 'Erro', message: e.message }); }
-      finally { if (fileInputRef.current) fileInputRef.current.value = ''; if (audioInputRef.current) audioInputRef.current.value = ''; }
+      finally { 
+          if (fileInputRef.current) fileInputRef.current.value = ''; 
+          if (audioInputRef.current) audioInputRef.current.value = ''; 
+          if (stickerInputRef.current) stickerInputRef.current.value = '';
+      }
   };
 
   const startRecording = async () => {
@@ -208,6 +226,33 @@ export function ChatInputArea() {
     <>
     <div className="p-3 md:p-4 border-t border-zinc-800 bg-zinc-900/30 backdrop-blur relative shrink-0">
         <div className="flex items-end gap-2 bg-zinc-950/80 border border-zinc-800 rounded-xl p-2 focus-within:ring-1 focus-within:ring-primary/50 transition-all shadow-inner relative">
+            
+            {/* Botão de Emojis */}
+            <div className="relative" ref={emojiRef}>
+                <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className={`h-9 w-9 ${emojiPickerOpen ? 'text-yellow-400' : 'text-zinc-400'} hover:text-yellow-400 transition-colors`} 
+                    onClick={() => setEmojiPickerOpen(!emojiPickerOpen)}
+                >
+                    <Smile className="h-5 w-5" />
+                </Button>
+                
+                {emojiPickerOpen && (
+                    <div className="absolute bottom-12 left-0 z-50 animate-in zoom-in-95 origin-bottom-left shadow-2xl">
+                        <EmojiPicker 
+                            onEmojiClick={onEmojiClick}
+                            theme={Theme.DARK}
+                            searchDisabled={false}
+                            width={320}
+                            height={400}
+                            lazyLoadEmojis={true}
+                            previewConfig={{ showPreview: false }}
+                        />
+                    </div>
+                )}
+            </div>
+
             {/* Anexo Menu */}
             <div className="relative" ref={mediaMenuRef}>
                 <Button variant="ghost" size="icon" className="h-9 w-9 text-zinc-400 hover:text-zinc-100" onClick={() => setMediaMenuOpen(!mediaMenuOpen)}><Paperclip className="h-5 w-5" /></Button>
@@ -222,8 +267,12 @@ export function ChatInputArea() {
                             <input type="file" className="hidden" accept="*" onChange={handleFileUpload} ref={fileInputRef} />
                         </label>
                         <label className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
-                            <Music className="w-5 h-5 text-pink-400" /> Arquivo Áudio
+                            <Music className="w-5 h-5 text-pink-400" /> Áudio
                             <input type="file" className="hidden" accept="audio/*" onChange={handleFileUpload} ref={audioInputRef} />
+                        </label>
+                        <label className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
+                            <Sticker className="w-5 h-5 text-orange-400" /> Figurinha
+                            <input type="file" className="hidden" accept="image/webp,image/png,image/jpeg" onChange={handleFileUpload} ref={stickerInputRef} />
                         </label>
                         <button onClick={() => { setMediaMenuOpen(false); setActiveModal('location'); }} className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
                             <MapPin className="w-5 h-5 text-red-400" /> Localização
