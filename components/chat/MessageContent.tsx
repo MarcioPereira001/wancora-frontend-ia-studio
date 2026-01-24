@@ -29,6 +29,7 @@ export function MessageContent({ message }: MessageContentProps) {
 
   // Lógica Real de Votação
   const handleVote = async (optionId: number) => {
+      if (votingOptionId !== null) return; // Evita cliques duplos
       setVotingOptionId(optionId);
       try {
           await api.post('/message/vote', {
@@ -42,9 +43,10 @@ export function MessageContent({ message }: MessageContentProps) {
           addToast({ type: 'success', title: 'Voto Enviado', message: 'Voto registrado.' });
       } catch (error) {
           addToast({ type: 'error', title: 'Erro', message: 'Falha ao computar voto.' });
-      } finally {
-          setVotingOptionId(null);
+          setVotingOptionId(null); // Libera para tentar de novo se der erro
       }
+      // Não setamos null no finally para manter o loading até a atualização realtime chegar
+      setTimeout(() => setVotingOptionId(null), 3000); 
   };
 
   // Helper para Mapa
@@ -335,8 +337,11 @@ export function MessageContent({ message }: MessageContentProps) {
     const votes = message.poll_votes || [];
     const totalVotes = votes.length;
     const votesPerOption = new Map<number, number>();
-    const myVoteIdx = votes.find(v => v.voterJid?.includes('me') || v.voterJid === 'you')?.optionId; // Simplificação, backend deve mandar flag isMe
-
+    
+    // Simplificação de 'Meu Voto'
+    // Como o backend não manda 'me' no voto, e sim o JID, precisaremos assumir que não sabemos qual é o nosso se não tivermos nosso JID
+    // Mas visualmente, podemos destacar se votamos (estado local votingOptionId ajuda no feedback imediato)
+    
     votes.forEach(v => {
         const current = votesPerOption.get(v.optionId) || 0;
         votesPerOption.set(v.optionId, current + 1);
@@ -363,7 +368,10 @@ export function MessageContent({ message }: MessageContentProps) {
                     const voteCount = votesPerOption.get(idx) || 0;
                     const percentage = totalVotes > 0 ? Math.round((voteCount / totalVotes) * 100) : 0;
                     const isVoting = votingOptionId === idx;
-                    const isMyVote = false; // Lógica de 'Meu Voto' depende do backend identificar o user corretamente no array votes
+                    
+                    // Verifica se eu votei (simplificado, já que não temos meu JID no contexto fácil aqui)
+                    // O ideal seria passar user.id/phone para cá, mas vamos usar o estado local de clique como feedback
+                    const isMyVote = false; 
 
                     return (
                         <div key={idx} className="relative group cursor-pointer" onClick={() => handleVote(idx)}>
