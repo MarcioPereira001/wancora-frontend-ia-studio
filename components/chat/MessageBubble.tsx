@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState } from 'react';
@@ -189,7 +188,7 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
                 <div className="px-1.5 pb-1">
                     {(message as any).is_deleted ? (
                         <div className="flex items-center gap-2 text-sm py-1">
-                            <Ban className="w-4 h-4" /> <span>Esta mensagem foi apagada</span>
+                            <Ban className="w-4 h-4" /> <span>⊘ Mensagem apagada</span>
                         </div>
                     ) : (
                         <MessageContent message={message} />
