@@ -4,11 +4,15 @@
 import React, { useState } from 'react';
 import { Message } from '@/types';
 import { MessageContent } from './MessageContent';
-import { Check, CheckCheck, Clock, Ban, Smile, Plus } from 'lucide-react';
+import { Check, CheckCheck, Clock, Ban, Smile, ChevronDown, Trash2, Info } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Checkbox } from '@/components/ui/checkbox';
 import { api } from '@/services/api';
 import { useToast } from '@/hooks/useToast';
+import { useAuthStore } from '@/store/useAuthStore';
+import { MessageInfoModal } from './MessageInfoModal';
+import { Modal } from '@/components/ui/Modal';
+import { Button } from '@/components/ui/button';
 
 interface MessageBubbleProps {
   message: Message;
@@ -21,9 +25,15 @@ const COMMON_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 
 export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }: MessageBubbleProps) {
   const isMe = message.from_me;
+  const { user } = useAuthStore();
   const { addToast } = useToast();
-  const [showReactionMenu, setShowReactionMenu] = useState(false);
   
+  // States
+  const [showMenu, setShowMenu] = useState(false);
+  const [showInfo, setShowInfo] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
   // Format Time (HH:mm)
   const formatTime = (dateString?: string) => {
     if (!dateString) return '';
@@ -31,192 +41,224 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
-  // Status Icon Logic (Blue Ticks)
+  // Status Icon Logic (Realtime)
   const renderStatusIcon = () => {
     if (!isMe) return null;
 
     const status = message.status;
-    const iconClass = "w-[15px] h-[15px]"; // Um pouco maior para visibilidade
+    const iconClass = "w-[15px] h-[15px]"; 
 
-    if (status === 'sending') {
-        return <Clock className={cn(iconClass, "text-zinc-400")} />;
-    }
-    
-    if (status === 'sent') {
-        return <Check className={cn(iconClass, "text-zinc-400")} />;
-    }
+    if (status === 'sending') return <Clock className={cn(iconClass, "text-zinc-400")} />;
+    if (status === 'sent') return <Check className={cn(iconClass, "text-zinc-400")} />;
+    if (status === 'delivered') return <CheckCheck className={cn(iconClass, "text-zinc-400")} />;
+    // Se for 'read' OU se tiver data de leitura no timestamp (backup logic)
+    if (status === 'read' || (message as any).read_at) return <CheckCheck className={cn(iconClass, "text-blue-400")} />;
 
-    if (status === 'delivered') {
-        return <CheckCheck className={cn(iconClass, "text-zinc-400")} />;
-    }
-
-    if (status === 'read') {
-        return <CheckCheck className={cn(iconClass, "text-blue-400")} />; // AZUL
-    }
-
-    // Default Fallback
     return <Check className={cn(iconClass, "text-zinc-400")} />;
   };
 
-  // Envia Reação
+  // Handlers
   const handleReact = async (emoji: string) => {
-      setShowReactionMenu(false);
+      setShowMenu(false);
       try {
-          // Chama endpoint dedicado ou genérico (Depende da implementação do usuário)
-          // Aqui assumimos que vamos usar uma nova rota ou adapter
-          // No backendController adicionamos `sendReaction`
-          // Como o router não foi exposto, o ideal seria usar uma rota dedicada
-          // Mas como não podemos criar rotas novas sem o `routes.js`, 
-          // usaremos um POST para /message/react (que deve ser mapeado pelo usuário)
-          
           await api.post('/message/react', {
               sessionId: message.session_id,
               companyId: message.company_id,
               remoteJid: message.remote_jid,
-              msgId: message.id, // O backend usa isso pra achar a Key original
+              msgId: message.id,
               reaction: emoji
           });
       } catch (error) {
-          console.error("Reaction failed", error);
           addToast({ type: 'error', title: 'Erro', message: 'Falha ao reagir.' });
       }
   };
 
-  // Extrai reações se existirem
+  const handleDelete = async (everyone: boolean) => {
+      setIsDeleting(true);
+      try {
+          await api.post('/message/delete', {
+              sessionId: message.session_id,
+              companyId: message.company_id,
+              remoteJid: message.remote_jid,
+              msgId: message.id,
+              everyone
+          });
+          setShowDeleteModal(false);
+      } catch (error) {
+          addToast({ type: 'error', title: 'Erro', message: 'Falha ao apagar.' });
+      } finally {
+          setIsDeleting(false);
+      }
+  };
+
   const reactions: any[] = (message as any).reactions || [];
 
   return (
     <div 
-        className={cn("flex items-center gap-3 w-full group/message relative", isMe ? "justify-end" : "justify-start")}
-        onMouseLeave={() => setShowReactionMenu(false)}
+        className={cn("flex items-start gap-2 w-full group/message relative mb-1", isMe ? "justify-end" : "justify-start")}
+        onMouseLeave={() => setShowMenu(false)}
     >
         
-        {/* Checkbox de Seleção */}
+        {/* 1. CHECKBOX SELEÇÃO */}
         {isSelectionMode && (
-            <div className="animate-in fade-in zoom-in duration-200">
+            <div className="self-center animate-in fade-in zoom-in duration-200">
                 <Checkbox 
                     checked={isSelected}
                     onCheckedChange={() => onSelect && onSelect()}
-                    className="h-5 w-5 border-zinc-600 data-[state=checked]:bg-primary data-[state=checked]:border-primary"
+                    className="h-5 w-5 border-zinc-600 data-[state=checked]:bg-primary"
                 />
             </div>
         )}
 
-        {/* Botão de Reação (Hover) */}
+        {/* 2. MENU FLUTUANTE (LATERAL) */}
         {!isSelectionMode && !(message as any).is_deleted && (
             <div className={cn(
-                "absolute opacity-0 group-hover/message:opacity-100 transition-opacity z-20",
-                isMe ? "left-auto right-full mr-2" : "left-full ml-2"
+                "opacity-0 group-hover/message:opacity-100 transition-opacity flex items-center self-start mt-1",
+                isMe ? "order-1 mr-1" : "order-2 ml-1"
             )}>
                 <button 
-                    onClick={() => setShowReactionMenu(!showReactionMenu)}
-                    className="p-1.5 bg-zinc-800 rounded-full text-zinc-400 hover:text-white hover:bg-zinc-700 shadow-md border border-zinc-700"
+                    onClick={() => setShowMenu(!showMenu)} 
+                    className="w-6 h-6 rounded-full bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center text-zinc-400 shadow-md transition-colors"
                 >
-                    <Smile className="w-4 h-4" />
+                    <ChevronDown className="w-4 h-4" />
                 </button>
 
-                {/* Menu de Emojis Rápidos */}
-                {showReactionMenu && (
+                {showMenu && (
                     <div className={cn(
-                        "absolute top-0 flex gap-1 bg-zinc-900 border border-zinc-800 p-1.5 rounded-full shadow-xl animate-in zoom-in slide-in-from-bottom-2",
-                        isMe ? "right-0 mr-8" : "left-0 ml-8"
+                        "absolute top-6 z-50 bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl p-1 min-w-[180px] animate-in zoom-in-95 origin-top-left flex flex-col gap-1",
+                        isMe ? "right-0" : "left-0"
                     )}>
-                        {COMMON_EMOJIS.map(emoji => (
-                            <button 
-                                key={emoji} 
-                                onClick={() => handleReact(emoji)}
-                                className="w-8 h-8 flex items-center justify-center hover:bg-zinc-800 rounded-full text-lg transition-transform hover:scale-125"
-                            >
-                                {emoji}
+                        {/* Emojis Rápidos */}
+                        <div className="flex gap-1 p-2 bg-zinc-950/50 rounded-lg mb-1 justify-between">
+                            {COMMON_EMOJIS.slice(0, 5).map(emoji => (
+                                <button key={emoji} onClick={() => handleReact(emoji)} className="hover:scale-125 transition-transform text-lg">
+                                    {emoji}
+                                </button>
+                            ))}
+                        </div>
+                        
+                        {/* Ações */}
+                        {isMe && (
+                            <button onClick={() => { setShowMenu(false); setShowInfo(true); }} className="flex items-center gap-2 px-3 py-2 text-sm text-zinc-300 hover:bg-zinc-800 rounded text-left">
+                                <Info className="w-4 h-4" /> Dados da mensagem
                             </button>
-                        ))}
-                        {/* Botão + para futuro picker completo */}
-                        <button className="w-8 h-8 flex items-center justify-center hover:bg-zinc-800 rounded-full text-zinc-500">
-                            <Plus className="w-4 h-4" />
+                        )}
+                        <button onClick={() => { setShowMenu(false); setShowDeleteModal(true); }} className="flex items-center gap-2 px-3 py-2 text-sm text-red-400 hover:bg-red-500/10 rounded text-left">
+                            <Trash2 className="w-4 h-4" /> Apagar mensagem
                         </button>
                     </div>
                 )}
             </div>
         )}
 
-        {/* Bolha da Mensagem - OTIMIZADA: SEM TRANSITION-ALL */}
-        <div 
-            onClick={() => isSelectionMode && onSelect && onSelect()}
-            className={cn(
-                "relative shadow-sm flex flex-col min-w-[120px] max-w-[85%] md:max-w-[75%] break-words rounded-lg p-1.5 cursor-pointer",
-                // Cores Oficiais
-                isMe 
-                    ? "bg-[#005c4b] text-white rounded-tr-none" 
-                    : "bg-zinc-800 text-zinc-100 rounded-tl-none",
-                // Estilo Seleção
-                isSelectionMode && isSelected ? "ring-2 ring-primary ring-offset-2 ring-offset-zinc-950 bg-opacity-80" : "",
-                // Hover leve (opacidade apenas, barato para GPU)
-                !isSelectionMode && "hover:bg-opacity-90",
-                // Mensagem deletada style
-                (message as any).is_deleted && "bg-opacity-50 italic text-zinc-400"
-            )}
-        >
-            {/* Nome em Grupos (Apenas recebidas) */}
-            {!isMe && message.contact?.push_name && (
-                <span className="text-[10px] font-bold text-orange-400 px-1 mb-0.5 truncate max-w-[200px] block">
-                    {message.contact.push_name}
-                </span>
-            )}
-
-            {/* Conteúdo */}
-            <div className="px-1.5 pb-1">
-                {(message as any).is_deleted ? (
-                    <div className="flex items-center gap-2 text-sm">
-                        <Ban className="w-4 h-4" /> <span>Mensagem apagada</span>
-                    </div>
-                ) : (
-                    <MessageContent message={message} />
-                )}
-            </div>
-
-            {/* Rodapé Metadados */}
-            <div className={cn(
-                "flex justify-end items-end gap-1 px-1 mt-auto select-none",
-                "-mt-1" 
-            )}>
-                <span className={cn(
-                    "text-[10px] leading-none mb-0.5",
-                    isMe ? "text-emerald-100/70" : "text-zinc-400"
-                )}>
-                    {formatTime(message.created_at)}
-                </span>
-
-                {isMe && (
-                    <div className="mb-[1px]">
-                        {renderStatusIcon()}
-                    </div>
-                )}
-            </div>
+        {/* 3. BOLHA DA MENSAGEM */}
+        <div className={cn(isMe ? "order-2" : "order-1", "max-w-[85%] md:max-w-[75%] relative")}>
             
-            {/* Pontinha da Bolha */}
-            {!isSelectionMode && (
-                <div className={cn(
-                    "absolute top-0 w-3 h-3 -z-10",
+            {/* 3.1. Container Principal */}
+            <div 
+                className={cn(
+                    "relative shadow-sm flex flex-col min-w-[120px] break-words rounded-lg p-1.5 cursor-pointer border",
                     isMe 
-                        ? "-right-1.5 bg-[#005c4b] [clip-path:polygon(0_0,100%_0,0_100%)] rounded-sm" 
-                        : "-left-1.5 bg-zinc-800 [clip-path:polygon(0_0,100%_0,100%_100%)] rounded-sm"
-                )} />
-            )}
+                        ? "bg-[#005c4b] text-white rounded-tr-none border-[#005c4b]" 
+                        : "bg-zinc-800 text-zinc-100 rounded-tl-none border-zinc-700",
+                    isSelectionMode && isSelected ? "ring-2 ring-primary ring-offset-2 ring-offset-zinc-950 opacity-80" : "",
+                    (message as any).is_deleted && "bg-zinc-900/50 border-zinc-800 text-zinc-500 italic"
+                )}
+                onClick={() => isSelectionMode && onSelect && onSelect()}
+            >
+                {/* 3.2. Nome em Grupos */}
+                {!isMe && message.contact?.push_name && (
+                    <span className="text-[10px] font-bold text-orange-400 px-1 mb-0.5 truncate max-w-[200px] block">
+                        {message.contact.push_name}
+                    </span>
+                )}
 
-            {/* Reações (Display) */}
-            {reactions.length > 0 && (
-                <div className="absolute -bottom-3 right-0 flex items-center gap-1 z-10">
-                    <div className="flex items-center bg-zinc-900 border border-zinc-700 rounded-full px-1.5 py-0.5 shadow-md">
+                {/* 3.3. Conteúdo Real */}
+                <div className="px-1.5 pb-1">
+                    {(message as any).is_deleted ? (
+                        <div className="flex items-center gap-2 text-sm py-1">
+                            <Ban className="w-4 h-4" /> <span>Esta mensagem foi apagada</span>
+                        </div>
+                    ) : (
+                        <MessageContent message={message} />
+                    )}
+                </div>
+
+                {/* 3.4. Rodapé (Hora + Ticks) */}
+                <div className={cn("flex justify-end items-end gap-1 px-1 mt-auto select-none -mt-1")}>
+                    <span className={cn("text-[10px] leading-none mb-0.5", isMe ? "text-emerald-100/70" : "text-zinc-400")}>
+                        {formatTime(message.created_at)}
+                    </span>
+                    {isMe && <div className="mb-[1px]">{renderStatusIcon()}</div>}
+                </div>
+
+                {/* 3.5. Pontinha da Bolha (Triângulo) */}
+                {!isSelectionMode && (
+                    <div className={cn(
+                        "absolute top-0 w-3 h-3 -z-10",
+                        isMe 
+                            ? "-right-1.5 bg-[#005c4b] [clip-path:polygon(0_0,100%_0,0_100%)] rounded-sm" 
+                            : "-left-1.5 bg-zinc-800 [clip-path:polygon(0_0,100%_0,100%_100%)] rounded-sm"
+                    )} />
+                )}
+            </div>
+
+            {/* 4. REAÇÕES (Fora da bolha, coladas nela) */}
+            {reactions.length > 0 && !(message as any).is_deleted && (
+                <div className={cn(
+                    "absolute -bottom-2 z-10 flex gap-1",
+                    isMe ? "right-2" : "left-2"
+                )}>
+                    <div className="flex items-center bg-zinc-900 border border-zinc-700 rounded-full px-1.5 py-0.5 shadow-md scale-90">
                         {reactions.slice(0, 3).map((r, i) => (
                             <span key={i} className="text-[10px] animate-in zoom-in cursor-default" title={r.actor}>{r.text}</span>
                         ))}
-                        {reactions.length > 1 && (
-                            <span className="text-[9px] text-zinc-400 ml-1">{reactions.length}</span>
+                        {reactions.length > 3 && (
+                            <span className="text-[9px] text-zinc-400 ml-1">+{reactions.length - 3}</span>
                         )}
                     </div>
                 </div>
             )}
         </div>
+
+        {/* MODAIS INTERNOS */}
+        <MessageInfoModal 
+            message={message} 
+            isOpen={showInfo} 
+            onClose={() => setShowInfo(false)} 
+        />
+
+        <Modal 
+            isOpen={showDeleteModal} 
+            onClose={() => setShowDeleteModal(false)} 
+            title="Apagar mensagem?"
+            maxWidth="sm"
+        >
+            <div className="space-y-4">
+                <p className="text-sm text-zinc-400">Você pode apagar mensagens apenas para você ou para todos os participantes.</p>
+                <div className="flex flex-col gap-2 justify-end">
+                    {isMe && (
+                        <Button 
+                            variant="destructive" 
+                            onClick={() => handleDelete(true)} 
+                            disabled={isDeleting}
+                            className="justify-start bg-zinc-800 border-zinc-700 text-red-400 hover:bg-red-500/10"
+                        >
+                            Apagar para todos (Revoke)
+                        </Button>
+                    )}
+                    <Button 
+                        variant="outline" 
+                        onClick={() => handleDelete(false)} 
+                        disabled={isDeleting}
+                        className="justify-start border-zinc-700"
+                    >
+                        Apagar para mim
+                    </Button>
+                    <Button variant="ghost" onClick={() => setShowDeleteModal(false)} className="mt-2">Cancelar</Button>
+                </div>
+            </div>
+        </Modal>
     </div>
   );
 }
