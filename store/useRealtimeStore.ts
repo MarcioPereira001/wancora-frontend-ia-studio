@@ -12,13 +12,19 @@ interface RealtimeState {
   // Novo Estado para Gatilho Manual
   forcedSyncId: string | null;
   
+  // Estado para Alerta de Desconexão (Interceptador)
+  isDisconnectModalOpen: boolean;
+
   // Actions
   initialize: (companyId: string) => Promise<void>;
   disconnect: () => void;
   setInstances: (instances: Instance[]) => void;
   refreshInstances: (companyId: string) => Promise<void>;
-  triggerSyncAnimation: (instanceId: string) => void; // Ação do Gatilho
+  triggerSyncAnimation: (instanceId: string) => void; 
   clearSyncAnimation: () => void;
+  
+  // Action do Modal
+  setDisconnectModalOpen: (isOpen: boolean) => void;
 }
 
 export const useRealtimeStore = create<RealtimeState>((set, get) => {
@@ -29,12 +35,14 @@ export const useRealtimeStore = create<RealtimeState>((set, get) => {
     instances: [], 
     unreadCount: 0,
     forcedSyncId: null,
+    isDisconnectModalOpen: false,
 
     setInstances: (instances) => set({ instances }),
 
-    // Gatilho para forçar a barra aparecer instantaneamente
     triggerSyncAnimation: (instanceId) => set({ forcedSyncId: instanceId }),
     clearSyncAnimation: () => set({ forcedSyncId: null }),
+    
+    setDisconnectModalOpen: (isOpen) => set({ isDisconnectModalOpen: isOpen }),
 
     refreshInstances: async (companyId: string) => {
         const supabase = createClient();

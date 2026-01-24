@@ -1,5 +1,7 @@
+
 import { BACKEND_URL } from '../config';
 import { createClient } from '@/utils/supabase/client';
+import { useRealtimeStore } from '@/store/useRealtimeStore';
 
 // Se estiver no browser, prefira usar o proxy relativo (/api/v1) para evitar CORS
 // Se estiver no server side, use a URL completa
@@ -38,6 +40,23 @@ const getHeaders = async () => {
     return headers;
 };
 
+// INTERCEPTADOR DE ERROS DE CONEXÃO
+const checkDisconnectError = (errorBody: string) => {
+    if (typeof window !== 'undefined') {
+        const lowerError = errorBody.toLowerCase();
+        // Palavras-chave retornadas pelo Backend/Baileys quando a sessão cai
+        if (
+            lowerError.includes('sessão desconectada') || 
+            lowerError.includes('não encontrada ou desconectada') ||
+            lowerError.includes('connection closed') ||
+            lowerError.includes('logged out')
+        ) {
+            // Dispara o Modal Global via Zustand (fora da árvore de componentes)
+            useRealtimeStore.getState().setDisconnectModalOpen(true);
+        }
+    }
+};
+
 export const api = {
   get: async (endpoint: string) => {
     try {
@@ -52,6 +71,7 @@ export const api = {
       if (!response.ok) {
         const errorBody = await response.text();
         console.error(`API Error ${response.status} on ${url}:`, errorBody);
+        checkDisconnectError(errorBody);
         throw new Error(`API Error ${response.status}: ${errorBody}`);
       }
       
@@ -76,6 +96,7 @@ export const api = {
       if (!response.ok) {
         const errorBody = await response.text();
         console.error(`API Error ${response.status} on ${url}:`, errorBody);
+        checkDisconnectError(errorBody);
         throw new Error(`API Error ${response.status}: ${errorBody}`);
       }
 
@@ -96,7 +117,11 @@ export const api = {
             method: 'DELETE',
             headers
         });
-        if (!response.ok) throw new Error(`API Error: ${response.statusText}`);
+        if (!response.ok) {
+            const errorBody = await response.text();
+            checkDisconnectError(errorBody);
+            throw new Error(`API Error: ${response.statusText}`);
+        }
         return true;
     } catch (error) {
         console.error(`DELETE ${endpoint} failed:`, error);

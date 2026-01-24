@@ -1,3 +1,4 @@
+
 import React from 'react';
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
@@ -6,7 +7,8 @@ import AuthProvider from "@/providers/AuthProvider";
 import QueryProvider from "@/providers/QueryProvider";
 import RealtimeProvider from "@/providers/RealtimeProvider"; 
 import { ToastProvider } from "@/context/ToastContext";
-import { GlobalSyncIndicator } from '@/components/layout/GlobalSyncIndicator'; // NOVO IMPORT
+import { GlobalSyncIndicator } from '@/components/layout/GlobalSyncIndicator';
+import { DisconnectAlert } from '@/components/modals/DisconnectAlert'; // NOVO IMPORT
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 const jetbrains = JetBrains_Mono({ subsets: ["latin"], variable: "--font-jetbrains" });
@@ -30,8 +32,9 @@ export default function RootLayout({
               {/* RealtimeProvider deve estar DENTRO do AuthProvider para acessar o user */}
               <RealtimeProvider>
                 {children}
-                {/* INDICADOR GLOBAL FLUTUANTE (Acima de tudo) */}
+                {/* INDICADORES GLOBAIS (Acima de tudo) */}
                 <GlobalSyncIndicator />
+                <DisconnectAlert />
               </RealtimeProvider>
             </AuthProvider>
           </ToastProvider>
