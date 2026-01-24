@@ -6,15 +6,32 @@ import { useRouter, usePathname } from 'next/navigation';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/button';
 import { useRealtimeStore } from '@/store/useRealtimeStore';
-import { AlertTriangle, Power, RefreshCw } from 'lucide-react';
+import { AlertTriangle, RefreshCw } from 'lucide-react';
+import { whatsappService } from '@/services/whatsappService';
+import { useToast } from '@/hooks/useToast';
 
 export function DisconnectAlert() {
   const router = useRouter();
   const pathname = usePathname();
-  const { isDisconnectModalOpen, setDisconnectModalOpen } = useRealtimeStore();
+  const { isDisconnectModalOpen, setDisconnectModalOpen, instances } = useRealtimeStore();
+  const { addToast } = useToast();
 
-  const handleReconnect = () => {
+  const handleReconnect = async () => {
     setDisconnectModalOpen(false);
+    
+    // Tenta encontrar uma sessão desconectada para reiniciar o protocolo imediatamente
+    const disconnectedInstance = instances.find(i => i.status === 'disconnected' || i.status === 'connecting');
+    
+    if (disconnectedInstance) {
+        try {
+            addToast({ type: 'info', title: 'Reconectando', message: 'Solicitando QR Code...' });
+            // Força o início da sessão no backend para gerar o QR Code
+            await whatsappService.connectInstance(disconnectedInstance.session_id, disconnectedInstance.name);
+        } catch (error) {
+            console.error("Falha ao tentar reconectar automaticamente:", error);
+        }
+    }
+
     // Se já estiver na página de conexões, apenas fecha o modal, senão navega
     if (pathname !== '/connections') {
         router.push('/connections');

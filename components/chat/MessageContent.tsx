@@ -181,30 +181,45 @@ export function MessageContent({ message }: MessageContentProps) {
     } catch(e) {}
 
     const mapsUrl = lat && long ? `https://www.google.com/maps?q=${lat},${long}` : '#';
+    // Static Map Fallback (Sem API Key)
+    // Usamos um mapa estático genérico e sobrepomos o pin com CSS
+    const staticMapBg = "https://upload.wikimedia.org/wikipedia/commons/e/ec/World_map_blank_without_borders.svg";
 
     return (
       <div className="mt-1">
-          <a href={mapsUrl} target="_blank" rel="noopener noreferrer" className="block relative overflow-hidden rounded-lg border border-white/10 group w-[260px]">
-            <div className="bg-zinc-800 h-32 w-full flex items-center justify-center relative overflow-hidden">
-                <div className="absolute inset-0 bg-[#e5e7eb] opacity-80" style={{ 
-                    backgroundImage: 'url("https://upload.wikimedia.org/wikipedia/commons/e/ec/World_map_blank_without_borders.svg")', 
-                    backgroundSize: 'cover', 
-                    backgroundPosition: 'center',
-                    filter: 'grayscale(100%) opacity(0.3)'
-                }}></div>
-                <div className="bg-red-500 p-2 rounded-full shadow-xl relative z-10 animate-bounce">
-                    <MapPin className="w-5 h-5 text-white" fill="currentColor" />
+          <a href={mapsUrl} target="_blank" rel="noopener noreferrer" className="block relative overflow-hidden rounded-lg border border-white/10 group w-[260px] hover:border-primary/50 transition-colors shadow-lg">
+            <div className="bg-[#e5e7eb] h-36 w-full flex items-center justify-center relative overflow-hidden">
+                {/* Simulated Map Layer */}
+                <div 
+                    className="absolute inset-0 opacity-40 bg-cover bg-center grayscale-[30%]"
+                    style={{ backgroundImage: `url('${staticMapBg}')` }}
+                ></div>
+                
+                {/* Grid Lines Pattern (Simulate Roads) */}
+                <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'linear-gradient(#94a3b8 1px, transparent 1px), linear-gradient(90deg, #94a3b8 1px, transparent 1px)', backgroundSize: '20px 20px' }}></div>
+
+                {/* PIN */}
+                <div className="relative z-10 flex flex-col items-center -mt-4 animate-bounce">
+                    <div className="bg-red-500 p-2 rounded-full shadow-xl border-2 border-white">
+                        <MapPin className="w-6 h-6 text-white" fill="currentColor" />
+                    </div>
+                    <div className="w-2 h-1 bg-black/20 rounded-full blur-[2px] mt-1"></div>
                 </div>
-                <div className="absolute bottom-2 left-2 bg-white/90 text-black text-[10px] px-2 py-1 rounded shadow">
-                    {lat?.toFixed(4)}, {long?.toFixed(4)}
-                </div>
+
+                {/* Footer Gradient */}
+                <div className="absolute bottom-0 left-0 w-full h-12 bg-gradient-to-t from-black/60 to-transparent"></div>
             </div>
-            <div className={cn("p-2 text-xs flex items-center justify-between gap-2", isMe ? "bg-primary/20" : "bg-zinc-900")}>
-                <div className="flex items-center gap-2">
-                    <MapPin className="w-3 h-3" />
-                    <span className="font-bold">Localização Atual</span>
+            
+            <div className={cn("p-3 flex items-center justify-between gap-2 border-t border-white/5", isMe ? "bg-[#005c4b]/50" : "bg-zinc-900")}>
+                <div className="flex flex-col min-w-0">
+                    <span className="font-bold text-sm text-white truncate">Localização Atual</span>
+                    <span className="text-[10px] text-zinc-400 truncate font-mono">
+                        {lat ? `${lat.toFixed(5)}, ${long?.toFixed(5)}` : 'Carregando coordenadas...'}
+                    </span>
                 </div>
-                <span className="text-[10px] underline decoration-dotted opacity-70">Abrir Maps</span>
+                <div className="bg-white/10 p-1.5 rounded-full">
+                    <MapPin className="w-4 h-4 text-white" />
+                </div>
             </div>
           </a>
       </div>

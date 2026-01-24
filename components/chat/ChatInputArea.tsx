@@ -2,7 +2,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Paperclip, Mic, Send, Trash2, Image as IconImage, FileText, Music, MapPin, User, BarChart2, DollarSign, CheckSquare, Loader2, Crosshair, Sticker, Smile } from 'lucide-react';
+import { Paperclip, Mic, Send, Trash2, Image as IconImage, FileText, Music, MapPin, User, BarChart2, DollarSign, CheckSquare, Loader2, Crosshair, Sticker, Smile, Navigation } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useChatStore } from '@/store/useChatStore';
 import { useAuthStore } from '@/store/useAuthStore';
@@ -25,9 +25,9 @@ export function ChatInputArea() {
 
   const [input, setInput] = useState("");
   const [mediaMenuOpen, setMediaMenuOpen] = useState(false);
-  const [emojiPickerOpen, setEmojiPickerOpen] = useState(false); // NOVO
+  const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
   const mediaMenuRef = useRef<HTMLDivElement>(null);
-  const emojiRef = useRef<HTMLDivElement>(null); // NOVO
+  const emojiRef = useRef<HTMLDivElement>(null);
   
   // Gravador
   const [isRecording, setIsRecording] = useState(false);
@@ -61,7 +61,6 @@ export function ChatInputArea() {
           if (mediaMenuRef.current && !mediaMenuRef.current.contains(event.target as Node)) {
               setMediaMenuOpen(false);
           }
-          // Fecha Emoji Picker se clicar fora
           if (emojiRef.current && !emojiRef.current.contains(event.target as Node)) {
               setEmojiPickerOpen(false);
           }
@@ -70,9 +69,15 @@ export function ChatInputArea() {
       return () => { document.removeEventListener("mousedown", handleClickOutside); };
   }, []);
 
+  // Auto-Start Location quando abre o modal
+  useEffect(() => {
+      if (activeModal === 'location' && !locLat) {
+          getCurrentLocation();
+      }
+  }, [activeModal]);
+
   const onEmojiClick = (emojiData: any) => {
       setInput(prev => prev + emojiData.emoji);
-      // setEmojiPickerOpen(false); // Opcional: Manter aberto para múltiplos emojis
   };
 
   const dispatchMessage = async (payload: any) => {
@@ -104,11 +109,12 @@ export function ChatInputArea() {
       const tempId = `temp-${Date.now()}`;
       let contentDisplay = payload.text;
       
+      // Ajuste visual otimista
       if (payload.type === 'pix') contentDisplay = `Chave Pix: ${payload.text}`;
-      if (payload.type === 'poll') contentDisplay = payload.content?.name || 'Enquete';
-      if (payload.type === 'location') contentDisplay = 'Localização';
-      if (payload.type === 'contact') contentDisplay = 'Contato';
-      if (payload.type === 'sticker') contentDisplay = 'Figurinha';
+      if (payload.type === 'poll') contentDisplay = JSON.stringify(payload.content); // Para renderizar o componente Poll
+      if (payload.type === 'location') contentDisplay = JSON.stringify(payload.content);
+      if (payload.type === 'contact') contentDisplay = JSON.stringify(payload.content);
+      if (payload.type === 'sticker') contentDisplay = '[Figurinha]';
       if (payload.caption) contentDisplay = payload.caption;
 
       const tempMsg: Message = {
@@ -205,10 +211,58 @@ export function ChatInputArea() {
 
   // Handlers de Modais
   const handleCreatePoll = () => { if(!pollQuestion.trim()) return; const valid = pollOptions.filter(o => o.trim().length > 0); if(valid.length < 2) return; dispatchMessage({ type: 'poll', content: { name: pollQuestion, options: valid, selectableOptionsCount: 1 } }); setPollQuestion(""); setPollOptions(["Sim", "Não"]); setActiveModal(null); };
-  const handleSendPix = () => { if(!pixKey.trim()) return; dispatchMessage({ type: 'pix', text: pixKey }); setPixKey(""); setActiveModal(null); };
+  
+  // FIX CRÍTICO PIX: Envia chave limpa no text para o backend processar como 'pix' (Botão de Cópia)
+  const handleSendPix = () => { 
+      if(!pixKey.trim()) return; 
+      dispatchMessage({ type: 'pix', text: pixKey }); 
+      setPixKey(""); 
+      setActiveModal(null); 
+  };
+  
   const handleSendContact = () => { if(!contactName.trim() || !contactPhone.trim()) return; const vcard = `BEGIN:VCARD\nVERSION:3.0\nFN:${contactName}\nTEL;type=CELL:${contactPhone}\nEND:VCARD`; dispatchMessage({ type: 'contact', content: { displayName: contactName, vcard, phone: contactPhone } }); setContactName(""); setContactPhone(""); setActiveModal(null); };
-  const getCurrentLocation = () => { if (!navigator.geolocation) return; setLocLoading(true); navigator.geolocation.getCurrentPosition((pos) => { setLocLat(pos.coords.latitude); setLocLng(pos.coords.longitude); setLocLoading(false); }, (err) => { setLocLoading(false); }, { enableHighAccuracy: true, timeout: 10000 }); };
-  const handleSendLocation = () => { if (locLat && locLng) { dispatchMessage({ type: 'location', content: { latitude: locLat, longitude: locLng } }); setActiveModal(null); setLocLat(null); setLocLng(null); } };
+  
+  const getCurrentLocation = () => { 
+      if (!navigator.geolocation) {
+          addToast({ type: 'error', title: 'Erro', message: 'Geolocalização não suportada.' });
+          return;
+      }
+      setLocLoading(true); 
+      navigator.geolocation.getCurrentPosition(
+          (pos) => { 
+              setLocLat(pos.coords.latitude); 
+              setLocLng(pos.coords.longitude); 
+              setLocLoading(false); 
+          }, 
+          (err) => { 
+              setLocLoading(false); 
+              addToast({ type: 'error', title: 'Erro GPS', message: 'Não foi possível obter sua localização. Verifique as permissões.' });
+          }, 
+          { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      ); 
+  };
+  
+  // FIX CRÍTICO LOCATION: Garante que content tem latitude/longitude numéricos e envia como objeto 'location'
+  const handleSendLocation = () => { 
+      if (locLat && locLng) { 
+          // O backend (sender.js) espera 'location' no payload, mas nosso dispatchMessage mapeia o type 'location'
+          // para o campo location. Então passamos o objeto aqui.
+          dispatchMessage({ 
+              type: 'location', 
+              content: { latitude: Number(locLat), longitude: Number(locLng) } 
+          }); 
+          setActiveModal(null); 
+          setLocLat(null); 
+          setLocLng(null); 
+      } 
+  };
+
+  // Helper para gerar URL do OpenStreetMap Embed (Mapinha)
+  const getMapEmbedUrl = (lat: number, lng: number) => {
+      const bboxDelta = 0.005; // Zoom aproximado
+      const bbox = `${lng - bboxDelta},${lat - bboxDelta},${lng + bboxDelta},${lat + bboxDelta}`;
+      return `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${lat},${lng}`;
+  };
 
   if (isMsgSelectionMode) {
       return (
@@ -361,24 +415,69 @@ export function ChatInputArea() {
           </div>
       </Modal>
 
-      <Modal isOpen={activeModal === 'location'} onClose={() => setActiveModal(null)} title="Enviar Localização">
+      <Modal isOpen={activeModal === 'location'} onClose={() => { setActiveModal(null); setLocLat(null); }} title="Compartilhar Localização">
           <div className="space-y-4 py-2">
-              <div className="relative w-full h-48 bg-zinc-800 rounded-xl overflow-hidden border border-zinc-700 group">
+              <div className="relative w-full h-64 bg-zinc-800 rounded-xl overflow-hidden border border-zinc-700 group shadow-inner">
                   {locLat && locLng ? (
                       <>
-                        <div className="absolute inset-0 bg-[#e5e7eb]" style={{ backgroundImage: 'url("https://upload.wikimedia.org/wikipedia/commons/e/ec/World_map_blank_without_borders.svg")', backgroundSize: 'cover', backgroundPosition: 'center', filter: 'opacity(0.3)'}}></div>
-                        <div className="absolute inset-0 flex items-center justify-center"><div className="bg-red-500 p-2 rounded-full shadow-xl animate-bounce"><MapPin className="w-6 h-6 text-white" fill="currentColor" /></div></div>
-                        <div className="absolute bottom-2 left-2 right-2 bg-white/90 text-black text-xs p-2 rounded shadow flex justify-between items-center"><span className="font-mono">{locLat.toFixed(6)}, {locLng.toFixed(6)}</span><span className="text-[10px] font-bold text-green-600 flex items-center gap-1"><CheckSquare className="w-3 h-3" /> Preciso</span></div>
+                        <iframe 
+                            width="100%" 
+                            height="100%" 
+                            frameBorder="0" 
+                            scrolling="no" 
+                            marginHeight={0} 
+                            marginWidth={0} 
+                            src={getMapEmbedUrl(locLat, locLng)}
+                            className="opacity-90 grayscale-[20%] hover:grayscale-0 transition-all duration-700"
+                        />
+                        <div className="absolute inset-0 pointer-events-none shadow-[inset_0_0_40px_rgba(0,0,0,0.5)]"></div>
+                        <div className="absolute bottom-2 left-2 right-2 bg-zinc-900/90 text-white text-xs p-3 rounded-lg shadow-xl backdrop-blur border border-zinc-700 flex justify-between items-center animate-in slide-in-from-bottom-2">
+                            <div className="flex flex-col">
+                                <span className="font-bold text-zinc-300 text-[10px] uppercase">Coordenadas</span>
+                                <span className="font-mono text-primary">{locLat.toFixed(5)}, {locLng.toFixed(5)}</span>
+                            </div>
+                            <span className="text-[10px] font-bold text-green-500 flex items-center gap-1 bg-green-500/10 px-2 py-1 rounded">
+                                <Navigation className="w-3 h-3" /> GPS Preciso
+                            </span>
+                        </div>
                       </>
-                  ) : (<div className="absolute inset-0 flex flex-col items-center justify-center text-zinc-500 gap-2"><MapPin className="w-8 h-8 opacity-20" /><p className="text-xs">Aguardando localização...</p></div>)}
-                  {locLoading && (<div className="absolute inset-0 bg-black/60 flex items-center justify-center backdrop-blur-sm z-20"><Loader2 className="w-8 h-8 text-primary animate-spin" /></div>)}
+                  ) : (
+                      <div className="absolute inset-0 flex flex-col items-center justify-center text-zinc-500 gap-4 bg-zinc-900">
+                          {locLoading ? (
+                              <>
+                                <div className="relative">
+                                    <div className="absolute inset-0 bg-primary/30 rounded-full blur-xl animate-pulse"></div>
+                                    <Loader2 className="w-10 h-10 text-primary animate-spin relative z-10" />
+                                </div>
+                                <p className="text-xs font-mono text-primary animate-pulse">Buscando satélites...</p>
+                              </>
+                          ) : (
+                              <>
+                                <MapPin className="w-12 h-12 opacity-20" />
+                                <p className="text-sm">Habilite a localização para continuar</p>
+                              </>
+                          )}
+                      </div>
+                  )}
               </div>
+              
               {!locLat ? (
-                  <Button onClick={getCurrentLocation} className="w-full h-12 text-sm bg-blue-600 hover:bg-blue-500" disabled={locLoading}><Crosshair className="w-4 h-4 mr-2" /> {locLoading ? "Buscando satélites..." : "Obter Localização Atual"}</Button>
+                  <Button onClick={getCurrentLocation} className="w-full h-12 text-sm bg-blue-600 hover:bg-blue-500" disabled={locLoading}>
+                      <Crosshair className="w-4 h-4 mr-2" /> {locLoading ? "Aguarde..." : "Obter Localização Atual"}
+                  </Button>
               ) : (
-                  <div className="flex gap-2"><Button variant="outline" onClick={() => { setLocLat(null); setLocLng(null); }} className="flex-1">Refazer</Button><Button onClick={handleSendLocation} className="flex-[2] bg-green-600 hover:bg-green-500"><Send className="w-4 h-4 mr-2" /> Enviar Localização</Button></div>
+                  <div className="flex gap-3">
+                      <Button variant="outline" onClick={() => { setLocLat(null); setLocLng(null); getCurrentLocation(); }} className="flex-1 border-zinc-700">
+                          Atualizar
+                      </Button>
+                      <Button onClick={handleSendLocation} className="flex-[2] bg-green-600 hover:bg-green-500 font-bold">
+                          <Send className="w-4 h-4 mr-2" /> Enviar Localização Atual
+                      </Button>
+                  </div>
               )}
-              <p className="text-[10px] text-zinc-500 text-center">Usamos o GPS do seu navegador para alta precisão.</p>
+              <p className="text-[10px] text-zinc-500 text-center">
+                  As referências próximas (pontos de ônibus, lojas) serão carregadas automaticamente no WhatsApp do cliente.
+              </p>
           </div>
       </Modal>
     </>
