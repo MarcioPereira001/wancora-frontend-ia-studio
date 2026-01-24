@@ -2,7 +2,7 @@
 "use client";
 
 import React, { useState } from 'react';
-import { FileText, MapPin, Download, PlayCircle, Image as ImageIcon, Film, BarChart2, User, Copy, QrCode, DollarSign, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
+import { FileText, MapPin, Download, PlayCircle, Image as ImageIcon, Film, BarChart2, User, Copy, QrCode, DollarSign, CheckCircle2, AlertCircle, Loader2, Circle, Check } from "lucide-react";
 import { Message } from "@/types";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/useToast";
@@ -28,7 +28,7 @@ export function MessageContent({ message }: MessageContentProps) {
   };
 
   // Lógica Real de Votação
-  const handleVote = async (optionId: number, pollName: string) => {
+  const handleVote = async (optionId: number) => {
       setVotingOptionId(optionId);
       try {
           await api.post('/message/vote', {
@@ -38,13 +38,20 @@ export function MessageContent({ message }: MessageContentProps) {
               pollId: message.id, // O Backend precisa saber qual mensagem é a enquete
               optionId: optionId
           });
-          // Optimistic update seria ideal aqui, mas vamos confiar no Realtime do backend
-          addToast({ type: 'success', title: 'Voto Enviado', message: `Votou em: Opção ${optionId + 1}` });
+          // Feedback visual imediato é tratado via Realtime no Pai, aqui apenas disparamos
+          addToast({ type: 'success', title: 'Voto Enviado', message: 'Voto registrado.' });
       } catch (error) {
           addToast({ type: 'error', title: 'Erro', message: 'Falha ao computar voto.' });
       } finally {
           setVotingOptionId(null);
       }
+  };
+
+  // Helper para Mapa
+  const getMapEmbedUrl = (lat: number, lng: number) => {
+      const bboxDelta = 0.002; // Zoom bem fechado para parecer o card nativo
+      const bbox = `${lng - bboxDelta},${lat - bboxDelta},${lng + bboxDelta},${lat + bboxDelta}`;
+      return `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${lat},${lng}`;
   };
 
   // --- 1. IMAGEM ---
@@ -163,7 +170,7 @@ export function MessageContent({ message }: MessageContentProps) {
     );
   }
 
-  // --- 5. LOCALIZAÇÃO ---
+  // --- 5. LOCALIZAÇÃO (NATIVO WHATSAPP STYLE) ---
   if (type === 'location') {
     let lat: number | null = null;
     let long: number | null = null;
@@ -181,44 +188,46 @@ export function MessageContent({ message }: MessageContentProps) {
     } catch(e) {}
 
     const mapsUrl = lat && long ? `https://www.google.com/maps?q=${lat},${long}` : '#';
-    // Static Map Fallback (Sem API Key)
-    // Usamos um mapa estático genérico e sobrepomos o pin com CSS
-    const staticMapBg = "https://upload.wikimedia.org/wikipedia/commons/e/ec/World_map_blank_without_borders.svg";
 
     return (
       <div className="mt-1">
-          <a href={mapsUrl} target="_blank" rel="noopener noreferrer" className="block relative overflow-hidden rounded-lg border border-white/10 group w-[260px] hover:border-primary/50 transition-colors shadow-lg">
-            <div className="bg-[#e5e7eb] h-36 w-full flex items-center justify-center relative overflow-hidden">
-                {/* Simulated Map Layer */}
-                <div 
-                    className="absolute inset-0 opacity-40 bg-cover bg-center grayscale-[30%]"
-                    style={{ backgroundImage: `url('${staticMapBg}')` }}
-                ></div>
-                
-                {/* Grid Lines Pattern (Simulate Roads) */}
-                <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'linear-gradient(#94a3b8 1px, transparent 1px), linear-gradient(90deg, #94a3b8 1px, transparent 1px)', backgroundSize: '20px 20px' }}></div>
-
-                {/* PIN */}
-                <div className="relative z-10 flex flex-col items-center -mt-4 animate-bounce">
-                    <div className="bg-red-500 p-2 rounded-full shadow-xl border-2 border-white">
-                        <MapPin className="w-6 h-6 text-white" fill="currentColor" />
+          <a href={mapsUrl} target="_blank" rel="noopener noreferrer" className="block relative overflow-hidden rounded-xl border border-zinc-800/50 group w-[260px] hover:border-primary/50 transition-colors shadow-sm bg-zinc-900">
+            {/* Map Preview Area */}
+            <div className="h-36 w-full relative overflow-hidden bg-[#e5e7eb]">
+                {lat && long ? (
+                    <>
+                        <iframe 
+                            width="100%" 
+                            height="100%" 
+                            frameBorder="0" 
+                            scrolling="no" 
+                            marginHeight={0} 
+                            marginWidth={0} 
+                            src={getMapEmbedUrl(lat, long)}
+                            className="pointer-events-none opacity-90 scale-110" // Escala leve para remover bordas do iframe
+                        />
+                        {/* PIN Centralizado */}
+                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none pb-4">
+                             <MapPin className="w-8 h-8 text-red-600 drop-shadow-md animate-bounce" fill="currentColor" />
+                        </div>
+                    </>
+                ) : (
+                    <div className="absolute inset-0 flex items-center justify-center bg-zinc-800 text-zinc-500">
+                        <MapPin className="w-8 h-8 opacity-20" />
                     </div>
-                    <div className="w-2 h-1 bg-black/20 rounded-full blur-[2px] mt-1"></div>
-                </div>
-
-                {/* Footer Gradient */}
-                <div className="absolute bottom-0 left-0 w-full h-12 bg-gradient-to-t from-black/60 to-transparent"></div>
+                )}
             </div>
             
-            <div className={cn("p-3 flex items-center justify-between gap-2 border-t border-white/5", isMe ? "bg-[#005c4b]/50" : "bg-zinc-900")}>
-                <div className="flex flex-col min-w-0">
-                    <span className="font-bold text-sm text-white truncate">Localização Atual</span>
-                    <span className="text-[10px] text-zinc-400 truncate font-mono">
-                        {lat ? `${lat.toFixed(5)}, ${long?.toFixed(5)}` : 'Carregando coordenadas...'}
-                    </span>
+            {/* Footer Nativo Style */}
+            <div className={cn("p-3 flex items-center gap-3 bg-zinc-800/80 backdrop-blur-sm border-t border-white/5")}>
+                <div className="w-10 h-10 rounded-full bg-zinc-700/50 flex items-center justify-center shrink-0">
+                    <MapPin className="w-5 h-5 text-green-500" />
                 </div>
-                <div className="bg-white/10 p-1.5 rounded-full">
-                    <MapPin className="w-4 h-4 text-white" />
+                <div className="flex flex-col min-w-0">
+                    <span className="font-bold text-sm text-zinc-100 truncate">Localização Atual</span>
+                    <span className="text-xs text-zinc-400 truncate font-mono">
+                        {lat ? `${lat.toFixed(6)}, ${long?.toFixed(6)}` : 'Processando...'}
+                    </span>
                 </div>
             </div>
           </a>
@@ -313,7 +322,7 @@ export function MessageContent({ message }: MessageContentProps) {
       );
   }
 
-  // --- 8. ENQUETE REAL (INTERATIVA) ---
+  // --- 8. ENQUETE (POLL) NATIVA ---
   if (type === 'poll') {
     let pollData = { name: 'Enquete', options: [], selectableOptionsCount: 1 };
     try {
@@ -322,82 +331,74 @@ export function MessageContent({ message }: MessageContentProps) {
         pollData.name = content;
     }
 
-    // Calcula estatísticas de votos baseado em message.poll_votes
+    // Calcula estatísticas
     const votes = message.poll_votes || [];
     const totalVotes = votes.length;
     const votesPerOption = new Map<number, number>();
-    
+    const myVoteIdx = votes.find(v => v.voterJid?.includes('me') || v.voterJid === 'you')?.optionId; // Simplificação, backend deve mandar flag isMe
+
     votes.forEach(v => {
         const current = votesPerOption.get(v.optionId) || 0;
         votesPerOption.set(v.optionId, current + 1);
     });
 
+    const isMultiple = pollData.selectableOptionsCount > 1;
+
     return (
         <div className={cn(
-            "rounded-xl p-4 min-w-[280px] space-y-4 mt-1 border shadow-sm relative overflow-hidden",
-            isMe ? "bg-zinc-900 border-zinc-700" : "bg-zinc-900 border-zinc-700"
+            "rounded-xl p-3 min-w-[280px] space-y-3 mt-1 border shadow-sm relative overflow-hidden",
+            isMe ? "bg-[#0f2027] border-zinc-700" : "bg-zinc-900 border-zinc-800"
         )}>
             {/* Header */}
-            <div className="flex items-start gap-3 relative z-10">
-                <div className="p-2 bg-yellow-500/10 rounded-lg text-yellow-500">
-                    <BarChart2 className="w-5 h-5" />
-                </div>
-                <div>
-                    <h4 className="font-bold text-sm text-white leading-tight">{pollData.name || 'Enquete'}</h4>
-                    <span className="text-[10px] text-zinc-500 mt-0.5 block">
-                        {pollData.selectableOptionsCount > 1 ? 'Múltipla escolha' : 'Escolha uma opção'} • {totalVotes} votos
-                    </span>
-                </div>
+            <div>
+                <h4 className="font-bold text-base text-white leading-tight">{pollData.name || 'Enquete'}</h4>
+                <span className="text-xs text-zinc-500 mt-1 block">
+                    {isMultiple ? 'Selecione várias opções' : 'Selecione uma opção'}
+                </span>
             </div>
 
-            {/* Options com Barra de Progresso Real */}
-            <div className="space-y-2 relative z-10">
+            {/* Options List */}
+            <div className="space-y-2">
                 {pollData.options?.map((opt: string, idx: number) => {
                     const voteCount = votesPerOption.get(idx) || 0;
-                    const percentage = totalVotes > 0 ? (voteCount / totalVotes) * 100 : 0;
+                    const percentage = totalVotes > 0 ? Math.round((voteCount / totalVotes) * 100) : 0;
                     const isVoting = votingOptionId === idx;
+                    const isMyVote = false; // Lógica de 'Meu Voto' depende do backend identificar o user corretamente no array votes
 
                     return (
-                        <button 
-                            key={idx} 
-                            onClick={() => handleVote(idx, pollData.name)}
-                            disabled={isVoting}
-                            className={cn(
-                                "w-full relative flex items-center justify-between p-3 rounded-lg border text-sm transition-all overflow-hidden",
-                                "bg-black/20 border-zinc-800 text-zinc-300 hover:border-zinc-600 active:scale-[0.99]"
-                            )}
-                        >
-                            {/* Progress Bar Background */}
-                            <div 
-                                className="absolute left-0 top-0 bottom-0 bg-yellow-500/10 transition-all duration-700 ease-out" 
-                                style={{ width: `${percentage}%` }}
-                            />
-
-                            <div className="flex items-center gap-3 relative z-10">
-                                <div className={cn(
-                                    "w-4 h-4 rounded-full border-2 flex items-center justify-center transition-colors",
-                                    "border-zinc-600 group-hover:border-zinc-400"
-                                )}>
-                                    {isVoting && <Loader2 className="w-3 h-3 animate-spin text-yellow-500" />}
+                        <div key={idx} className="relative group cursor-pointer" onClick={() => handleVote(idx)}>
+                            <div className="flex items-center justify-between mb-1 relative z-10">
+                                <div className="flex items-center gap-3 flex-1">
+                                    <div className={cn(
+                                        "w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors",
+                                        isMyVote 
+                                            ? "border-green-500 bg-green-500 text-black" 
+                                            : "border-zinc-500 text-transparent group-hover:border-zinc-400"
+                                    )}>
+                                        {isVoting ? <Loader2 className="w-3 h-3 animate-spin text-white" /> : isMyVote && <Check className="w-3 h-3" />}
+                                    </div>
+                                    <span className="text-sm text-zinc-200 font-medium">{opt}</span>
                                 </div>
-                                <span className="font-medium truncate mr-2 text-xs">{opt}</span>
+                                <span className="text-xs text-zinc-500 font-mono">{voteCount > 0 && `${voteCount}`}</span>
                             </div>
-
-                            <div className="relative z-10 flex items-center gap-2">
-                                {/* Avatares dos votantes (Simulado - pegando 3 primeiros) */}
-                                {votes.filter(v => v.optionId === idx).slice(0, 3).map((v, i) => (
-                                    <div key={i} className="w-4 h-4 rounded-full bg-zinc-700 border border-zinc-800 -ml-2 first:ml-0" title={v.voterJid} />
-                                ))}
-                                <span className="text-[10px] font-bold text-zinc-500">{voteCount}</span>
+                            
+                            {/* Progress Bar Container */}
+                            <div className="h-1.5 w-full bg-zinc-800 rounded-full overflow-hidden">
+                                <div 
+                                    className="h-full bg-green-500/50 transition-all duration-500" 
+                                    style={{ width: `${percentage}%` }}
+                                />
                             </div>
-                        </button>
+                        </div>
                     )
                 })}
             </div>
             
             {/* Footer */}
-            <div className="text-center pt-2 border-t border-white/5">
-                <span className="text-[10px] text-zinc-500 font-medium">Toque para votar</span>
+            <div className="pt-2 border-t border-white/5 flex justify-center">
+                <button className="text-green-500 text-xs font-bold hover:underline px-4 py-1">
+                    Ver votos ({totalVotes})
+                </button>
             </div>
         </div>
     );
