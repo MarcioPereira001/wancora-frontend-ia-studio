@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useEffect } from 'react';
@@ -13,6 +12,7 @@ import { useCalendarStore } from '@/store/useCalendarStore';
 import { Calendar, Clock, Repeat, Tag, User, Save, Trash2, CheckSquare, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Appointment } from '@/types';
+import { api } from '@/services/api'; // Import da API wrapper
 
 interface NewAppointmentModalProps {
   isOpen: boolean;
@@ -176,7 +176,6 @@ export function NewAppointmentModal({ isOpen, onClose, preSelectedDate, appointm
               if (error) throw error;
 
               // --- INTEGRAÇÃO COM CRM (LOG DE ATIVIDADE) ---
-              // Se foi vinculado a um lead, cria um log na timeline dele
               if (selectedLead?.id && data && data.length > 0) {
                   const typeLabel = isTask ? 'Tarefa' : 'Reunião';
                   const logContent = `${typeLabel} agendada: "${title}" para ${new Date(startISO).toLocaleDateString()} às ${startTime}.`;
@@ -184,14 +183,22 @@ export function NewAppointmentModal({ isOpen, onClose, preSelectedDate, appointm
                   await supabase.from('lead_activities').insert({
                       company_id: user.company_id,
                       lead_id: selectedLead.id,
-                      type: 'log', // Log automático do sistema
+                      type: 'log',
                       content: logContent,
                       created_by: user.id
                   });
+
+                  // --- GATILHO NOTIFICAÇÃO (ON_BOOKING) ---
+                  // Se não for tarefa e tiver lead, dispara notificação
+                  if (!isTask) {
+                      api.post('/appointments/confirm', { 
+                          appointmentId: data[0].id, 
+                          companyId: user.company_id 
+                      }).catch(err => console.error("Erro ao enviar confirmação:", err));
+                  }
               }
 
               if (data && data.length > 0) {
-                  // Add first one to store immediately
                   const newApp = { ...data[0], lead: selectedLead } as Appointment;
                   addAppointmentOptimistic(newApp);
               }

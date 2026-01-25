@@ -1,8 +1,10 @@
-
 'use server';
 
 import { createClient } from '@/utils/supabase/server';
 import { z } from 'zod';
+
+// Configurar URL da API (usando variável de ambiente ou fallback para localhost em dev)
+const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001/api/v1';
 
 // Schema para validação do formulário de agendamento
 const BookingSchema = z.object({
@@ -59,8 +61,7 @@ export async function bookAppointment(formData: BookingData) {
   try {
       console.log(`📅 [Public Calendar] Tentando agendar para ${name} em ${date} às ${time} (Slug: ${slug})`);
 
-      // Chama a função segura no banco (Security Definer)
-      // Isso evita erros de RLS para usuários anônimos
+      // 1. Criar Agendamento via RPC
       const { data, error } = await supabase.rpc('create_public_appointment', {
           p_slug: slug,
           p_date: date,
@@ -76,13 +77,40 @@ export async function bookAppointment(formData: BookingData) {
           throw new Error(error.message);
       }
 
-      // Verifica retorno lógico da função SQL
       if (data && data.error) {
           console.error("❌ [Public Calendar] Erro Lógico SQL:", data.error);
           throw new Error(data.error);
       }
 
-      console.log("✅ [Public Calendar] Agendamento criado com sucesso via RPC.");
+      // 2. Disparar Notificação (Webhook Manual para API)
+      // O RPC retorna { success: true, appointment_id: '...', company_id: '...' } se alterarmos o RPC,
+      // mas o código atual do RPC retorna apenas success: true ou error.
+      // Para funcionar perfeitamente, o RPC precisaria retornar o ID.
+      // Como não posso alterar o SQL aqui (apenas arquivos JS/TS), 
+      // vou buscar o agendamento recém-criado para pegar o ID.
+      
+      const { data: newApp } = await supabase
+          .from('appointments')
+          .select('id, company_id')
+          .eq('start_time', `${date}T${time}:00+00:00`) // Assumindo UTC do server action anterior
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .single();
+
+      if (newApp) {
+          console.log(`🔔 [Public Calendar] Disparando notificação para ID: ${newApp.id}`);
+          // Dispara fetch para a API do backend (Fire and Forget)
+          fetch(`${API_URL}/appointments/confirm`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ 
+                  appointmentId: newApp.id,
+                  companyId: newApp.company_id
+              })
+          }).catch(err => console.error("Erro fetch API:", err));
+      }
+
+      console.log("✅ [Public Calendar] Agendamento criado com sucesso.");
       return { success: true };
 
   } catch (err: any) {
