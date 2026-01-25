@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { Message } from '@/types';
 import { MessageContent } from './MessageContent';
-import { Check, CheckCheck, Clock, Ban, Smile, ChevronDown, Trash2, Info, AlertTriangle } from 'lucide-react';
+import { Check, CheckCheck, Clock, Ban, ChevronDown, Trash2, Info, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Checkbox } from '@/components/ui/checkbox';
 import { api } from '@/services/api';
@@ -21,7 +21,6 @@ interface MessageBubbleProps {
 }
 
 const COMMON_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
-// Janela de segurança: 72 horas em milissegundos
 const REVOKE_WINDOW_MS = 72 * 60 * 60 * 1000; 
 
 export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }: MessageBubbleProps) {
@@ -51,12 +50,9 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
 
     if (status === 'sending') return <Clock className={cn(iconClass, "text-zinc-400")} />;
     if (status === 'sent') return <Check className={cn(iconClass, "text-zinc-400")} />;
-    // Delivered (2 tiques cinza)
     if (status === 'delivered') return <CheckCheck className={cn(iconClass, "text-zinc-400")} />;
-    // Read (2 tiques azuis)
-    if (status === 'read' || (message as any).read_at) return <CheckCheck className={cn(iconClass, "text-blue-400")} />;
+    if (status === 'read' || status === 'played' || (message as any).read_at) return <CheckCheck className={cn(iconClass, "text-blue-400")} />;
 
-    // Fallback padrão: 1 tick
     return <Check className={cn(iconClass, "text-zinc-400")} />;
   };
 
@@ -94,7 +90,6 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
       }
   };
 
-  // Lógica de Segurança Anti-Ban
   const canRevoke = () => {
       if (!message.created_at) return false;
       const msgTime = new Date(message.created_at).getTime();
@@ -102,11 +97,17 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
       return (now - msgTime) < REVOKE_WINDOW_MS;
   };
 
+  // Agrupamento de Reações
   const reactions: any[] = (message as any).reactions || [];
+  const groupedReactions = React.useMemo(() => {
+      const counts: Record<string, number> = {};
+      reactions.forEach(r => { counts[r.text] = (counts[r.text] || 0) + 1; });
+      return Object.entries(counts).sort((a,b) => b[1] - a[1]);
+  }, [reactions]);
 
   return (
     <div 
-        className={cn("flex items-start gap-2 w-full group/message relative mb-1", isMe ? "justify-end" : "justify-start")}
+        className={cn("flex items-start gap-2 w-full group/message relative mb-3", isMe ? "justify-end" : "justify-start")}
         onMouseLeave={() => setShowMenu(false)}
     >
         
@@ -214,19 +215,18 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
                 )}
             </div>
 
-            {/* 4. REAÇÕES (Fora da bolha, coladas nela) */}
+            {/* 4. REAÇÕES VISUAIS (Agrupadas e Estilizadas) */}
             {reactions.length > 0 && !(message as any).is_deleted && (
                 <div className={cn(
-                    "absolute -bottom-2 z-20 flex gap-1 animate-in zoom-in duration-300",
-                    isMe ? "right-2" : "left-2"
+                    "absolute -bottom-3 z-20 flex gap-1 animate-in zoom-in duration-300",
+                    isMe ? "right-0" : "left-0"
                 )}>
-                    <div className="flex items-center bg-zinc-900 border border-zinc-700 rounded-full px-1.5 py-0.5 shadow-md scale-90 hover:scale-105 transition-transform cursor-pointer">
-                        {reactions.slice(0, 3).map((r, i) => (
-                            <span key={i} className="text-[12px]" title={r.actor}>{r.text}</span>
+                    <div className="flex items-center bg-zinc-900 border border-zinc-700 rounded-full px-1.5 py-0.5 shadow-md scale-90 hover:scale-105 transition-transform cursor-pointer gap-1">
+                        {groupedReactions.map(([emoji, count], i) => (
+                            <span key={i} className="text-[11px] flex items-center">
+                                {emoji} {count > 1 && <span className="text-[9px] text-zinc-400 ml-0.5">{count}</span>}
+                            </span>
                         ))}
-                        {reactions.length > 3 && (
-                            <span className="text-[9px] text-zinc-400 ml-1">+{reactions.length - 3}</span>
-                        )}
                     </div>
                 </div>
             )}

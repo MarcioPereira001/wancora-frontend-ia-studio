@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState } from 'react';
@@ -6,7 +5,7 @@ import { FileText, MapPin, Download, PlayCircle, Image as ImageIcon, Film, BarCh
 import { Message } from "@/types";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/useToast";
-import { api } from '@/services/api';
+import { PollBubble } from './PollBubble';
 
 interface MessageContentProps {
   message: Message;
@@ -15,7 +14,6 @@ interface MessageContentProps {
 export function MessageContent({ message }: MessageContentProps) {
   const { addToast } = useToast();
   const [imgError, setImgError] = useState(false);
-  const [votingOptionId, setVotingOptionId] = useState<number | null>(null);
 
   const mediaUrl = message.media_url; 
   let content = message.content || message.body || "";
@@ -25,28 +23,6 @@ export function MessageContent({ message }: MessageContentProps) {
   const handleCopy = (text: string) => {
       navigator.clipboard.writeText(text);
       addToast({ type: 'success', title: 'Copiado!', message: 'Chave Pix copiada.' });
-  };
-
-  // Lógica Real de Votação
-  const handleVote = async (optionId: number) => {
-      if (votingOptionId !== null) return; // Evita cliques duplos
-      setVotingOptionId(optionId);
-      try {
-          await api.post('/message/vote', {
-              companyId: message.company_id,
-              sessionId: message.session_id,
-              remoteJid: message.remote_jid,
-              pollId: message.id, // O Backend precisa saber qual mensagem é a enquete
-              optionId: optionId
-          });
-          // Feedback visual imediato é tratado via Realtime no Pai, aqui apenas disparamos
-          addToast({ type: 'success', title: 'Voto Enviado', message: 'Voto registrado.' });
-      } catch (error) {
-          addToast({ type: 'error', title: 'Erro', message: 'Falha ao computar voto.' });
-          setVotingOptionId(null); // Libera para tentar de novo se der erro
-      }
-      // Não setamos null no finally para manter o loading até a atualização realtime chegar
-      setTimeout(() => setVotingOptionId(null), 3000); 
   };
 
   // Helper para Mapa
@@ -324,84 +300,9 @@ export function MessageContent({ message }: MessageContentProps) {
       );
   }
 
-  // --- 8. ENQUETE (POLL) NATIVA ---
+  // --- 8. ENQUETE (POLL) NATIVA VIA POLL BUBBLE ---
   if (type === 'poll') {
-    let pollData = { name: 'Enquete', options: [], selectableOptionsCount: 1 };
-    try {
-        pollData = typeof content === 'string' && content.startsWith('{') ? JSON.parse(content) : { name: content, options: [] };
-    } catch (e) {
-        pollData.name = content;
-    }
-
-    // Calcula estatísticas
-    const votes = message.poll_votes || [];
-    const totalVotes = votes.length;
-    const votesPerOption = new Map<number, number>();
-    
-    votes.forEach(v => {
-        // Garantir que optionId é numérico
-        const optId = Number(v.optionId);
-        const current = votesPerOption.get(optId) || 0;
-        votesPerOption.set(optId, current + 1);
-    });
-
-    const isMultiple = pollData.selectableOptionsCount > 1;
-
-    return (
-        <div className={cn(
-            "rounded-xl p-3 min-w-[280px] space-y-3 mt-1 border shadow-sm relative overflow-hidden",
-            isMe ? "bg-[#0f2027] border-zinc-700" : "bg-zinc-900 border-zinc-800"
-        )}>
-            {/* Header */}
-            <div>
-                <h4 className="font-bold text-base text-white leading-tight">{pollData.name || 'Enquete'}</h4>
-                <span className="text-xs text-zinc-500 mt-1 block">
-                    {isMultiple ? 'Selecione várias opções' : 'Selecione uma opção'}
-                </span>
-            </div>
-
-            {/* Options List */}
-            <div className="space-y-2">
-                {pollData.options?.map((opt: string, idx: number) => {
-                    const voteCount = votesPerOption.get(idx) || 0;
-                    const percentage = totalVotes > 0 ? Math.round((voteCount / totalVotes) * 100) : 0;
-                    const isVoting = votingOptionId === idx;
-                    
-                    return (
-                        <div key={idx} className="relative group cursor-pointer" onClick={() => handleVote(idx)}>
-                            <div className="flex items-center justify-between mb-1 relative z-10">
-                                <div className="flex items-center gap-3 flex-1">
-                                    <div className={cn(
-                                        "w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors",
-                                        "border-zinc-500 text-transparent group-hover:border-zinc-400"
-                                    )}>
-                                        {isVoting && <Loader2 className="w-3 h-3 animate-spin text-white" />}
-                                    </div>
-                                    <span className="text-sm text-zinc-200 font-medium">{opt}</span>
-                                </div>
-                                <span className="text-xs text-zinc-500 font-mono">{voteCount > 0 && `${voteCount}`}</span>
-                            </div>
-                            
-                            {/* Progress Bar Container */}
-                            <div className="h-1.5 w-full bg-zinc-800 rounded-full overflow-hidden">
-                                <div 
-                                    className="h-full bg-green-500/50 transition-all duration-500" 
-                                    style={{ width: `${percentage}%` }}
-                                />
-                            </div>
-                        </div>
-                    )
-                })}
-            </div>
-            
-            {/* Footer */}
-            <div className="pt-2 border-t border-white/5 flex justify-center">
-                <button className="text-green-500 text-xs font-bold hover:underline px-4 py-1">
-                    Ver votos ({totalVotes})
-                </button>
-            </div>
-        </div>
-    );
+      return <PollBubble message={message} isMe={isMe} />;
   }
 
   // --- DEFAULT: TEXTO ---

@@ -1,4 +1,3 @@
-
 'use client';
 
 import React from 'react';
@@ -91,7 +90,7 @@ export function ChatHeader() {
                 ) : (
                     <p className="text-[11px] text-zinc-400 font-medium flex items-center gap-1">
                         {isOnline ? (
-                            <span className="text-green-400">Online</span>
+                            <span className="text-green-400 font-bold tracking-wide">Online</span>
                         ) : (
                             lastSeen ? formatLastSeen(lastSeen) : cleanJid(activeContact.remote_jid)
                         )}

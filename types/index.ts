@@ -133,7 +133,7 @@ export interface Message {
   content: string;
   body?: string;
   message_type: string;
-  status: 'sending' | 'sent' | 'delivered' | 'read' | 'failed' | 'received';
+  status: 'sending' | 'sent' | 'delivered' | 'read' | 'failed' | 'received' | 'played';
   created_at: string;
   session_id: string;
   company_id: string;
