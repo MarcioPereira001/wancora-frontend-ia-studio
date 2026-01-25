@@ -1,6 +1,7 @@
+
 'use client';
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { ArrowLeft, User, Users, MoreVertical, CheckSquare, Trash2, Clock } from 'lucide-react';
 import { useChatStore } from '@/store/useChatStore';
 import { Button } from '@/components/ui/button';
@@ -11,13 +12,13 @@ import { useAuthStore } from '@/store/useAuthStore';
 export function ChatHeader() {
   const { user } = useAuthStore();
   const supabase = createClient();
-  const { activeContact, setActiveContact, toggleMsgSelectionMode } = useChatStore();
+  const { activeContact, setActiveContact, toggleMsgSelectionMode, isTyping, setTyping } = useChatStore();
   const [showOptionsMenu, setShowOptionsMenu] = React.useState(false);
   const [lastSeen, setLastSeen] = React.useState<string | null>(null);
   const [isOnline, setIsOnline] = React.useState(false);
 
   // Efeito para buscar e ouvir Last Seen em tempo real
-  React.useEffect(() => {
+  useEffect(() => {
       if (!activeContact || !user?.company_id) return;
 
       const fetchStatus = async () => {
@@ -46,6 +47,13 @@ export function ChatHeader() {
               if (payload.new) {
                   setIsOnline(payload.new.is_online);
                   setLastSeen(payload.new.last_seen_at);
+                  
+                  // Simula "Digitando..." brevemente se status mudou para online recentemente
+                  // (Solução visual tática já que o backend não salva 'composing' no banco)
+                  if (payload.new.is_online && !isOnline) {
+                      setTyping(true);
+                      setTimeout(() => setTyping(false), 3000);
+                  }
               }
           })
           .subscribe();
@@ -69,10 +77,13 @@ export function ChatHeader() {
   };
 
   return (
-    <div className="h-16 border-b border-zinc-800 flex items-center justify-between px-4 md:px-6 bg-zinc-900/50 backdrop-blur-md z-10 shrink-0">
-        <div className="flex items-center gap-3">
+    <div className="h-16 border-b border-zinc-800 flex items-center justify-between px-4 md:px-6 bg-zinc-900/50 backdrop-blur-md z-10 shrink-0 relative">
+        {/* Efeito Glow Sutil no Header quando Online */}
+        {isOnline && <div className="absolute inset-0 bg-green-500/5 pointer-events-none" />}
+
+        <div className="flex items-center gap-3 relative z-10">
             <Button variant="ghost" size="icon" className="md:hidden text-zinc-400" onClick={() => setActiveContact(null)}><ArrowLeft className="h-5 w-5" /></Button>
-            <div className="h-10 w-10 rounded-full bg-zinc-800 flex items-center justify-center border border-zinc-700 overflow-hidden relative">
+            <div className="h-10 w-10 rounded-full bg-zinc-800 flex items-center justify-center border border-zinc-700 overflow-hidden relative shadow-sm">
                     {activeContact.profile_pic_url ? (
                         <img src={activeContact.profile_pic_url} className="w-full h-full object-cover" />
                     ) : (
@@ -88,8 +99,12 @@ export function ChatHeader() {
                 {activeContact.is_group ? (
                     <p className="text-xs text-zinc-400 font-mono">{cleanJid(activeContact.remote_jid)}</p>
                 ) : (
-                    <p className="text-[11px] text-zinc-400 font-medium flex items-center gap-1">
-                        {isOnline ? (
+                    <p className="text-[11px] text-zinc-400 font-medium flex items-center gap-1 transition-all h-4">
+                        {isTyping ? (
+                            <span className="text-green-400 font-bold tracking-wide animate-pulse flex items-center gap-1">
+                                digitando<span className="animate-[bounce_1s_infinite]">.</span><span className="animate-[bounce_1s_infinite_0.2s]">.</span><span className="animate-[bounce_1s_infinite_0.4s]">.</span>
+                            </span>
+                        ) : isOnline ? (
                             <span className="text-green-400 font-bold tracking-wide">Online</span>
                         ) : (
                             lastSeen ? formatLastSeen(lastSeen) : cleanJid(activeContact.remote_jid)
@@ -99,7 +114,7 @@ export function ChatHeader() {
             </div>
         </div>
         
-        <div className="relative">
+        <div className="relative z-10">
             <Button variant="ghost" size="icon" onClick={() => setShowOptionsMenu(!showOptionsMenu)} className="text-zinc-400 hover:text-white">
                 <MoreVertical className="w-5 h-5" />
             </Button>

@@ -1,16 +1,22 @@
+
 'use client';
 
-import React, { useEffect, useRef, useLayoutEffect } from 'react';
+import React, { useEffect, useRef, useLayoutEffect, useState } from 'react';
 import { useChatStore } from '@/store/useChatStore';
 import { MessageBubble } from '@/components/chat/MessageBubble';
 import { createClient } from '@/utils/supabase/client';
 import { useAuthStore } from '@/store/useAuthStore';
+import { ArrowDown, Loader2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+import { useSound } from '@/hooks/useSound';
 
 const MESSAGES_PER_PAGE = 30;
 
 export function ChatWindow() {
   const supabase = createClient();
   const { user } = useAuthStore();
+  const { play } = useSound();
   const { 
       activeContact, messages, setMessages, 
       loadingMessages, setLoadingMessages, 
@@ -20,13 +26,35 @@ export function ChatWindow() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const [fetchingMore, setFetchingMore] = React.useState(false);
+  const [fetchingMore, setFetchingMore] = useState(false);
+  const [showScrollButton, setShowScrollButton] = useState(false);
+  
+  // Ref para detectar nova mensagem
+  const prevMessagesLength = useRef(messages.length);
+
+  // Efeito de SOM
+  useEffect(() => {
+      if (messages.length > prevMessagesLength.current) {
+          const lastMsg = messages[messages.length - 1];
+          // Toca som se a msg for nova e não for minha
+          if (!lastMsg.from_me) {
+              play('message');
+          }
+      }
+      prevMessagesLength.current = messages.length;
+  }, [messages, play]);
 
   // PERFORMANCE: Use useLayoutEffect para scrollar ANTES do browser pintar a tela
-  // Isso elimina o "pulo" visual e remove a necessidade de setTimeout
   useLayoutEffect(() => {
       if (messagesEndRef.current && !fetchingMore && !loadingMessages) {
-          messagesEndRef.current.scrollIntoView({ behavior: "auto" });
+          // Só scrolla automaticamente se estiver perto do fundo ou na carga inicial
+          const container = scrollContainerRef.current;
+          if (container) {
+              const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
+              if (isNearBottom || messages.length <= MESSAGES_PER_PAGE) {
+                  messagesEndRef.current.scrollIntoView({ behavior: "auto" });
+              }
+          }
       }
   }, [messages.length, activeContact?.id]); 
 
@@ -48,27 +76,30 @@ export function ChatWindow() {
       return (data || []).reverse(); 
   };
 
-  // Carga Inicial - INSTANTÂNEA (Sem Delay Artificial)
+  // Carga Inicial
   useEffect(() => {
       if (!activeContact) return;
 
       const initChat = async () => {
-          // Não setamos loadingMessages visualmente para evitar piscar spinners
           setHasMoreMessages(true);
-          
           const initialMsgs = await loadMessages(0);
-          
           setMessages(initialMsgs);
-          // O scroll é tratado pelo useLayoutEffect acima automaticamente
+          // Força scroll pro final na troca de chat
+          setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "auto" }), 50);
       };
 
       initChat();
   }, [activeContact?.id]);
 
-  // Scroll Handler (Pagination)
+  // Scroll Handler (Pagination + FAB Visibility)
   const handleScroll = async (e: React.UIEvent<HTMLDivElement>) => {
       const container = e.currentTarget;
-      // Trigger a 50px do topo
+      
+      // Lógica do Botão Flutuante
+      const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+      setShowScrollButton(distanceFromBottom > 300);
+
+      // Trigger Paginação
       if (container.scrollTop < 50 && hasMoreMessages && !fetchingMore) {
           setFetchingMore(true);
           const currentHeight = container.scrollHeight; 
@@ -76,9 +107,6 @@ export function ChatWindow() {
           
           if (olderMessages.length > 0) {
               setMessages(prev => [...olderMessages, ...prev]);
-              
-              // Mantém a posição visual exata após carregar mensagens antigas
-              // requestAnimationFrame é usado aqui apenas para garantir que o DOM atualizou a altura
               requestAnimationFrame(() => { 
                   if (scrollContainerRef.current) 
                       scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight - currentHeight; 
@@ -90,30 +118,66 @@ export function ChatWindow() {
       }
   };
 
-  return (
-    <div 
-        ref={scrollContainerRef}
-        onScroll={handleScroll}
-        className="flex-1 overflow-y-auto p-4 md:p-6 space-y-2 relative custom-scrollbar" 
-        style={{ backgroundImage: 'radial-gradient(circle at center, rgba(34, 197, 94, 0.03) 0%, transparent 70%)' }}
-    >
-        {/* Aviso discreto de fim de histórico, sem spinners de carregamento no meio do chat */}
-        {!hasMoreMessages && messages.length > 0 && (
-            <div className="text-center py-4 text-xs text-zinc-600">Início da conversa</div>
-        )}
+  const scrollToBottom = () => {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
 
-        {messages.map((msg, idx) => (
-            <div key={msg.id || idx} className={`flex w-full mb-1`}>
-                <MessageBubble 
-                    message={msg} 
-                    isSelectionMode={isMsgSelectionMode}
-                    isSelected={selectedMsgIds.has(msg.id)}
-                    onSelect={() => toggleMessageSelection(msg.id)}
-                />
-            </div>
-        ))}
-        
-        <div ref={messagesEndRef} />
+  return (
+    <div className="flex-1 relative flex flex-col overflow-hidden bg-[#0b0b0d]">
+        {/* Background Pattern SVG (Doodle Style) */}
+        <div className="absolute inset-0 opacity-[0.03] pointer-events-none" 
+             style={{ 
+                 backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='1'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")` 
+             }} 
+        />
+
+        <div 
+            ref={scrollContainerRef}
+            onScroll={handleScroll}
+            className="flex-1 overflow-y-auto p-4 md:p-6 space-y-2 relative custom-scrollbar z-10" 
+        >
+            {/* Loading Superior */}
+            {fetchingMore && (
+                <div className="flex justify-center py-2">
+                    <Loader2 className="w-5 h-5 text-zinc-500 animate-spin" />
+                </div>
+            )}
+
+            {!hasMoreMessages && messages.length > 0 && (
+                <div className="text-center py-6">
+                    <span className="text-xs text-zinc-600 bg-zinc-900/50 px-3 py-1 rounded-full border border-zinc-800">
+                        Início da conversa
+                    </span>
+                </div>
+            )}
+
+            {messages.map((msg, idx) => (
+                <div key={msg.id || idx} className={`flex w-full mb-1`}>
+                    <MessageBubble 
+                        message={msg} 
+                        isSelectionMode={isMsgSelectionMode}
+                        isSelected={selectedMsgIds.has(msg.id)}
+                        onSelect={() => toggleMessageSelection(msg.id)}
+                    />
+                </div>
+            ))}
+            
+            <div ref={messagesEndRef} />
+        </div>
+
+        {/* Floating Scroll Button */}
+        <div className={cn(
+            "absolute bottom-4 right-4 z-20 transition-all duration-300 transform",
+            showScrollButton ? "translate-y-0 opacity-100" : "translate-y-10 opacity-0 pointer-events-none"
+        )}>
+            <Button 
+                onClick={scrollToBottom} 
+                size="icon" 
+                className="rounded-full bg-zinc-800/80 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 shadow-xl backdrop-blur-md w-10 h-10"
+            >
+                <ArrowDown className="w-5 h-5" />
+            </Button>
+        </div>
     </div>
   );
 }

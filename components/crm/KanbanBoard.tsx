@@ -11,10 +11,12 @@ import { LeadDetailsModal } from './LeadDetailsModal';
 import { NewLeadModal } from './NewLeadModal';
 import { EditStageModal } from './EditStageModal';
 import { useTeam } from '@/hooks/useTeam';
+import { useSound } from '@/hooks/useSound';
 
 export function KanbanBoard() {
   const { columns, loading, refresh, moveLead, reorderStages } = useKanban();
   const { members } = useTeam();
+  const { play } = useSound(); // Hook de som
   
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedUserId, setSelectedUserId] = useState<string>('all');
@@ -140,7 +142,9 @@ export function KanbanBoard() {
                 newPosition = (posAbove + posBelow) / 2;
             }
 
+            // Move e toca som
             moveLead(draggingId, targetId, newPosition);
+            play('success'); // Toca som de sucesso
         }
     }
 

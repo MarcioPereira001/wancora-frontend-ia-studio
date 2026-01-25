@@ -3,7 +3,7 @@ import React from 'react';
 import { Calendar, MessageCircle, Flame, User, Tag, Clock } from 'lucide-react';
 import { Lead, TeamMember } from '@/types';
 import { cn, formatCurrency } from '@/lib/utils';
-import { DeadlineTimer } from './DeadlineTimer'; // Componente Novo
+import { DeadlineTimer } from './DeadlineTimer'; 
 
 interface KanbanCardProps {
   lead: Lead;
@@ -23,8 +23,6 @@ export function KanbanCard({ lead, owner, onDragStart, onClick }: KanbanCardProp
   };
 
   const temp = getTempConfig(lead.temperature);
-
-  // SAFE RENDER: Fallback seguro para nome nulo
   const displayName = lead.name || lead.phone || "Sem Nome";
   const displayInitial = (displayName || "?").charAt(0).toUpperCase();
 
@@ -33,24 +31,23 @@ export function KanbanCard({ lead, owner, onDragStart, onClick }: KanbanCardProp
       draggable
       onDragStart={(e) => onDragStart(e, lead.id)}
       onClick={() => onClick(lead)}
-      className="group bg-zinc-900/90 hover:bg-zinc-900 backdrop-blur-sm border border-zinc-800 p-3.5 rounded-xl mb-3 hover:border-primary/50 hover:shadow-[0_4px_20px_-10px_rgba(34,197,94,0.15)] transition-all duration-200 relative cursor-grab active:cursor-grabbing select-none"
+      className="group bg-zinc-900/90 hover:bg-zinc-900/95 backdrop-blur-md border border-zinc-800 p-3.5 rounded-xl mb-3 hover:border-primary/40 hover:shadow-[0_0_15px_-5px_rgba(34,197,94,0.15)] transition-all duration-300 relative cursor-grab active:cursor-grabbing select-none overflow-hidden"
     >
-      {/* Indicador de Status Lateral */}
-      <div className={cn("absolute left-0 top-3 bottom-3 w-1 rounded-r-full opacity-60", temp.bg.replace('/10', ''))} />
+      {/* Efeito Glow Lateral */}
+      <div className={cn("absolute left-0 top-0 bottom-0 w-[3px] transition-all group-hover:w-[4px]", temp.bg.replace('/10', ''))} />
 
       {/* Header */}
       <div className="flex justify-between items-start mb-2 pl-2">
         <div className="flex items-center gap-3 overflow-hidden">
-          <div className="w-9 h-9 rounded-full bg-zinc-800 flex items-center justify-center shrink-0 border border-zinc-700 relative">
+          <div className="w-9 h-9 rounded-full bg-zinc-950 flex items-center justify-center shrink-0 border border-zinc-800 shadow-sm relative">
             {lead.profile_pic_url ? (
               <img src={lead.profile_pic_url} alt={displayName} className="w-full h-full object-cover rounded-full" />
             ) : (
-              <span className="text-xs font-bold text-zinc-400">{displayInitial}</span>
+              <span className="text-xs font-bold text-zinc-500">{displayInitial}</span>
             )}
             
-            {/* Responsável Mini Avatar */}
             {owner && (
-                <div className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-zinc-950 border border-zinc-700 flex items-center justify-center overflow-hidden" title={`Responsável: ${owner.name}`}>
+                <div className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-zinc-900 border border-zinc-700 flex items-center justify-center overflow-hidden z-10" title={`Responsável: ${owner.name}`}>
                     {owner.avatar_url ? (
                         <img src={owner.avatar_url} alt={owner.name} className="w-full h-full object-cover" />
                     ) : (
@@ -60,13 +57,13 @@ export function KanbanCard({ lead, owner, onDragStart, onClick }: KanbanCardProp
             )}
           </div>
           <div className="min-w-0">
-            <h4 className="text-sm font-semibold text-zinc-100 truncate leading-tight">{displayName}</h4>
+            <h4 className="text-sm font-semibold text-zinc-100 truncate leading-tight group-hover:text-primary transition-colors">{displayName}</h4>
             <p className="text-[11px] text-zinc-500 font-mono truncate mt-0.5">{lead.phone}</p>
           </div>
         </div>
       </div>
 
-      {/* Cronômetro de Deadline (Se existir) */}
+      {/* Cronômetro */}
       {lead.deadline && (
           <div className="pl-2 mb-2">
               <DeadlineTimer deadline={lead.deadline} compact />
@@ -74,9 +71,9 @@ export function KanbanCard({ lead, owner, onDragStart, onClick }: KanbanCardProp
       )}
 
       {/* Tags e Valor */}
-      <div className="flex flex-wrap gap-2 mb-3 pl-2">
-        <div className="px-2 py-1 rounded bg-zinc-950 border border-zinc-800 flex items-center gap-1.5 shadow-sm">
-             <span className="text-xs font-bold text-green-400 font-mono tracking-tight">
+      <div className="flex flex-wrap items-center gap-2 mb-3 pl-2">
+        <div className="px-2 py-1 rounded bg-zinc-950/80 border border-zinc-800 flex items-center gap-1.5 shadow-sm">
+             <span className="text-xs font-bold text-emerald-400 font-mono tracking-tight">
                 {formatCurrency(lead.value_potential || 0)}
              </span>
         </div>
@@ -89,23 +86,20 @@ export function KanbanCard({ lead, owner, onDragStart, onClick }: KanbanCardProp
       
       {/* Footer */}
       <div className="flex items-center justify-between pt-2 border-t border-zinc-800/50 pl-2 mt-1">
-        <div className="flex items-center gap-2">
-          {/* Se tem tag, mostra a primeira */}
+        <div className="flex items-center gap-2 max-w-[70%]">
           {lead.tags && lead.tags.length > 0 ? (
-             <div className="flex items-center gap-1 text-[10px] text-zinc-500 bg-zinc-800/50 px-2 py-0.5 rounded border border-zinc-700/50">
-                <Tag size={8} /> {lead.tags[0]} {lead.tags.length > 1 && `+${lead.tags.length - 1}`}
+             <div className="flex items-center gap-1 text-[10px] text-zinc-500 bg-zinc-800/50 px-2 py-0.5 rounded border border-zinc-700/50 truncate">
+                <Tag size={8} /> 
+                <span className="truncate">{lead.tags[0]} {lead.tags.length > 1 && `+${lead.tags.length - 1}`}</span>
              </div>
           ) : (
-             <span className="text-[10px] text-zinc-600 italic">Sem tags</span>
+             <span className="text-[10px] text-zinc-700 italic">Sem tags</span>
           )}
         </div>
         
-        <div className="flex -space-x-2">
-            <div className="w-6 h-6 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center z-10 hover:z-20 hover:scale-110 transition-transform cursor-pointer" title="Ver mensagens">
+        <div className="flex -space-x-1.5 opacity-60 group-hover:opacity-100 transition-opacity">
+            <div className="w-6 h-6 rounded-full bg-zinc-900 border border-zinc-700 flex items-center justify-center z-10 hover:bg-zinc-800 hover:border-blue-500 transition-colors" title="Ver chat">
                 <MessageCircle size={10} className="text-blue-400" />
-            </div>
-            <div className="w-6 h-6 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center z-0 cursor-pointer" title="Ver perfil">
-                <User size={10} className="text-zinc-400" />
             </div>
         </div>
       </div>

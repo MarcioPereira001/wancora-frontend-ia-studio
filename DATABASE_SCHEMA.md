@@ -1,4 +1,4 @@
-# 🗄️ WANCORA CRM - Database Schema Definitions v4.2
+# 🗄️ WANCORA CRM - Database Schema Definitions v4.3
 
 Este documento define a estrutura oficial do Banco de Dados Supabase (PostgreSQL).
 **Regra:** Qualquer SQL gerado deve ser validado contra este arquivo.
@@ -26,6 +26,8 @@ Contatos brutos sincronizados do celular.
 * `is_ignored`: boolean (Default: false) - Se true, não vira Lead.
 * `is_muted`: boolean (Default: false)
 * `last_message_at`: timestamptz
+* `last_seen_at`: timestamptz
+* `is_online`: boolean
 
 ### `leads` (CRM)
 A entidade de negócio principal.
@@ -59,8 +61,11 @@ Histórico de mensagens.
 * `content`: text
 * `message_type`: text ('text', 'image', 'audio', 'video', 'document', 'poll', 'location', 'sticker', 'contact', 'pix')
 * `media_url`: text
-* `poll_votes`: jsonb (Default: '[]') - Armazena votos [{ "voterJid": "...", "optionId": 0 }]
+* `poll_votes`: jsonb (Default: '[]')
+* `reactions`: jsonb (Default: '[]')
 * `created_at`: timestamptz
+* `delivered_at`: timestamptz
+* `read_at`: timestamptz
 
 ### `pipelines` & `pipeline_stages`
 Estrutura do Kanban.
@@ -131,7 +136,8 @@ Unificação de calendário e gerenciador de tarefas.
 * `meet_link`: text
 * `origin`: text (Default: 'internal')
 * `ai_summary`: text
-* `reminder_sent`: boolean
+* `reminder_sent`: boolean (NOVO: Controle do Worker)
+* `confirmation_sent`: boolean (NOVO: Controle do Controller)
 
 ### `availability_rules` (Agendamento Inteligente)
 Define as regras de horários para o sistema de agendamento (tipo Calendly).
@@ -160,7 +166,6 @@ Define as regras de horários para o sistema de agendamento (tipo Calendly).
       ] 
     }
     ```
-
 
 ### `automations` (Workflow)
 Regras de automação (Gatilho -> Ação).
@@ -243,102 +248,66 @@ Retorna a lista de conversas da Inbox com dados agregados (não lidas, última m
 ```sql
 function get_my_chat_list(p_company_id uuid, p_session_id text)
 returns table (...)
-increment_campaign_count
+```
+
+### `increment_campaign_count`
 Incrementa contadores de campanha de forma atômica (sem concorrência de leitura/escrita).
-
-SQL
-
+```sql
 function increment_campaign_count(p_campaign_id uuid, p_field text)
 returns void
-reorder_pipeline_stages
+```
+
+### `reorder_pipeline_stages`
 Reordena estágios do funil em lote, garantindo atomicidade.
-
-SQL
-
+```sql
 function reorder_pipeline_stages(p_updates jsonb) 
 returns void
-3. Triggers & Automação
-enforce_ignored_contact_rule (Anti-Ghost)
-Se um contato for marcado como ignorado (is_ignored = true), o Lead correspondente é deletado automaticamente.
+```
+
+### `create_public_appointment`
+Cria um agendamento público e, se necessário, o lead correspondente.
+```sql
+function create_public_appointment(p_slug text, p_date date, ...) 
+returns jsonb
+```
+
+---
+
+## 3. Triggers & Automação
+
+### `enforce_ignored_contact_rule` (Anti-Ghost)
+Se um contato for marcado como ignorado (`is_ignored = true`), o Lead correspondente é deletado automaticamente.
 
 ### `sync_lid_to_phone_contact` (LID Sync)
 Ao receber uma mensagem de um LID (`@lid`), verifica se já existe um Lead com o telefone correspondente e atualiza o contato principal, garantindo que a notificação apareça no chat correto.
 
-SQL
-
-CREATE OR REPLACE FUNCTION public.enforce_ignored_contact_rule()
- RETURNS trigger LANGUAGE plpgsql
-AS $function$
-BEGIN
-  IF NEW.is_ignored = true THEN
-    DELETE FROM public.leads 
-    WHERE company_id = NEW.company_id 
-    AND phone = split_part(NEW.jid, '@', 1);
-  END IF;
-  RETURN NEW;
-END;
-$function$
-auto_create_lead_on_message (Smart Lead Guard)
+### `auto_create_lead_on_message` (Smart Lead Guard)
 Cria leads automaticamente ao receber mensagens, mas APENAS se o contato já tiver nome identificado (evita leads "fantasmas").
 
-SQL
+### `handle_updated_at`
+Mantém a coluna `updated_at` sempre atualizada nas tabelas principais.
 
-CREATE OR REPLACE FUNCTION public.auto_create_lead_on_message()
- RETURNS trigger LANGUAGE plpgsql
-AS $function$
-DECLARE
-    v_contact_name text;
-    v_contact_push text;
-BEGIN
-    SELECT name, push_name INTO v_contact_name, v_contact_push
-    FROM contacts WHERE jid = NEW.remote_jid AND company_id = NEW.company_id;
+---
 
-    IF (v_contact_name IS NOT NULL AND v_contact_name != '' AND v_contact_name != split_part(NEW.remote_jid, '@', 1)) OR 
-       (v_contact_push IS NOT NULL AND v_contact_push != '') THEN
-        
-        INSERT INTO leads (company_id, name, phone, status, pipeline_stage_id)
-        SELECT 
-            NEW.company_id,
-            COALESCE(v_contact_name, v_contact_push),
-            split_part(NEW.remote_jid, '@', 1),
-            'new',
-            (SELECT id FROM pipeline_stages WHERE company_id = NEW.company_id AND position = 0 LIMIT 1)
-        WHERE NOT EXISTS (
-            SELECT 1 FROM leads WHERE company_id = NEW.company_id AND phone = split_part(NEW.remote_jid, '@', 1)
-        );
-    END IF;
-    RETURN NEW;
-END;
-$function$;
-4. ⚡ Infraestrutura Realtime (Gaming Mode Support)
-Para suportar a arquitetura de "Snapshot + Subscription" sem recarregar a página, as seguintes tabelas possuem REPLICA IDENTITY FULL. Isso obriga o Postgres a enviar o objeto old completo nos eventos de UPDATE/DELETE, permitindo que o Frontend sincronize listas sem refetch.
+## 4. ⚡ Infraestrutura Realtime (Gaming Mode Support)
+Para suportar a arquitetura de "Snapshot + Subscription" sem recarregar a página, as seguintes tabelas possuem **REPLICA IDENTITY FULL**. Isso obriga o Postgres a enviar o objeto `old` completo nos eventos de UPDATE/DELETE, permitindo que o Frontend sincronize listas sem refetch.
 
-SQL
-
+```sql
 ALTER TABLE public.leads REPLICA IDENTITY FULL;
 ALTER TABLE public.pipeline_stages REPLICA IDENTITY FULL;
 ALTER TABLE public.contacts REPLICA IDENTITY FULL;
 ALTER TABLE public.instances REPLICA IDENTITY FULL; -- Necessário para o Sync Indicator
 ALTER TABLE public.messages REPLICA IDENTITY FULL; -- Necessário para o Chat
-5. Políticas de Segurança (RLS) & Performance
-RLS (Row Level Security): Todas as tabelas possuem RLS ativado. O acesso é restrito via company_id. O Backend utiliza a service_role key para ignorar RLS durante processamentos em background (Workers).
+ALTER TABLE public.appointments REPLICA IDENTITY FULL; -- Necessário para o Calendário
+```
 
-Índices Recomendados:
+## 5. Políticas de Segurança (RLS) & Performance
+**RLS (Row Level Security):** Todas as tabelas possuem RLS ativado. O acesso é restrito via `company_id`. O Backend utiliza a `service_role key` para ignorar RLS durante processamentos em background (Workers).
 
-idx_leads_company_id (Vital para Kanban)
-
-idx_leads_pipeline_stage (Vital para filtros de funil)
-
-idx_contacts_company_id
-
-idx_messages_remote_jid_company (Vital para carregar histórico de chat)
-
-idx_agents_company
-
-
-### Atualização v4.2 (Módulo Agenda Híbrida)
-Alterações na tabela `appointments` para suportar tarefas e recorrência.
-* `is_task`: boolean - Diferencia tarefas (checklist) de eventos de tempo.
-* `recurrence_rule`: jsonb - Armazena regras de repetição (RFC 5545 simplificado).
-* `category`: text - Categorização visual.
-* `completed_at`: timestamptz - Data de conclusão para tarefas.
+**Índices Recomendados:**
+* `idx_leads_company_id` (Vital para Kanban)
+* `idx_leads_pipeline_stage` (Vital para filtros de funil)
+* `idx_contacts_company_id`
+* `idx_messages_remote_jid_company` (Vital para carregar histórico de chat)
+* `idx_agents_company`
+* `idx_appointments_worker_lookup` (Vital para o Agenda Worker)

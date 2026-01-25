@@ -2,7 +2,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Smartphone, RefreshCw, Power, Trash2, Wifi, Terminal, MessageCircle, CheckCircle2, Loader2, Plus, RotateCcw } from 'lucide-react';
+import { Smartphone, RefreshCw, Power, Trash2, Wifi, Terminal, MessageCircle, CheckCircle2, Loader2, Plus, RotateCcw, Webhook, Save } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { whatsappService } from '@/services/whatsappService';
 import { Instance } from '@/types';
@@ -13,7 +13,7 @@ import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/input';
 import { createClient } from '@/utils/supabase/client';
 import { QRCodeSVG } from 'qrcode.react';
-import { useRealtimeStore } from '@/store/useRealtimeStore'; // Import Store
+import { useRealtimeStore } from '@/store/useRealtimeStore';
 
 const PLAN_LIMITS = {
   starter: 1,
@@ -24,7 +24,7 @@ const PLAN_LIMITS = {
 export default function ConnectionsPage() {
   const { addToast } = useToast();
   const { company } = useCompany();
-  const { triggerSyncAnimation } = useRealtimeStore(); // Hook do gatilho
+  const { triggerSyncAnimation } = useRealtimeStore();
   const [instances, setInstances] = useState<Instance[]>([]);
   const [loading, setLoading] = useState(true);
   const supabase = createClient();
@@ -33,6 +33,12 @@ export default function ConnectionsPage() {
   const [step, setStep] = useState<'input' | 'initializing' | 'qr_scan' | 'success'>('input');
   const [newSessionName, setNewSessionName] = useState('');
   const [currentInstance, setCurrentInstance] = useState<Instance | null>(null);
+
+  // Webhook Modal State
+  const [isWebhookModalOpen, setIsWebhookModalOpen] = useState(false);
+  const [webhookUrl, setWebhookUrl] = useState('');
+  const [webhookEnabled, setWebhookEnabled] = useState(false);
+  const [editingInstanceId, setEditingInstanceId] = useState<string | null>(null);
 
   const fetchInstances = async () => {
       try {
@@ -58,7 +64,7 @@ export default function ConnectionsPage() {
     return () => { supabase.removeChannel(channel); };
   }, [company?.id, supabase]);
 
-  // --- LÓGICA DE POLLING E QR CODE ---
+  // Polling e QR Code
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -70,25 +76,17 @@ export default function ConnectionsPage() {
     const checkStatus = async () => {
         const status = await whatsappService.getInstanceStatus(currentInstance.session_id);
         if (!status) return;
-
-        // Atualiza estado local
         setCurrentInstance(status);
 
         if (status.status === 'connected') {
             setStep('success');
-            // GATILHO EXPLÍCITO: Força o GlobalSyncIndicator a aparecer AGORA
-            // Não espera WebSocket, não espera delay. É instantâneo.
-            if(status.id) {
-                triggerSyncAnimation(status.id);
-            }
-            
+            if(status.id) triggerSyncAnimation(status.id);
             if (intervalRef.current) clearInterval(intervalRef.current);
         } else if (status.qrcode_url && status.qrcode_url.length > 10) {
             setStep('qr_scan');
         }
     };
 
-    // Check imediato e depois a cada 2s
     checkStatus();
     intervalRef.current = setInterval(checkStatus, 2000);
 
@@ -118,10 +116,8 @@ export default function ConnectionsPage() {
           }
           
           const newInstance = await whatsappService.connectInstance(sessionId, nameToUse);
-          setCurrentInstance(newInstance); // Isso dispara o useEffect de polling
-          
+          setCurrentInstance(newInstance);
       } catch (error: any) {
-          console.error(error);
           addToast({ type: 'error', title: 'Falha', message: error.message });
           setStep('input');
       }
@@ -134,14 +130,37 @@ export default function ConnectionsPage() {
       setCurrentInstance(instance);
       
       try {
-          // Tenta limpar sessão antiga antes de iniciar nova
           await whatsappService.logoutInstance(instance.session_id);
       } catch (e) {}
 
-      // Pequeno delay para garantir que o backend limpou a sessão
       setTimeout(() => {
           handleStartProtocol(instance.name, instance.session_id);
       }, 1000);
+  };
+
+  const openWebhookModal = async (instance: Instance) => {
+      // Fetch fresh data
+      const { data } = await supabase.from('instances').select('webhook_url, webhook_enabled').eq('id', instance.id).single();
+      setWebhookUrl(data?.webhook_url || '');
+      setWebhookEnabled(data?.webhook_enabled || false);
+      setEditingInstanceId(instance.id);
+      setIsWebhookModalOpen(true);
+  };
+
+  const saveWebhook = async () => {
+      if(!editingInstanceId) return;
+      
+      const { error } = await supabase.from('instances').update({
+          webhook_url: webhookUrl,
+          webhook_enabled: webhookEnabled
+      }).eq('id', editingInstanceId);
+
+      if (error) {
+          addToast({ type: 'error', title: 'Erro', message: 'Falha ao salvar webhook.' });
+      } else {
+          addToast({ type: 'success', title: 'Salvo', message: 'Configuração de webhook atualizada.' });
+          setIsWebhookModalOpen(false);
+      }
   };
 
   const limit = PLAN_LIMITS[(company?.plan as keyof typeof PLAN_LIMITS) || 'starter'] || 1;
@@ -184,6 +203,7 @@ export default function ConnectionsPage() {
                 instance={instance} 
                 refresh={fetchInstances} 
                 onRestart={() => handleRestart(instance)}
+                onWebhook={() => openWebhookModal(instance)}
             />
         ))}
 
@@ -200,15 +220,11 @@ export default function ConnectionsPage() {
         ))}
       </div>
 
+      {/* MODAL DE CONEXÃO (QR CODE) */}
       <Modal 
         isOpen={isModalOpen} 
         onClose={() => setIsModalOpen(false)} 
-        title={
-            step === 'input' ? "Nova Conexão" : 
-            step === 'success' ? "Conexão Estabelecida" :
-            step === 'qr_scan' ? "Escaneie o QR Code" :
-            `Conectando: ${newSessionName}`
-        }
+        title={step === 'input' ? "Nova Conexão" : step === 'success' ? "Conexão Estabelecida" : step === 'qr_scan' ? "Escaneie o QR Code" : `Conectando: ${newSessionName}`}
         maxWidth="md"
       >
           <div className="min-h-[350px] flex flex-col justify-center">
@@ -251,71 +267,96 @@ export default function ConnectionsPage() {
                               O sistema está preparando a instância segura do WhatsApp. O QR Code aparecerá em instantes.
                           </p>
                       </div>
-                      <div className="w-full bg-zinc-900/50 rounded-full h-1.5 overflow-hidden max-w-[200px]">
-                          <div className="h-full bg-primary animate-progress-indeterminate"></div>
-                      </div>
                   </div>
               )}
 
               {step === 'qr_scan' && currentInstance?.qrcode_url && (
                   <div className="flex flex-col items-center text-center space-y-6 animate-in fade-in slide-in-from-bottom-4">
                       <div className="relative group p-4 bg-white rounded-xl shadow-[0_0_40px_rgba(34,197,94,0.2)]">
-                          <QRCodeSVG
-                              value={currentInstance.qrcode_url}
-                              size={220}
-                              level={"L"}
-                              includeMargin={true}
-                              className="w-56 h-56 object-contain"
-                          />
+                          <QRCodeSVG value={currentInstance.qrcode_url} size={220} level={"L"} includeMargin={true} />
                           <div className="absolute top-0 left-0 w-full h-1 bg-red-500 shadow-[0_0_15px_rgba(239,68,68,0.8)] animate-scan"></div>
                       </div>
                       <div>
                           <h3 className="text-lg font-bold text-white mb-1">Abra seu WhatsApp e Escaneie</h3>
                           <div className="text-zinc-500 text-xs font-mono bg-zinc-900 px-3 py-2 rounded mt-2 inline-block text-left">
-                              1. Toque em <strong>Mais opções</strong> (Android) ou <strong>Configurações</strong> (iOS)<br/>
-                              2. Toque em <strong>Aparelhos conectados</strong><br/>
-                              3. Toque em <strong>Conectar um aparelho</strong>
+                              1. Configurações (iOS) ou Mais Opções (Android)<br/>
+                              2. Aparelhos conectados > Conectar um aparelho
                           </div>
-                      </div>
-                      <div className="flex items-center gap-2 text-yellow-500 text-sm font-bold animate-pulse">
-                          <RefreshCw className="w-4 h-4 animate-spin" /> Sincronizando com WhatsApp...
                       </div>
                   </div>
               )}
 
               {step === 'success' && (
                   <div className="flex flex-col items-center text-center space-y-6 animate-in zoom-in duration-500">
-                      <div className="w-24 h-24 bg-green-500/10 rounded-full flex items-center justify-center border border-green-500/50 shadow-[0_0_50px_rgba(34,197,94,0.3)]">
+                      <div className="w-24 h-24 bg-green-500/10 rounded-full flex items-center justify-center border border-green-500/50">
                           <CheckCircle2 className="w-12 h-12 text-green-500" />
                       </div>
                       <div>
-                          <h3 className="text-2xl font-bold text-white">Sincronizado com Sucesso!</h3>
-                          <p className="text-zinc-400 mt-2">
-                              A instância <strong>{currentInstance?.name}</strong> está online.<br/>
-                              Iniciando importação de histórico...
-                          </p>
+                          <h3 className="text-2xl font-bold text-white">Sincronizado!</h3>
+                          <p className="text-zinc-400 mt-2">A instância está online.</p>
                       </div>
-                      <Button onClick={() => { setIsModalOpen(false); fetchInstances(); }} className="bg-zinc-800 hover:bg-zinc-700 text-white min-w-[150px]">
-                          Fechar Janela
-                      </Button>
+                      <Button onClick={() => { setIsModalOpen(false); fetchInstances(); }} className="bg-zinc-800 text-white min-w-[150px]">Fechar</Button>
                   </div>
               )}
+          </div>
+      </Modal>
+
+      {/* MODAL DE WEBHOOK */}
+      <Modal 
+        isOpen={isWebhookModalOpen} 
+        onClose={() => setIsWebhookModalOpen(false)} 
+        title="Configuração de Webhook"
+        maxWidth="md"
+      >
+          <div className="space-y-6 py-2">
+              <div className="bg-zinc-900/50 p-4 rounded-lg border border-zinc-800 text-sm text-zinc-400 leading-relaxed">
+                  <p className="mb-2"><strong className="text-white">Integração Externa:</strong> Envie notificações de novas mensagens para outros sistemas (n8n, Typebot, Zapier).</p>
+                  <p className="text-xs font-mono bg-zinc-950 p-2 rounded border border-zinc-800">
+                      POST Payload: {"{"} event: "message.upsert", data: {"{"} ...msg {"}"} {"}"}
+                  </p>
+              </div>
+
+              <div>
+                  <label className="text-xs font-bold text-zinc-500 uppercase mb-2 block">URL de Destino (Endpoint)</label>
+                  <Input 
+                      value={webhookUrl} 
+                      onChange={e => setWebhookUrl(e.target.value)} 
+                      placeholder="https://seu-n8n.com/webhook/..." 
+                      className="bg-zinc-950 border-zinc-800"
+                  />
+              </div>
+
+              <div className="flex items-center justify-between bg-zinc-900 p-3 rounded-lg border border-zinc-800">
+                  <span className="text-sm font-medium text-white">Ativar Webhook</span>
+                  <div 
+                      onClick={() => setWebhookEnabled(!webhookEnabled)}
+                      className={cn("w-10 h-5 rounded-full relative cursor-pointer transition-colors", webhookEnabled ? "bg-green-600" : "bg-zinc-700")}
+                  >
+                      <div className={cn("absolute top-1 w-3 h-3 bg-white rounded-full transition-all", webhookEnabled ? "left-6" : "left-1")} />
+                  </div>
+              </div>
+
+              <div className="flex justify-end pt-4">
+                  <Button onClick={saveWebhook} className="bg-primary hover:bg-primary/90 text-white">
+                      <Save className="w-4 h-4 mr-2" /> Salvar Configuração
+                  </Button>
+              </div>
           </div>
       </Modal>
     </div>
   );
 }
 
-const ConnectionCard: React.FC<{ instance: Instance, refresh: () => void, onRestart: () => void }> = ({ instance, refresh, onRestart }) => {
+const ConnectionCard: React.FC<{ instance: Instance, refresh: () => void, onRestart: () => void, onWebhook: () => void }> = ({ instance, refresh, onRestart, onWebhook }) => {
     const { addToast } = useToast();
     const [loadingAction, setLoadingAction] = useState(false);
     
     const handleDelete = async () => {
-        if (!confirm(`TEM CERTEZA? Isso excluirá a instância "${instance.name}" e desconectará o WhatsApp.`)) return;
+        if (!confirm(`TEM CERTEZA? Isso excluirá a instância e desconectará o WhatsApp.`)) return;
         setLoadingAction(true);
         try {
             await whatsappService.deleteInstance(instance.session_id);
-            addToast({ type: 'success', title: 'Excluído', message: 'Instância removida com sucesso.' });
+            addToast({ type: 'success', title: 'Excluído', message: 'Instância removida.' });
             refresh();
         } catch (e: any) {
             addToast({ type: 'error', title: 'Erro', message: e.message });
@@ -325,7 +366,7 @@ const ConnectionCard: React.FC<{ instance: Instance, refresh: () => void, onRest
     };
 
     const handleLogout = async () => {
-         if (!confirm(`Desconectar sessão do WhatsApp?`)) return;
+         if (!confirm(`Desconectar sessão?`)) return;
          setLoadingAction(true);
          try {
              await whatsappService.logoutInstance(instance.session_id);
@@ -362,6 +403,17 @@ const ConnectionCard: React.FC<{ instance: Instance, refresh: () => void, onRest
             </div>
             
             <div className="flex gap-2">
+                <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    onClick={onWebhook}
+                    disabled={loadingAction}
+                    className="hover:bg-purple-500/10 hover:text-purple-500" 
+                    title="Configurar Webhook"
+                >
+                    <Webhook className="w-5 h-5" />
+                </Button>
+
                 {instance.status !== 'connected' && (
                     <Button 
                         variant="ghost" 
@@ -369,7 +421,7 @@ const ConnectionCard: React.FC<{ instance: Instance, refresh: () => void, onRest
                         onClick={onRestart} 
                         disabled={loadingAction} 
                         className="bg-blue-500/10 text-blue-500 hover:bg-blue-500/20 hover:text-blue-400 border border-blue-500/20" 
-                        title="Reiniciar Conexão / Gerar QR Code"
+                        title="Reiniciar Conexão"
                     >
                         <RotateCcw className="w-5 h-5" />
                     </Button>
@@ -381,7 +433,7 @@ const ConnectionCard: React.FC<{ instance: Instance, refresh: () => void, onRest
                     </Button>
                 )}
                 
-                <Button variant="ghost" size="icon" onClick={handleDelete} disabled={loadingAction} className="hover:bg-red-500/10 hover:text-red-500" title="Excluir Instância">
+                <Button variant="ghost" size="icon" onClick={handleDelete} disabled={loadingAction} className="hover:bg-red-500/10 hover:text-red-500" title="Excluir">
                     {loadingAction ? <Loader2 className="w-5 h-5 animate-spin" /> : <Trash2 className="w-5 h-5" />}
                 </Button>
             </div>

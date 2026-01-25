@@ -1,4 +1,3 @@
-
 {
   "name": "wancora-crm-next",
   "version": "3.0.0",
@@ -16,6 +15,7 @@
     "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.47.10",
     "@tanstack/react-query": "^5.62.8",
+    "axios": "^1.6.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",

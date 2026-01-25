@@ -1,3 +1,4 @@
+
 import { create } from 'zustand';
 import { ChatContact, Message, Lead, Instance } from '@/types';
 
@@ -17,6 +18,9 @@ interface ChatState {
   isMsgSelectionMode: boolean;
   selectedMsgIds: Set<string>;
   replyToMessage: Message | null;
+  
+  // Novo: Indicador de Digitação
+  isTyping: boolean;
 
   // Actions
   setActiveContact: (contact: ChatContact | null) => void;
@@ -35,6 +39,9 @@ interface ChatState {
   
   // Reply Actions
   setReplyToMessage: (message: Message | null) => void;
+  
+  // Typing Action
+  setTyping: (isTyping: boolean) => void;
 }
 
 export const useChatStore = create<ChatState>((set) => ({
@@ -48,8 +55,9 @@ export const useChatStore = create<ChatState>((set) => ({
   isMsgSelectionMode: false,
   selectedMsgIds: new Set(),
   replyToMessage: null,
+  isTyping: false,
 
-  setActiveContact: (contact) => set({ activeContact: contact, isMsgSelectionMode: false, selectedMsgIds: new Set(), replyToMessage: null }),
+  setActiveContact: (contact) => set({ activeContact: contact, isMsgSelectionMode: false, selectedMsgIds: new Set(), replyToMessage: null, isTyping: false }),
   setActiveLead: (lead) => set({ activeLead: lead }),
   setSelectedInstance: (instance) => set({ selectedInstance: instance }),
   
@@ -82,4 +90,6 @@ export const useChatStore = create<ChatState>((set) => ({
   clearSelection: () => set({ isMsgSelectionMode: false, selectedMsgIds: new Set() }),
   
   setReplyToMessage: (message) => set({ replyToMessage: message }),
+  
+  setTyping: (isTyping) => set({ isTyping }),
 }));

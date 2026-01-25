@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useEffect } from 'react';
@@ -29,13 +30,11 @@ export default function ChatPage() {
   } = useChatStore();
 
   // --- AUTO-SELECT INSTANCE ---
-  // Seleciona automaticamente a primeira instância disponível para garantir que o chat funcione
   useEffect(() => {
       if (!selectedInstance && instances.length > 0) {
           const connected = instances.find(i => i.status === 'connected') || instances[0];
           if (connected) setSelectedInstance(connected);
       }
-      // Se a instância selecionada sumiu (foi deletada), seleciona outra
       if (selectedInstance && instances.length > 0 && !instances.find(i => i.session_id === selectedInstance.session_id)) {
           const connected = instances.find(i => i.status === 'connected') || instances[0];
           setSelectedInstance(connected || null);
@@ -43,7 +42,6 @@ export default function ChatPage() {
   }, [instances, selectedInstance, setSelectedInstance]);
 
   // --- IDENTITY UNIFICATION (LID) ---
-  // Mantém a lógica de unificar contatos duplicados em background
   const linkIdentity = async (lidJid: string, phoneJid: string) => {
       if (!user?.company_id) return;
       try {
@@ -56,7 +54,6 @@ export default function ChatPage() {
   };
 
   // --- REALTIME LISTENERS (CORE) ---
-  // Atualiza dados do Lead quando o contato muda
   useEffect(() => {
       if(!activeContact || !user?.company_id) {
           setActiveLead(null);
@@ -70,7 +67,6 @@ export default function ChatPage() {
       refreshLead();
   }, [activeContact?.id, user?.company_id]);
 
-  // Escuta novas mensagens em Tempo Real
   useEffect(() => {
       if (!user?.company_id) return;
 
@@ -79,15 +75,12 @@ export default function ChatPage() {
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `company_id=eq.${user.company_id}` }, async (payload) => {
             const newMessage = payload.new as Message;
             
-            // Lógica de LID (Background)
             if (activeContact && newMessage.remote_jid.includes('@lid') && activeContact.remote_jid.includes('@s.whatsapp.net')) {
                 await linkIdentity(newMessage.remote_jid, activeContact.remote_jid);
             }
 
-            // Injeta mensagem na tela SE for do contato ativo (Instantâneo)
             if (activeContact && (newMessage.remote_jid === activeContact.remote_jid || newMessage.remote_jid.includes('@lid'))) {
                 addMessage(newMessage);
-                // Zera contador visualmente
                 if (!newMessage.from_me) {
                     supabase.from('contacts').update({ unread_count: 0 }).eq('jid', activeContact.remote_jid).eq('company_id', user.company_id);
                 }
@@ -95,7 +88,6 @@ export default function ChatPage() {
         })
         .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages', filter: `company_id=eq.${user.company_id}` }, async (payload) => {
             const updatedMessage = payload.new as Message;
-            // Atualiza status (ex: lido/entregue) em tempo real
             if (activeContact && updatedMessage.remote_jid === activeContact.remote_jid) {
                 setMessages(prev => prev.map(m => m.id === updatedMessage.id ? updatedMessage : m));
             }
@@ -112,14 +104,15 @@ export default function ChatPage() {
       setActiveLead(lead);
   };
 
+  // MOBILE FIX: Use h-dvh e pb-safe para lidar com barras de navegação do iPhone
   return (
-    <div className="flex h-[calc(100vh-6rem)] md:h-[calc(100vh-4rem)] rounded-xl border border-zinc-800 bg-zinc-950/50 overflow-hidden shadow-2xl animate-in fade-in duration-300 relative">
+    <div className="flex h-[calc(100vh-6rem)] md:h-[calc(100vh-4rem)] h-dvh md:h-[calc(100dvh-4rem)] rounded-xl border border-zinc-800 bg-zinc-950/50 overflow-hidden shadow-2xl animate-in fade-in duration-300 relative">
       
       {/* 1. LISTA LATERAL (Inbox) */}
       <ChatListSidebar />
 
       {/* 2. ÁREA PRINCIPAL (Chat ou Empty State) */}
-      <div className={cn("flex-1 flex-col bg-[#09090b] relative", activeContact ? "flex" : "hidden md:flex")}>
+      <div className={cn("flex-1 flex-col bg-[#09090b] relative pb-safe", activeContact ? "flex" : "hidden md:flex")}>
         {activeContact && selectedInstance ? (
             // MODO CHAT ATIVO: Renderização Direta e Limpa
             <>
@@ -128,7 +121,7 @@ export default function ChatPage() {
                 <ChatInputArea />
             </>
         ) : (
-            // MODO EMPTY STATE: Apenas um placeholder estático, sem spinners de "carregando"
+            // MODO EMPTY STATE
             <div className="flex h-full items-center justify-center flex-col text-zinc-500 bg-zinc-950/20 p-4 text-center select-none">
                 {selectedInstance ? (
                     <>
