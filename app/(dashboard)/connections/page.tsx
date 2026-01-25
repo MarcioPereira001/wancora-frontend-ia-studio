@@ -280,7 +280,7 @@ export default function ConnectionsPage() {
                           <h3 className="text-lg font-bold text-white mb-1">Abra seu WhatsApp e Escaneie</h3>
                           <div className="text-zinc-500 text-xs font-mono bg-zinc-900 px-3 py-2 rounded mt-2 inline-block text-left">
                               1. Configurações (iOS) ou Mais Opções (Android)<br/>
-                              2. Aparelhos conectados > Conectar um aparelho
+                              2. Aparelhos conectados &gt; Conectar um aparelho
                           </div>
                       </div>
                   </div>
