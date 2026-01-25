@@ -338,13 +338,11 @@ export function MessageContent({ message }: MessageContentProps) {
     const totalVotes = votes.length;
     const votesPerOption = new Map<number, number>();
     
-    // Simplificação de 'Meu Voto'
-    // Como o backend não manda 'me' no voto, e sim o JID, precisaremos assumir que não sabemos qual é o nosso se não tivermos nosso JID
-    // Mas visualmente, podemos destacar se votamos (estado local votingOptionId ajuda no feedback imediato)
-    
     votes.forEach(v => {
-        const current = votesPerOption.get(v.optionId) || 0;
-        votesPerOption.set(v.optionId, current + 1);
+        // Garantir que optionId é numérico
+        const optId = Number(v.optionId);
+        const current = votesPerOption.get(optId) || 0;
+        votesPerOption.set(optId, current + 1);
     });
 
     const isMultiple = pollData.selectableOptionsCount > 1;
@@ -369,21 +367,15 @@ export function MessageContent({ message }: MessageContentProps) {
                     const percentage = totalVotes > 0 ? Math.round((voteCount / totalVotes) * 100) : 0;
                     const isVoting = votingOptionId === idx;
                     
-                    // Verifica se eu votei (simplificado, já que não temos meu JID no contexto fácil aqui)
-                    // O ideal seria passar user.id/phone para cá, mas vamos usar o estado local de clique como feedback
-                    const isMyVote = false; 
-
                     return (
                         <div key={idx} className="relative group cursor-pointer" onClick={() => handleVote(idx)}>
                             <div className="flex items-center justify-between mb-1 relative z-10">
                                 <div className="flex items-center gap-3 flex-1">
                                     <div className={cn(
                                         "w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors",
-                                        isMyVote 
-                                            ? "border-green-500 bg-green-500 text-black" 
-                                            : "border-zinc-500 text-transparent group-hover:border-zinc-400"
+                                        "border-zinc-500 text-transparent group-hover:border-zinc-400"
                                     )}>
-                                        {isVoting ? <Loader2 className="w-3 h-3 animate-spin text-white" /> : isMyVote && <Check className="w-3 h-3" />}
+                                        {isVoting && <Loader2 className="w-3 h-3 animate-spin text-white" />}
                                     </div>
                                     <span className="text-sm text-zinc-200 font-medium">{opt}</span>
                                 </div>
