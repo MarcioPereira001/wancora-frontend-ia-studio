@@ -41,18 +41,19 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
-  // Status Icon Logic (Realtime Update)
+  // Status Icon Logic (Realtime Update - Garantido)
   const renderStatusIcon = () => {
     if (!isMe) return null;
 
     const status = message.status;
     const iconClass = "w-[15px] h-[15px]"; 
 
-    // Mapeamento visual estrito
+    // Mapeamento visual estrito com base nas cores do WhatsApp e status do Baileys
     if (status === 'sending') return <Clock className={cn(iconClass, "text-zinc-400")} />;
     if (status === 'sent') return <Check className={cn(iconClass, "text-zinc-400")} />;
-    if (status === 'delivered') return <CheckCheck className={cn(iconClass, "text-zinc-400")} />;
-    // Prioridade máxima para status lido
+    if (status === 'delivered') return <CheckCheck className={cn(iconClass, "text-zinc-400")} />; // 2 Checks Cinza
+    
+    // Status Lido = 2 Checks Azuis (Cyan/Blue)
     if (status === 'read' || status === 'played') return <CheckCheck className={cn(iconClass, "text-blue-400")} />;
 
     // Fallback padrão (Enviado)
@@ -100,11 +101,14 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
       return (now - msgTime) < REVOKE_WINDOW_MS;
   };
 
-  // Agrupamento de Reações
+  // Agrupamento de Reações (Correção Visual e Safety Check)
   const reactions: any[] = (message as any).reactions || [];
   const groupedReactions = React.useMemo(() => {
+      if(!Array.isArray(reactions)) return [];
       const counts: Record<string, number> = {};
-      reactions.forEach(r => { counts[r.text] = (counts[r.text] || 0) + 1; });
+      reactions.forEach(r => { 
+          if(r.text) counts[r.text] = (counts[r.text] || 0) + 1; 
+      });
       return Object.entries(counts).sort((a,b) => b[1] - a[1]);
   }, [reactions]);
 
@@ -226,8 +230,8 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
                 )}>
                     <div className="flex items-center bg-zinc-900 border border-zinc-700 rounded-full px-1.5 py-0.5 shadow-md scale-90 hover:scale-105 transition-transform cursor-pointer gap-1">
                         {groupedReactions.map(([emoji, count], i) => (
-                            <span key={i} className="text-[11px] flex items-center">
-                                {emoji} {count > 1 && <span className="text-[9px] text-zinc-400 ml-0.5">{count}</span>}
+                            <span key={i} className="text-[11px] flex items-center text-white">
+                                {emoji} {count > 1 && <span className="text-[9px] text-zinc-400 ml-0.5 font-mono">{count}</span>}
                             </span>
                         ))}
                     </div>

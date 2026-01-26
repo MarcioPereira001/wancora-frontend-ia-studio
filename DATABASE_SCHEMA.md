@@ -58,6 +58,8 @@ A entidade de negócio principal.
 * `appointment_status`: text
 * `type`: text ('b2c', 'b2b')
 * `bot_status`: text ('active', 'paused', 'off')
+* `reactions`: jsonb (Default: '[]')
+* `poll_votes`: jsonb (Default: '[]')
 
 ### `messages` (Chat)
 Histórico de mensagens.

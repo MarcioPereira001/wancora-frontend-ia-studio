@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect } from 'react';
-import { ArrowLeft, User, Users, MoreVertical, CheckSquare, Trash2, Clock } from 'lucide-react';
+import { ArrowLeft, User, Users, MoreVertical, CheckSquare, Trash2 } from 'lucide-react';
 import { useChatStore } from '@/store/useChatStore';
 import { Button } from '@/components/ui/button';
 import { cleanJid } from '@/lib/utils';
@@ -20,6 +20,7 @@ export function ChatHeader() {
   useEffect(() => {
       if (!activeContact || !user?.company_id) return;
 
+      // 1. Busca estado inicial
       const fetchStatus = async () => {
           const { data } = await supabase
               .from('contacts')
@@ -33,9 +34,9 @@ export function ChatHeader() {
               setLastSeen(data.last_seen_at);
           }
       };
-
       fetchStatus();
 
+      // 2. Inscreve no canal de mudança (Realtime)
       const channel = supabase.channel(`contact-presence:${activeContact.remote_jid}`)
           .on('postgres_changes', { 
               event: 'UPDATE', 
@@ -47,8 +48,7 @@ export function ChatHeader() {
                   setIsOnline(payload.new.is_online);
                   setLastSeen(payload.new.last_seen_at);
                   
-                  // Simula "Digitando..." brevemente se status mudou para online recentemente e é uma atualização relevante
-                  // (Nota: Backend não salva composing, mas a presença é um bom proxy)
+                  // Se ficou online, simula "digitando" por 3s para dar feedback visual
                   if (payload.new.is_online && !isOnline) {
                       setTyping(true);
                       setTimeout(() => setTyping(false), 3000);
@@ -62,7 +62,6 @@ export function ChatHeader() {
 
   if (!activeContact) return null;
 
-  // SAFE RENDER
   const displayName = activeContact.name || activeContact.push_name || activeContact.phone_number || "Desconhecido";
 
   const formatLastSeen = (dateStr: string) => {
@@ -77,7 +76,6 @@ export function ChatHeader() {
 
   return (
     <div className="h-16 border-b border-zinc-800 flex items-center justify-between px-4 md:px-6 bg-zinc-900/50 backdrop-blur-md z-10 shrink-0 relative">
-        {/* Efeito Glow Sutil no Header quando Online */}
         {isOnline && <div className="absolute inset-0 bg-green-500/5 pointer-events-none" />}
 
         <div className="flex items-center gap-3 relative z-10">
@@ -88,7 +86,6 @@ export function ChatHeader() {
                     ) : (
                         activeContact.is_group ? <Users className="w-5 h-5 text-zinc-500" /> : <User className="w-5 h-5 text-zinc-500" />
                     )}
-                    {/* Online Dot */}
                     {isOnline && !activeContact.is_group && (
                         <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-zinc-900 animate-pulse"></div>
                     )}
