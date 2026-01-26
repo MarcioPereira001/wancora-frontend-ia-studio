@@ -1,7 +1,7 @@
 
 export interface Appointment {
   id: string;
-  company_id: string; // Adicionado para segurança Multi-Tenant
+  company_id: string;
   lead_id?: string;
   user_id: string;
   title: string;
@@ -75,6 +75,12 @@ export interface Company {
   name: string;
   plan: 'starter' | 'pro' | 'scale';
   status: 'active' | 'inactive' | 'trial';
+  ai_config?: {
+      provider: string;
+      apiKey: string;
+      model: string;
+      updatedAt?: string;
+  };
   created_at?: string;
 }
 
@@ -135,6 +141,8 @@ export interface Message {
   message_type: string;
   status: 'sending' | 'sent' | 'delivered' | 'read' | 'failed' | 'received' | 'played';
   created_at: string;
+  delivered_at?: string;
+  read_at?: string;
   session_id: string;
   company_id: string;
   media_url?: string;
@@ -143,8 +151,10 @@ export interface Message {
     push_name?: string;
   };
   poll_votes?: any[];
+  reactions?: any[];
   whatsapp_id?: string;
   lead_id?: string | null;
+  is_deleted?: boolean;
 }
 
 export interface Pipeline {
@@ -184,6 +194,7 @@ export interface Lead {
   deadline?: string | null;
   bot_status?: 'active' | 'paused' | 'off';
   lead_score?: number;
+  custom_data?: any;
 }
 
 export interface KanbanColumn {
@@ -212,6 +223,8 @@ export interface ChatContact {
   is_muted?: boolean;
   is_group?: boolean;
   updated_at?: string;
+  is_online?: boolean;
+  last_seen_at?: string;
 }
 
 export interface TeamMember {
