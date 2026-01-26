@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState } from 'react';
@@ -16,27 +15,35 @@ export function PollBubble({ message, isMe }: PollBubbleProps) {
   const { addToast } = useToast();
   const [votingOptionId, setVotingOptionId] = useState<number | null>(null);
 
-  // Parse Content
+  // Parse Content com fallback seguro
   let pollData = { name: 'Enquete', options: [], selectableOptionsCount: 1 };
   try {
       const content = message.content || message.body;
-      pollData = typeof content === 'string' && content.startsWith('{') ? JSON.parse(content) : { name: content, options: [] };
+      if (typeof content === 'string' && content.startsWith('{')) {
+          pollData = JSON.parse(content);
+      } else if (typeof content === 'object') {
+          pollData = content;
+      }
   } catch (e) {
-      pollData.name = message.content || "Enquete";
+      pollData.name = "Erro ao carregar enquete";
   }
 
-  // Calcula estatísticas
-  const votes = message.poll_votes || [];
+  // Lógica de Contagem de Votos (Agregação Local)
+  // O backend salva: [{ voterJid: '...', optionId: 0 }, ...]
+  const votes = Array.isArray(message.poll_votes) ? message.poll_votes : [];
   const totalVotes = votes.length;
   const votesPerOption = new Map<number, number>();
   
   votes.forEach((v: any) => {
+      // Garante que optionId seja tratado como número
       const optId = Number(v.optionId);
-      const current = votesPerOption.get(optId) || 0;
-      votesPerOption.set(optId, current + 1);
+      if (!isNaN(optId)) {
+          const current = votesPerOption.get(optId) || 0;
+          votesPerOption.set(optId, current + 1);
+      }
   });
 
-  const isMultiple = pollData.selectableOptionsCount > 1;
+  const isMultiple = (pollData.selectableOptionsCount || 1) > 1;
 
   // Handler de Voto
   const handleVote = async (optionId: number) => {
@@ -44,7 +51,6 @@ export function PollBubble({ message, isMe }: PollBubbleProps) {
       setVotingOptionId(optionId);
       
       try {
-          // Optimistic UI é tratada pelo Realtime do pai, aqui só enviamos
           await api.post('/message/vote', {
               companyId: message.company_id,
               sessionId: message.session_id,
@@ -54,12 +60,13 @@ export function PollBubble({ message, isMe }: PollBubbleProps) {
           });
           addToast({ type: 'success', title: 'Voto Computado', message: 'Sua opinião foi registrada.' });
       } catch (error) {
+          console.error(error);
           addToast({ type: 'error', title: 'Erro', message: 'Falha ao votar.' });
           setVotingOptionId(null);
       }
       
-      // Delay para resetar loading local (aguardando socket voltar)
-      setTimeout(() => setVotingOptionId(null), 2000); 
+      // Delay visual para feedback
+      setTimeout(() => setVotingOptionId(null), 1500); 
   };
 
   return (
@@ -94,7 +101,9 @@ export function PollBubble({ message, isMe }: PollBubbleProps) {
                                   </div>
                                   <span className="text-sm text-zinc-200 font-medium truncate pr-2">{opt}</span>
                               </div>
-                              <span className="text-xs text-zinc-500 font-mono font-bold">{voteCount > 0 && `${percentage}%`}</span>
+                              <span className="text-xs text-zinc-500 font-mono font-bold">
+                                  {voteCount} ({percentage}%)
+                              </span>
                           </div>
                           
                           {/* Progress Bar Container */}
@@ -112,11 +121,8 @@ export function PollBubble({ message, isMe }: PollBubbleProps) {
           {/* Footer */}
           <div className="pt-3 border-t border-white/5 flex justify-between items-center">
               <span className="text-[10px] text-zinc-500">
-                  {totalVotes} voto{totalVotes !== 1 && 's'}
+                  Total: {totalVotes} voto{totalVotes !== 1 && 's'}
               </span>
-              <button className="text-zinc-400 text-xs font-bold hover:text-white transition-colors">
-                  Ver Detalhes
-              </button>
           </div>
       </div>
   );

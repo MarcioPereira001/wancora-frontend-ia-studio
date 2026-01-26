@@ -212,6 +212,15 @@ Este worker é responsável por processar as regras de aviso configuradas na tab
     4.  **Disparo:** Se o horário atual bater com a regra ( `start_time - time_amount`), envia a mensagem via `whatsappController`.
     5.  **Idempotência:** Marca o agendamento como notificado (`reminder_sent = true`) para evitar spam.
 
+### 4.6. AI Sentinel & BYOK Architecture
+O serviço de inteligência (`sentinel.js`) implementa uma estratégia de resolução de credenciais em tempo de execução para suportar Multi-Tenant real:
+
+1.  **Context Load:** Ao processar uma mensagem, o sistema identifica o `company_id`.
+2.  **Key Resolution Strategy:**
+    *   **Prioridade 1 (Tenant):** Busca `companies.ai_config->apiKey`. Se existir, instancia um cliente Gemini exclusivo para aquela requisição.
+    *   **Prioridade 2 (System):** Se não houver chave na empresa, utiliza `process.env.API_KEY` como fallback global.
+3.  **Isolation:** Instâncias de clientes IA são cacheadas em memória (`Map<apiKey, Client>`) para performance, mas isoladas logicamente.
+
 * **Gatilhos Imediatos (`on_booking`):**
     *   Devem ser disparados via **Database Webhook** ou processados imediatamente após a inserção do agendamento, sem esperar o Cron.
 ---

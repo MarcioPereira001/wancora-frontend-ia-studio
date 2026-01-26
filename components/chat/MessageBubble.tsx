@@ -41,18 +41,21 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
-  // Status Icon Logic (Realtime - The Hammer)
+  // Status Icon Logic (Realtime Update)
   const renderStatusIcon = () => {
     if (!isMe) return null;
 
     const status = message.status;
     const iconClass = "w-[15px] h-[15px]"; 
 
+    // Mapeamento visual estrito
     if (status === 'sending') return <Clock className={cn(iconClass, "text-zinc-400")} />;
     if (status === 'sent') return <Check className={cn(iconClass, "text-zinc-400")} />;
     if (status === 'delivered') return <CheckCheck className={cn(iconClass, "text-zinc-400")} />;
-    if (status === 'read' || status === 'played' || (message as any).read_at) return <CheckCheck className={cn(iconClass, "text-blue-400")} />;
+    // Prioridade máxima para status lido
+    if (status === 'read' || status === 'played') return <CheckCheck className={cn(iconClass, "text-blue-400")} />;
 
+    // Fallback padrão (Enviado)
     return <Check className={cn(iconClass, "text-zinc-400")} />;
   };
 

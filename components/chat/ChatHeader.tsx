@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useEffect } from 'react';
@@ -48,8 +47,8 @@ export function ChatHeader() {
                   setIsOnline(payload.new.is_online);
                   setLastSeen(payload.new.last_seen_at);
                   
-                  // Simula "Digitando..." brevemente se status mudou para online recentemente
-                  // (Solução visual tática já que o backend não salva 'composing' no banco)
+                  // Simula "Digitando..." brevemente se status mudou para online recentemente e é uma atualização relevante
+                  // (Nota: Backend não salva composing, mas a presença é um bom proxy)
                   if (payload.new.is_online && !isOnline) {
                       setTyping(true);
                       setTimeout(() => setTyping(false), 3000);
@@ -59,7 +58,7 @@ export function ChatHeader() {
           .subscribe();
 
       return () => { supabase.removeChannel(channel); };
-  }, [activeContact, user?.company_id]);
+  }, [activeContact?.id, user?.company_id]);
 
   if (!activeContact) return null;
 

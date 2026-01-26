@@ -5,6 +5,15 @@ Este documento define a estrutura oficial do Banco de Dados Supabase (PostgreSQL
 
 ## 1. Tabelas Core
 
+### `companies` (Tenants)
+Tabela mestre das organizações.
+* `id`: uuid (PK)
+* `name`: text
+* `plan`: text
+* `status`: text
+* `ai_config`: jsonb (Default: '{}') - Armazena configurações de IA por empresa.
+ * Estrutura: `{ "provider": "gemini", "apiKey": "...", "model": "gemini-3-flash-preview" }`
+
 ### `instances` (Conexões)
 Gerencia o estado físico da conexão com o WhatsApp.
 * `id`: uuid (PK)

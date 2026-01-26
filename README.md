@@ -22,7 +22,7 @@ O Wancora CRM é um Sistema Operacional de Vendas para WhatsApp. Diferente de fe
 
 ### A. O Frontend (Next.js 15 + React 19)
 Atualizado para a arquitetura mais moderna e segura do React.
-* **AI Security (Server Actions):** Toda a comunicação com LLMs (Gemini) é feita exclusivamente via **Next.js Server Actions** (`app/actions/gemini.ts`). Isso garante que a `API_KEY` do Google nunca seja exposta no bundle do cliente (browser), prevenindo vazamento de credenciais.
+* **AI Security:** As chaves de API configuradas no Frontend são salvas diretamente no banco (`companies.ai_config`) e **nunca** expostas em variáveis de ambiente do navegador. O Backend consome essas chaves de forma segura server-side.
 * **Framework:** Next.js 15.1.3 (App Router).
 * **UI Library:** React 19 + TailwindCSS + Shadcn/UI.
 * **Data Fetching:** TanStack Query v5 (Gerenciamento de cache e estado assíncrono).
@@ -210,6 +210,10 @@ Agora possui navegação por **Abas** para organizar a densidade de informaçõe
 * **Gestão de Personas:** Interface dedicada (`/agents`) para configurar o "System Prompt" e "Base de Conhecimento".
 * **Simulador (Sandbox):** Chat de teste integrado para validar as respostas do Agente antes de ativá-lo em produção.
 * **Otimizador de Prompt:** Função de IA que reescreve instruções do usuário para torná-las mais eficientes para o LLM.
+* **Arquitetura BYOK (Bring Your Own Key):** Cada empresa pode configurar sua própria chave de API (Google AI Studio) diretamente no painel de configurações. Isso garante:
+    *   **Limites Independentes:** O consumo de uma empresa não afeta a cota das outras.
+    *   **Privacidade:** Dados processados na conta do próprio cliente (se configurado).
+    *   **Fallback do Sistema:** Se o cliente não configurar, o sistema usa a chave mestre do servidor.
 
 ### 📢 Módulo 4: Campanhas e Agendamentos
 * **Agendamento:** Botão relógio no input -> Salva em `scheduled_messages` com status `pending` -> Cronjob dispara.
