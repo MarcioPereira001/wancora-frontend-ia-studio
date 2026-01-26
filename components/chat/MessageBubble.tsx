@@ -21,7 +21,7 @@ interface MessageBubbleProps {
 }
 
 const COMMON_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
-const REVOKE_WINDOW_MS = 72 * 60 * 60 * 1000; 
+const REVOKE_WINDOW_MS = 24 * 60 * 60 * 1000; // 24h para apagar para todos (segurança)
 
 export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }: MessageBubbleProps) {
   const isMe = message.from_me;
@@ -41,22 +41,18 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
-  // Status Icon Logic (Realtime Update - Garantido)
+  // Status Icon Logic (Realtime Update)
   const renderStatusIcon = () => {
     if (!isMe) return null;
 
     const status = message.status;
     const iconClass = "w-[15px] h-[15px]"; 
 
-    // Mapeamento visual estrito com base nas cores do WhatsApp e status do Baileys
     if (status === 'sending') return <Clock className={cn(iconClass, "text-zinc-400")} />;
     if (status === 'sent') return <Check className={cn(iconClass, "text-zinc-400")} />;
-    if (status === 'delivered') return <CheckCheck className={cn(iconClass, "text-zinc-400")} />; // 2 Checks Cinza
-    
-    // Status Lido = 2 Checks Azuis (Cyan/Blue)
-    if (status === 'read' || status === 'played') return <CheckCheck className={cn(iconClass, "text-blue-400")} />;
+    if (status === 'delivered') return <CheckCheck className={cn(iconClass, "text-zinc-400")} />; 
+    if (status === 'read' || status === 'played') return <CheckCheck className={cn(iconClass, "text-blue-400")} />; // AZUL
 
-    // Fallback padrão (Enviado)
     return <Check className={cn(iconClass, "text-zinc-400")} />;
   };
 
@@ -101,20 +97,29 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
       return (now - msgTime) < REVOKE_WINDOW_MS;
   };
 
-  // Agrupamento de Reações (Correção Visual e Safety Check)
+  // Agrupamento de Reações para Exibição
+  // O backend salva: [{ text: '👍', actor: 'jid', ts: 123 }]
   const reactions: any[] = (message as any).reactions || [];
-  const groupedReactions = React.useMemo(() => {
-      if(!Array.isArray(reactions)) return [];
+  
+  const reactionCounts = React.useMemo(() => {
+      if (!Array.isArray(reactions) || reactions.length === 0) return null;
+      
       const counts: Record<string, number> = {};
-      reactions.forEach(r => { 
-          if(r.text) counts[r.text] = (counts[r.text] || 0) + 1; 
+      // Filtra reações vazias (remoção)
+      reactions.filter(r => r.text).forEach(r => {
+          counts[r.text] = (counts[r.text] || 0) + 1;
       });
-      return Object.entries(counts).sort((a,b) => b[1] - a[1]);
+      
+      const entries = Object.entries(counts);
+      if (entries.length === 0) return null;
+      
+      // Ordena por quantidade
+      return entries.sort((a,b) => b[1] - a[1]);
   }, [reactions]);
 
   return (
     <div 
-        className={cn("flex items-start gap-2 w-full group/message relative mb-3", isMe ? "justify-end" : "justify-start")}
+        className={cn("flex items-start gap-2 w-full group/message relative", isMe ? "justify-end" : "justify-start", reactionCounts ? "mb-5" : "mb-1")}
         onMouseLeave={() => setShowMenu(false)}
     >
         
@@ -132,7 +137,7 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
         {/* 2. MENU FLUTUANTE (LATERAL) */}
         {!isSelectionMode && !(message as any).is_deleted && (
             <div className={cn(
-                "opacity-0 group-hover/message:opacity-100 transition-opacity flex items-center self-start mt-1",
+                "opacity-0 group-hover/message:opacity-100 transition-opacity flex items-center self-start mt-1 z-20",
                 isMe ? "order-1 mr-1" : "order-2 ml-1"
             )}>
                 <button 
@@ -222,15 +227,15 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
                 )}
             </div>
 
-            {/* 4. REAÇÕES VISUAIS (Agrupadas e Estilizadas) */}
-            {reactions.length > 0 && !(message as any).is_deleted && (
+            {/* 4. REAÇÕES VISUAIS (BADGE FLUTUANTE) */}
+            {reactionCounts && !(message as any).is_deleted && (
                 <div className={cn(
-                    "absolute -bottom-3 z-20 flex gap-1 animate-in zoom-in duration-300",
+                    "absolute -bottom-3 z-30 flex gap-1 animate-in zoom-in duration-300",
                     isMe ? "right-0" : "left-0"
                 )}>
-                    <div className="flex items-center bg-zinc-900 border border-zinc-700 rounded-full px-1.5 py-0.5 shadow-md scale-90 hover:scale-105 transition-transform cursor-pointer gap-1">
-                        {groupedReactions.map(([emoji, count], i) => (
-                            <span key={i} className="text-[11px] flex items-center text-white">
+                    <div className="flex items-center bg-zinc-800 border border-zinc-700 rounded-full px-1.5 py-0.5 shadow-md scale-90 hover:scale-105 transition-transform cursor-pointer gap-1 select-none">
+                        {reactionCounts.map(([emoji, count], i) => (
+                            <span key={i} className="text-[11px] flex items-center text-white leading-none">
                                 {emoji} {count > 1 && <span className="text-[9px] text-zinc-400 ml-0.5 font-mono">{count}</span>}
                             </span>
                         ))}
@@ -255,7 +260,7 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
             <div className="space-y-4">
                 <p className="text-sm text-zinc-400">Você pode apagar mensagens apenas para você ou para todos os participantes.</p>
                 <div className="flex flex-col gap-2 justify-end">
-                    {/* AQUI ESTÁ A TRAVA DE SEGURANÇA (72H) */}
+                    {/* AQUI ESTÁ A TRAVA DE SEGURANÇA (24H) */}
                     {isMe && (
                         <div className="flex flex-col gap-1 w-full">
                             <Button 

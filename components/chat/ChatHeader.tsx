@@ -13,12 +13,18 @@ export function ChatHeader() {
   const supabase = createClient();
   const { activeContact, setActiveContact, toggleMsgSelectionMode, isTyping, setTyping } = useChatStore();
   const [showOptionsMenu, setShowOptionsMenu] = React.useState(false);
+  
+  // Status Local State
   const [lastSeen, setLastSeen] = React.useState<string | null>(null);
   const [isOnline, setIsOnline] = React.useState(false);
 
   // Efeito para buscar e ouvir Last Seen em tempo real
   useEffect(() => {
       if (!activeContact || !user?.company_id) return;
+
+      // Reset
+      setIsOnline(false);
+      setLastSeen(null);
 
       // 1. Busca estado inicial
       const fetchStatus = async () => {
@@ -27,7 +33,7 @@ export function ChatHeader() {
               .select('last_seen_at, is_online')
               .eq('jid', activeContact.remote_jid)
               .eq('company_id', user.company_id)
-              .single();
+              .maybeSingle();
           
           if (data) {
               setIsOnline(data.is_online || false);
@@ -36,7 +42,7 @@ export function ChatHeader() {
       };
       fetchStatus();
 
-      // 2. Inscreve no canal de mudança (Realtime)
+      // 2. Inscreve no canal de mudança (Realtime) na tabela contacts
       const channel = supabase.channel(`contact-presence:${activeContact.remote_jid}`)
           .on('postgres_changes', { 
               event: 'UPDATE', 
@@ -48,7 +54,7 @@ export function ChatHeader() {
                   setIsOnline(payload.new.is_online);
                   setLastSeen(payload.new.last_seen_at);
                   
-                  // Se ficou online, simula "digitando" por 3s para dar feedback visual
+                  // Se ficou online, simula "digitando" por 3s para dar feedback visual instantâneo
                   if (payload.new.is_online && !isOnline) {
                       setTyping(true);
                       setTimeout(() => setTyping(false), 3000);
@@ -75,27 +81,32 @@ export function ChatHeader() {
   };
 
   return (
-    <div className="h-16 border-b border-zinc-800 flex items-center justify-between px-4 md:px-6 bg-zinc-900/50 backdrop-blur-md z-10 shrink-0 relative">
-        {isOnline && <div className="absolute inset-0 bg-green-500/5 pointer-events-none" />}
+    <div className="h-16 border-b border-zinc-800 flex items-center justify-between px-4 md:px-6 bg-zinc-900/50 backdrop-blur-md z-10 shrink-0 relative transition-all duration-300">
+        
+        {/* Indicador de Online sutil no background */}
+        {isOnline && <div className="absolute inset-0 bg-green-500/5 pointer-events-none animate-in fade-in" />}
 
         <div className="flex items-center gap-3 relative z-10">
             <Button variant="ghost" size="icon" className="md:hidden text-zinc-400" onClick={() => setActiveContact(null)}><ArrowLeft className="h-5 w-5" /></Button>
+            
             <div className="h-10 w-10 rounded-full bg-zinc-800 flex items-center justify-center border border-zinc-700 overflow-hidden relative shadow-sm">
                     {activeContact.profile_pic_url ? (
                         <img src={activeContact.profile_pic_url} className="w-full h-full object-cover" />
                     ) : (
                         activeContact.is_group ? <Users className="w-5 h-5 text-zinc-500" /> : <User className="w-5 h-5 text-zinc-500" />
                     )}
+                    {/* Bolinha Verde Online */}
                     {isOnline && !activeContact.is_group && (
-                        <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-zinc-900 animate-pulse"></div>
+                        <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-zinc-900 animate-pulse shadow-[0_0_10px_#22c55e]"></div>
                     )}
             </div>
+            
             <div className="flex-1 min-w-0">
                 <h3 className="font-medium text-white truncate leading-tight">{displayName}</h3>
                 {activeContact.is_group ? (
                     <p className="text-xs text-zinc-400 font-mono">{cleanJid(activeContact.remote_jid)}</p>
                 ) : (
-                    <p className="text-[11px] text-zinc-400 font-medium flex items-center gap-1 transition-all h-4">
+                    <p className="text-[11px] text-zinc-400 font-medium flex items-center gap-1 transition-all h-4 overflow-hidden">
                         {isTyping ? (
                             <span className="text-green-400 font-bold tracking-wide animate-pulse flex items-center gap-1">
                                 digitando<span className="animate-[bounce_1s_infinite]">.</span><span className="animate-[bounce_1s_infinite_0.2s]">.</span><span className="animate-[bounce_1s_infinite_0.4s]">.</span>
@@ -120,9 +131,11 @@ export function ChatHeader() {
                         onClick={() => { toggleMsgSelectionMode(); setShowOptionsMenu(false); }} 
                         className="w-full text-left px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-white flex items-center gap-2"
                     >
-                        <CheckSquare className="w-4 h-4" /> Selecionar
+                        <CheckSquare className="w-4 h-4" /> Selecionar Mensagens
                     </button>
-                    <button className="w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-red-500/10 hover:text-red-300 flex items-center gap-2"><Trash2 className="w-4 h-4" /> Limpar</button>
+                    <button className="w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-red-500/10 hover:text-red-300 flex items-center gap-2 mt-1">
+                        <Trash2 className="w-4 h-4" /> Limpar Conversa
+                    </button>
                 </div>
             )}
         </div>

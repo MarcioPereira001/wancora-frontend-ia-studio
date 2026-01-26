@@ -1,10 +1,11 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Loader2, Check, Circle, Square } from 'lucide-react';
 import { api } from '@/services/api';
 import { useToast } from '@/hooks/useToast';
 import { cn } from '@/lib/utils';
+import { useAuthStore } from '@/store/useAuthStore';
 
 interface PollBubbleProps {
   message: any;
@@ -12,42 +13,66 @@ interface PollBubbleProps {
 }
 
 export function PollBubble({ message, isMe }: PollBubbleProps) {
+  const { user } = useAuthStore();
   const { addToast } = useToast();
   const [votingOptionId, setVotingOptionId] = useState<number | null>(null);
 
   // 1. Parse Seguro do Conteúdo da Enquete
-  let pollData = { name: 'Enquete', options: [], selectableOptionsCount: 1 };
-  try {
-      const content = message.content || message.body;
-      if (typeof content === 'string' && content.startsWith('{')) {
-          pollData = JSON.parse(content);
-      } else if (typeof content === 'object') {
-          pollData = content;
+  // O backend agora salva o conteúdo como JSON stringificado
+  const pollData = useMemo(() => {
+      try {
+          const raw = message.content || message.body;
+          if (typeof raw === 'string' && raw.startsWith('{')) {
+              return JSON.parse(raw);
+          } else if (typeof raw === 'object') {
+              return raw;
+          }
+          return { name: 'Enquete Inválida', options: [] };
+      } catch (e) {
+          return { name: 'Erro ao carregar', options: [] };
       }
-  } catch (e) {
-      pollData.name = "Erro ao carregar enquete";
-  }
+  }, [message.content, message.body]);
 
-  // 2. Contagem de Votos (Agregação Local Realtime)
-  const votes = Array.isArray(message.poll_votes) ? message.poll_votes : [];
-  const totalVotes = votes.length;
-  const votesPerOption = new Map<number, number>();
-  
-  votes.forEach((v: any) => {
-      // Tenta extrair o optionId
-      const optId = Number(v.optionId);
-      if (!isNaN(optId)) {
-          const current = votesPerOption.get(optId) || 0;
-          votesPerOption.set(optId, current + 1);
-      }
-  });
+  // 2. Processamento dos Votos (Agregação)
+  // O backend salva em poll_votes: [{ voterJid, selectedOptions: ['Sim'] }]
+  const { votesPerOption, totalVoters, myVotes } = useMemo(() => {
+      const votes = Array.isArray(message.poll_votes) ? message.poll_votes : [];
+      const counts = new Map<string, number>();
+      const voterSet = new Set<string>();
+      const mySelections = new Set<string>();
+      
+      const myJid = user?.id; // Nota: Comparação ideal seria via JID do WhatsApp, mas usamos o que temos
 
+      votes.forEach((v: any) => {
+          if (v.selectedOptions && Array.isArray(v.selectedOptions)) {
+              voterSet.add(v.voterJid);
+              
+              // Verifica se fui eu (comparação aproximada ou via flag isMe se o voto tiver from_me)
+              // No Baileys, o voterJid vem formatado.
+              
+              v.selectedOptions.forEach((opt: string) => {
+                  counts.set(opt, (counts.get(opt) || 0) + 1);
+                  if (v.voterJid?.includes(user?.id)) { // Lógica de detecção de "meu voto" pode variar
+                      mySelections.add(opt);
+                  }
+              });
+          }
+      });
+
+      return { 
+          votesPerOption: counts, 
+          totalVoters: voterSet.size,
+          myVotes: mySelections
+      };
+  }, [message.poll_votes, user?.id]);
+
+  const options = pollData.options || [];
   const isMultiple = (pollData.selectableOptionsCount || 1) > 1;
 
   // 3. Handler de Voto
-  const handleVote = async (optionId: number) => {
+  const handleVote = async (idx: number, optionName: string) => {
       if (votingOptionId !== null) return; 
-      setVotingOptionId(optionId);
+      setVotingOptionId(idx);
       
       try {
           await api.post('/message/vote', {
@@ -55,8 +80,10 @@ export function PollBubble({ message, isMe }: PollBubbleProps) {
               sessionId: message.session_id,
               remoteJid: message.remote_jid,
               pollId: message.id,
-              optionId: optionId
+              optionId: idx
           });
+          // Feedback otimista visual seria complexo aqui sem state local duplicado, 
+          // então confiamos no realtime do supabase para atualizar a UI em ms.
           addToast({ type: 'success', title: 'Voto Enviado', message: 'Computando...' });
       } catch (error) {
           console.error(error);
@@ -68,49 +95,53 @@ export function PollBubble({ message, isMe }: PollBubbleProps) {
 
   return (
       <div className={cn(
-          "rounded-xl p-4 min-w-[300px] space-y-4 mt-1 border shadow-sm relative overflow-hidden",
+          "rounded-xl p-4 min-w-[280px] max-w-[340px] space-y-4 mt-1 border shadow-sm relative overflow-hidden select-none",
           isMe ? "bg-[#0f2027] border-zinc-700/50" : "bg-zinc-900 border-zinc-800"
       )}>
           {/* Header */}
           <div>
-              <h4 className="font-bold text-lg text-white leading-snug">{pollData.name || 'Enquete'}</h4>
-              <div className="flex items-center gap-2 mt-1.5">
+              <h4 className="font-bold text-lg text-white leading-snug break-words">{pollData.name || 'Enquete'}</h4>
+              <div className="flex items-center gap-2 mt-2">
                   <span className={cn(
                       "text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded border",
                       isMultiple ? "bg-purple-500/10 border-purple-500/30 text-purple-400" : "bg-blue-500/10 border-blue-500/30 text-blue-400"
                   )}>
                       {isMultiple ? 'Múltipla Escolha' : 'Escolha Única'}
                   </span>
-                  <span className="text-[10px] text-zinc-500">
-                      {totalVotes} voto{totalVotes !== 1 && 's'}
+                  <span className="text-[10px] text-zinc-500 font-mono">
+                      {totalVoters} pessoa{totalVoters !== 1 && 's'} votaram
                   </span>
               </div>
           </div>
 
           {/* Options List */}
-          <div className="space-y-3">
-              {pollData.options?.map((opt: any, idx: number) => {
+          <div className="space-y-2.5">
+              {options.map((opt: string | {optionName: string}, idx: number) => {
                   const optionLabel = typeof opt === 'string' ? opt : opt.optionName;
-                  const voteCount = votesPerOption.get(idx) || 0;
-                  const percentage = totalVotes > 0 ? Math.round((voteCount / totalVotes) * 100) : 0;
+                  const count = votesPerOption.get(optionLabel) || 0;
+                  // Calcula porcentagem baseada no total de votos computados (não eleitores)
+                  // Total de votos na enquete = soma de todos os counts
+                  const totalVotesInPoll = (Array.from(votesPerOption.values()) as number[]).reduce((a, b) => a + b, 0);
+                  const percentage = totalVotesInPoll > 0 ? Math.round((count / totalVotesInPoll) * 100) : 0;
+                  
                   const isVotingThis = votingOptionId === idx;
                   
                   return (
                       <div 
                         key={idx} 
                         className={cn(
-                            "relative group cursor-pointer border rounded-lg p-2 transition-all active:scale-[0.98]",
+                            "relative group cursor-pointer border rounded-lg p-2.5 transition-all active:scale-[0.98] overflow-hidden",
                             isMe ? "border-zinc-700 hover:bg-white/5" : "border-zinc-800 hover:bg-zinc-800"
                         )}
-                        onClick={() => handleVote(idx)}
+                        onClick={() => handleVote(idx, optionLabel)}
                       >
-                          {/* Barra de Progresso Fundo */}
+                          {/* Barra de Progresso (Fundo) */}
                           <div 
-                              className="absolute inset-y-0 left-0 bg-white/5 rounded-lg transition-all duration-700 ease-out"
+                              className="absolute inset-y-0 left-0 bg-white/5 transition-all duration-700 ease-out z-0"
                               style={{ width: `${percentage}%` }}
                           />
 
-                          <div className="flex items-center justify-between relative z-10">
+                          <div className="flex items-center justify-between relative z-10 gap-3">
                               <div className="flex items-center gap-3 flex-1 min-w-0">
                                   <div className={cn(
                                       "w-5 h-5 rounded flex items-center justify-center transition-colors shrink-0 border",
@@ -123,13 +154,12 @@ export function PollBubble({ message, isMe }: PollBubbleProps) {
                                           isMultiple ? <Square className="w-3 h-3 text-transparent" /> : <Circle className="w-3 h-3 text-transparent" />
                                       )}
                                   </div>
-                                  <span className="text-sm text-zinc-200 font-medium truncate pr-2">{optionLabel}</span>
+                                  <span className="text-sm text-zinc-200 font-medium truncate">{optionLabel}</span>
                               </div>
                               
-                              <div className="flex items-center gap-2">
-                                  <span className="text-xs text-zinc-400 font-mono font-bold">
-                                      {voteCount} ({percentage}%)
-                                  </span>
+                              <div className="flex items-center gap-1.5 text-xs text-zinc-400 font-mono">
+                                  <span>{count}</span>
+                                  <span className="opacity-50 text-[10px]">({percentage}%)</span>
                               </div>
                           </div>
                       </div>
@@ -137,8 +167,8 @@ export function PollBubble({ message, isMe }: PollBubbleProps) {
               })}
           </div>
           
-          <div className="pt-2 text-center">
-              <span className="text-[10px] text-zinc-600">Selecione uma opção para votar</span>
+          <div className="pt-1 text-center">
+              <span className="text-[10px] text-zinc-600">Clique na opção para votar</span>
           </div>
       </div>
   );
