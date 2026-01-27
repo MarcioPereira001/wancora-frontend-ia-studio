@@ -16,11 +16,13 @@ export function useChatList() {
     const fetchContacts = async () => {
       try {
         // 1. Fetch Contacts (Agenda)
+        // Filtra para trazer apenas contatos que tenham uma mensagem registrada (last_message_at não nulo)
         const { data: contactsData, error } = await supabase
           .from('contacts')
           .select('*')
           .eq('company_id', user.company_id)
           .eq('is_ignored', false)
+          .not('last_message_at', 'is', null) // <--- FILTRO VITAL
           .order('last_message_at', { ascending: false });
 
         if (error) throw error;
