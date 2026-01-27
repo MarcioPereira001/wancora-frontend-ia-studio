@@ -116,6 +116,11 @@ export function ChatListSidebar() {
                     const isActive = activeContact?.id === contact.id;
                     const displayName = getDisplayName(contact);
                     
+                    // LÓGICA DO BADGE "NOVO LEAD"
+                    // Se o lead foi criado nas últimas 24h e não é grupo
+                    const isNewLead = !contact.is_group && contact.lead_created_at && 
+                        (new Date().getTime() - new Date(contact.lead_created_at).getTime() < 24 * 60 * 60 * 1000);
+
                     return (
                         <div 
                             key={contact.id}
@@ -146,14 +151,22 @@ export function ChatListSidebar() {
                                     </span>
                                 </div>
                                 <div className="flex justify-between items-center">
-                                    <p className="text-xs text-zinc-400 truncate max-w-[180px] h-4">
+                                    <p className="text-xs text-zinc-400 truncate max-w-[140px] h-4">
                                         {contact.last_message_content || (contact.last_message_type === 'image' ? '📷 Imagem' : contact.last_message_type === 'audio' ? '🎵 Áudio' : '')}
                                     </p>
-                                    {contact.unread_count > 0 && (
-                                        <span className="bg-primary text-primary-foreground text-[10px] font-bold px-1.5 min-w-[18px] h-[18px] rounded-full flex items-center justify-center">
-                                            {contact.unread_count}
-                                        </span>
-                                    )}
+                                    
+                                    <div className="flex items-center gap-1">
+                                        {isNewLead && (
+                                            <span className="bg-emerald-500/10 text-emerald-500 border border-emerald-500/30 text-[9px] font-bold px-1.5 py-0.5 rounded shadow-[0_0_10px_rgba(16,185,129,0.2)] animate-pulse">
+                                                NOVO
+                                            </span>
+                                        )}
+                                        {contact.unread_count > 0 && (
+                                            <span className="bg-primary text-primary-foreground text-[10px] font-bold px-1.5 min-w-[18px] h-[18px] rounded-full flex items-center justify-center shadow">
+                                                {contact.unread_count}
+                                            </span>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
                         </div>

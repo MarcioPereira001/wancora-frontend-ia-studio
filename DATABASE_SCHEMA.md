@@ -69,6 +69,35 @@ A entidade de negócio principal.
 * `reactions`: jsonb (Default: '[]')
 * `poll_votes`: jsonb (Default: '[]')
 
+### `lead_activities` (Logs & Timeline) [NOVO]
+Registro de interações e auditoria.
+* `id`: uuid (PK)
+* `lead_id`: uuid (FK)
+* `company_id`: uuid (FK)
+* `type`: text ('note', 'log', 'call', 'meeting', 'email')
+* `content`: text
+* `created_by`: uuid (FK -> profiles)
+* `created_at`: timestamptz
+
+### `lead_links` (Recursos) [NOVO]
+Links úteis atrelados ao lead.
+* `id`: uuid (PK)
+* `lead_id`: uuid (FK)
+* `company_id`: uuid (FK)
+* `title`: text
+* `url`: text
+* `created_at`: timestamptz
+
+### `lead_checklists` (Tarefas) [NOVO]
+To-do list interna do lead.
+* `id`: uuid (PK)
+* `lead_id`: uuid (FK)
+* `company_id`: uuid (FK)
+* `text`: text
+* `is_completed`: boolean
+* `deadline`: timestamptz
+* `created_at`: timestamptz
+
 ### `messages` (Chat)
 Histórico de mensagens.
 * `id`: uuid (PK)
@@ -91,14 +120,6 @@ Histórico de mensagens.
 Estrutura do Kanban.
 * **`pipelines`**: `id`, `company_id`, `name`, `is_default`
 * **`pipeline_stages`**: `id`, `pipeline_id`, `name`, `position` (int), `color`
-
-### `lead_activities` (Logs)
-Auditabilidade.
-* `id`: uuid (PK)
-* `lead_id`: uuid (FK -> leads ON DELETE CASCADE)
-* `type`: text ('note', 'log', 'call')
-* `content`: text
-* `created_by`: uuid (FK -> profiles)
 
 ### `agents` (IA)
 Configuração dos Agentes Inteligentes.
@@ -323,6 +344,9 @@ ALTER TABLE public.contacts REPLICA IDENTITY FULL;
 ALTER TABLE public.instances REPLICA IDENTITY FULL; -- Necessário para o Sync Indicator
 ALTER TABLE public.messages REPLICA IDENTITY FULL; -- Necessário para o Chat
 ALTER TABLE public.appointments REPLICA IDENTITY FULL; -- Necessário para o Calendário
+ALTER TABLE public.lead_checklists REPLICA IDENTITY FULL; -- Para Tarefas
+ALTER TABLE public.lead_links REPLICA IDENTITY FULL; -- Para Links
+ALTER TABLE public.lead_activities REPLICA IDENTITY FULL;
 ```
 
 ## 5. Políticas de Segurança (RLS) & Performance

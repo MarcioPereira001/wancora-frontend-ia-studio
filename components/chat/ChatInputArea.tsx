@@ -29,12 +29,13 @@ export function ChatInputArea() {
   const mediaMenuRef = useRef<HTMLDivElement>(null);
   const emojiRef = useRef<HTMLDivElement>(null);
   
-  // Gravador
+  // Gravador Robusto
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [recorderMimeType, setRecorderMimeType] = useState<string>('');
 
   // Refs de Input
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -111,7 +112,7 @@ export function ChatInputArea() {
       
       // Ajuste visual otimista
       if (payload.type === 'pix') contentDisplay = `Chave Pix: ${payload.text}`;
-      if (payload.type === 'poll') contentDisplay = JSON.stringify(payload.content); // Para renderizar o componente Poll
+      if (payload.type === 'poll') contentDisplay = JSON.stringify(payload.content);
       if (payload.type === 'location') contentDisplay = JSON.stringify(payload.content);
       if (payload.type === 'contact') contentDisplay = JSON.stringify(payload.content);
       if (payload.type === 'sticker') contentDisplay = '[Figurinha]';
@@ -171,17 +172,41 @@ export function ChatInputArea() {
   const startRecording = async () => {
       try {
           const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          const mediaRecorder = new MediaRecorder(stream);
+          
+          // Detecta melhor formato (Chrome usa WebM/Opus, Safari MP4)
+          let mimeType = 'audio/webm;codecs=opus';
+          if (!MediaRecorder.isTypeSupported(mimeType)) {
+              mimeType = 'audio/mp4'; // Fallback iOS
+              if (!MediaRecorder.isTypeSupported(mimeType)) {
+                  mimeType = ''; // Default browser
+              }
+          }
+          setRecorderMimeType(mimeType);
+
+          const mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
           mediaRecorderRef.current = mediaRecorder;
           audioChunksRef.current = [];
+          
           mediaRecorder.ondataavailable = (event) => { if (event.data.size > 0) audioChunksRef.current.push(event.data); };
+          
           mediaRecorder.onstop = async () => {
-              const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/mp3' });
-              const audioFile = new File([audioBlob], `voice_${Date.now()}.mp3`, { type: 'audio/mp3' });
+              const mime = recorderMimeType || 'audio/webm';
+              const audioBlob = new Blob(audioChunksRef.current, { type: mime });
+              
+              // Define extensão correta
+              const ext = mime.includes('mp4') ? 'mp4' : 'webm';
+              const audioFile = new File([audioBlob], `voice_${Date.now()}.${ext}`, { type: mime });
+              
               if (audioFile.size > 0 && user?.company_id) {
                   try {
                       const { publicUrl } = await uploadChatMedia(audioFile, user.company_id);
-                      await dispatchMessage({ type: 'audio', url: publicUrl, mimetype: 'audio/mp4', ptt: true });
+                      // Envia mimetype real para backend processar (Baileys lida bem com WebM para PTT)
+                      await dispatchMessage({ 
+                          type: 'audio', 
+                          url: publicUrl, 
+                          mimetype: mime, 
+                          ptt: true 
+                      });
                   } catch (e) {}
               }
               stream.getTracks().forEach(track => track.stop());
@@ -190,13 +215,18 @@ export function ChatInputArea() {
           setIsRecording(true);
           setRecordingTime(0);
           timerRef.current = setInterval(() => setRecordingTime(prev => prev + 1), 1000);
-      } catch (err) { addToast({ type: 'error', title: 'Microfone', message: 'Permissão negada.' }); }
+      } catch (err) { addToast({ type: 'error', title: 'Microfone', message: 'Permissão negada ou não suportado.' }); }
   };
 
   const stopRecording = (cancel = false) => {
       if (mediaRecorderRef.current && isRecording) {
-          if (cancel) { mediaRecorderRef.current.stream.getTracks().forEach(t => t.stop()); mediaRecorderRef.current = null; } 
-          else { mediaRecorderRef.current.stop(); }
+          if (cancel) { 
+              mediaRecorderRef.current.stream.getTracks().forEach(t => t.stop()); 
+              mediaRecorderRef.current = null; 
+          } 
+          else { 
+              mediaRecorderRef.current.stop(); 
+          }
       }
       setIsRecording(false);
       if (timerRef.current) clearInterval(timerRef.current);
@@ -212,7 +242,6 @@ export function ChatInputArea() {
   // Handlers de Modais
   const handleCreatePoll = () => { if(!pollQuestion.trim()) return; const valid = pollOptions.filter(o => o.trim().length > 0); if(valid.length < 2) return; dispatchMessage({ type: 'poll', content: { name: pollQuestion, options: valid, selectableOptionsCount: 1 } }); setPollQuestion(""); setPollOptions(["Sim", "Não"]); setActiveModal(null); };
   
-  // FIX CRÍTICO PIX: Envia chave limpa no text para o backend processar como 'pix' (Botão de Cópia)
   const handleSendPix = () => { 
       if(!pixKey.trim()) return; 
       dispatchMessage({ type: 'pix', text: pixKey }); 
@@ -242,11 +271,8 @@ export function ChatInputArea() {
       ); 
   };
   
-  // FIX CRÍTICO LOCATION: Garante que content tem latitude/longitude numéricos e envia como objeto 'location'
   const handleSendLocation = () => { 
       if (locLat && locLng) { 
-          // O backend (sender.js) espera 'location' no payload, mas nosso dispatchMessage mapeia o type 'location'
-          // para o campo location. Então passamos o objeto aqui.
           dispatchMessage({ 
               type: 'location', 
               content: { latitude: Number(locLat), longitude: Number(locLng) } 
@@ -266,9 +292,9 @@ export function ChatInputArea() {
 
   if (isMsgSelectionMode) {
       return (
-          <div className="p-4 border-t border-zinc-800 bg-zinc-900 flex items-center justify-between animate-in slide-in-from-bottom-10 shrink-0">
+          <div className="p-4 border-t border-zinc-800 bg-zinc-900 flex items-center justify-center animate-in slide-in-from-bottom-10 shrink-0">
               <span className="text-sm text-white font-medium pl-2">{selectedMsgIds.size} selecionadas</span>
-              <div className="flex gap-3">
+              <div className="flex gap-3 ml-auto">
                   <Button variant="ghost" onClick={clearSelection}>Cancelar</Button>
                   <Button variant="destructive" disabled={selectedMsgIds.size === 0}><Trash2 className="w-4 h-4 mr-2" /> Apagar</Button>
               </div>
@@ -374,7 +400,7 @@ export function ChatInputArea() {
         </div>
     </div>
 
-    {/* MODAIS AQUI PARA ACESSO DIRETO AO CONTEXTO */}
+    {/* MODAIS */}
     <Modal isOpen={activeModal === 'poll'} onClose={() => setActiveModal(null)} title="Nova Enquete">
           <div className="space-y-4">
               <Input value={pollQuestion} onChange={e => setPollQuestion(e.target.value)} placeholder="Pergunta da enquete" />
@@ -475,9 +501,6 @@ export function ChatInputArea() {
                       </Button>
                   </div>
               )}
-              <p className="text-[10px] text-zinc-500 text-center">
-                  As referências próximas (pontos de ônibus, lojas) serão carregadas automaticamente no WhatsApp do cliente.
-              </p>
           </div>
       </Modal>
     </>

@@ -19,6 +19,9 @@ export interface ChatContact {
   updated_at?: string;
   is_online?: boolean;
   last_seen_at?: string;
+  // Campos injetados via Join/Map
+  lead_created_at?: string | null;
+  lead_status?: string | null;
 }
 
 export interface TeamMember {

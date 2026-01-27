@@ -8,7 +8,7 @@ import { useLeadData } from '@/hooks/useLeadData';
 import { useLeadActivities } from '@/hooks/useLeadActivities';
 import { 
   User, Save, CheckSquare, Brain, Plus, X, DollarSign, UserPlus, Ban, Lock,
-  Layout, Activity, Clock, Calendar, Link as LinkIcon, ExternalLink, Edit2
+  Layout, Activity, Clock, Calendar, Link as LinkIcon, ExternalLink, Edit2, RefreshCw
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -39,6 +39,7 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
   const [activeTab, setActiveTab] = useState<'details' | 'checklist' | 'activities'>('details');
   const [loading, setLoading] = useState(false);
   const [isIgnored, setIsIgnored] = useState(false);
+  const [refreshing, setRefreshing] = useState(false); // Estado para o botão refresh
   
   // Contact Data (Agenda)
   const [contactName, setContactName] = useState('');
@@ -122,6 +123,15 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
       } catch (e) {
           addToast({ type: 'error', title: 'Erro', message: 'Falha ao salvar nome.' });
       }
+  };
+
+  const handleForceRefresh = async () => {
+      setRefreshing(true);
+      // Simula uma espera de rede para dar feedback
+      await new Promise(r => setTimeout(r, 1000));
+      refreshLead(); // Rechama o hook do pai
+      setRefreshing(false);
+      addToast({ type: 'info', title: 'Sincronizado', message: 'Dados recarregados.' });
   };
 
   const ensurePipelineExists = async () => {
@@ -279,7 +289,14 @@ export function ChatSidebar({ contact, lead, refreshLead }: ChatSidebarProps) {
   return (
     <div className="w-80 border-l border-zinc-800 bg-zinc-900/50 flex flex-col h-full overflow-hidden animate-in slide-in-from-right-4">
         
-        <div className="p-6 border-b border-zinc-800 flex flex-col items-center text-center shrink-0">
+        <div className="p-6 border-b border-zinc-800 flex flex-col items-center text-center shrink-0 relative group/header">
+            {/* BOTÃO DE REFRESH */}
+            <div className="absolute top-4 right-4 opacity-0 group-hover/header:opacity-100 transition-opacity">
+                <Button variant="ghost" size="icon" className="h-6 w-6 text-zinc-500 hover:text-white" onClick={handleForceRefresh} disabled={refreshing}>
+                    <RefreshCw className={cn("w-3.5 h-3.5", refreshing && "animate-spin")} />
+                </Button>
+            </div>
+
             <div className="w-20 h-20 rounded-full bg-zinc-800 border-2 border-zinc-700 mb-3 overflow-hidden shadow-lg relative">
                 {contact.profile_pic_url ? (
                     <img src={contact.profile_pic_url} className="w-full h-full object-cover" />

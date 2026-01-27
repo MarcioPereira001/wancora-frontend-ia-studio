@@ -1,12 +1,14 @@
+
 'use client';
 
 import React, { useState } from 'react';
 import { KanbanBoard } from '@/components/crm/KanbanBoard';
 import { LeadListView } from '@/components/crm/LeadListView';
 import { Button } from '@/components/ui/button';
-import { Plus, GitMerge, Edit2, Check, X, ChevronDown, LayoutDashboard, List } from 'lucide-react';
+import { Plus, GitMerge, Edit2, Check, X, ChevronDown, LayoutDashboard, List, Upload } from 'lucide-react';
 import { NewLeadModal } from '@/components/crm/NewLeadModal';
 import { NewPipelineModal } from '@/components/crm/NewPipelineModal';
+import { ImportLeadsModal } from '@/components/crm/ImportLeadsModal'; // Novo Import
 import { useKanban } from '@/hooks/useKanban';
 import { Input } from '@/components/ui/input';
 import { useAuthStore } from '@/store/useAuthStore'; 
@@ -16,6 +18,7 @@ export default function CRMPage() {
   const { user } = useAuthStore();
   const [isLeadModalOpen, setIsLeadModalOpen] = useState(false);
   const [isPipeModalOpen, setIsPipeModalOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false); // State Import
   const [isEditingPipeName, setIsEditingPipeName] = useState(false);
   const [tempPipeName, setTempPipeName] = useState('');
   
@@ -119,6 +122,13 @@ export default function CRMPage() {
                 </div>
             )}
 
+            {/* Botão de Importar */}
+            {isManager && (
+                <Button variant="outline" onClick={() => setIsImportModalOpen(true)} className="border-zinc-700 bg-zinc-900 hover:bg-zinc-800">
+                    <Upload className="mr-2 h-4 w-4" /> Importar
+                </Button>
+            )}
+
             <Button onClick={() => setIsLeadModalOpen(true)} className="shadow-[0_0_20px_rgba(34,197,94,0.2)]">
                 <Plus className="mr-2 h-4 w-4" /> Novo Lead
             </Button>
@@ -144,6 +154,13 @@ export default function CRMPage() {
       <NewPipelineModal
         isOpen={isPipeModalOpen}
         onClose={() => setIsPipeModalOpen(false)}
+      />
+
+      {/* Modal de Importação */}
+      <ImportLeadsModal 
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        onSuccess={refresh}
       />
     </div>
   );
