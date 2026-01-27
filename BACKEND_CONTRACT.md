@@ -146,6 +146,26 @@ Registra o voto de um usuário (ou do próprio dono) em uma enquete enviada.
       "optionId": 0 // Índice da opção (0, 1, 2...)
     }
     ```
+### 3.2.2. Estrutura de Interações (JSONB)
+O Backend salva interações ricas diretamente nas colunas JSONB da tabela `messages`:
+
+**Reações (`reactions`):**
+```json
+[
+  { "text": "❤️", "actor": "551199999999@s.whatsapp.net", "ts": 1715000000000 }
+]```
+**Votos de Enquete (poll_votes):**
+```json
+[
+  { 
+    "voterJid": "551199999999@s.whatsapp.net", 
+    "selectedOptions": ["Opção A"], 
+    "ts": 1715000000000 
+  }
+]```
+
+**Status:** Documentação alinhada com o estado atual do código (V5 Master Fix). O sistema agora é "Self-Documenting" para futuras manutenções.
+---
 
 ### 3.3. Campanhas (`Campaign Controller`)
 
@@ -167,6 +187,50 @@ Inicia um worker de disparo em massa para leads filtrados por tags.
 #### `GET /health`
 Verifica se o servidor está online.
 * **Response:** `{ "status": "online", "timestamp": "..." }`
+
+### 3.5. Gerenciamento de Comunidades (`Management Service`)
+
+#### `POST /management/group/create`
+Cria um novo grupo com participantes iniciais.
+* **Body:**
+    ```json
+    {
+      "sessionId": "string",
+      "companyId": "uuid",
+      "subject": "Nome do Grupo",
+      "participants": ["5511999999999"] // Array de JIDs ou Telefones
+    }
+    ```
+
+#### `POST /management/channel/create`
+Cria um novo Canal (Newsletter) para transmissão.
+* **Body:**
+    ```json
+    {
+      "sessionId": "string",
+      "companyId": "uuid",
+      "name": "Nome do Canal",
+      "description": "Descrição opcional"
+    }
+    ```
+
+#### `POST /management/group/update`
+Gerencia configurações, participantes e metadados de grupo.
+* **Body:**
+    ```json
+    {
+      "sessionId": "string",
+      "groupId": "123456@g.us",
+      "action": "add" | "remove" | "promote" | "demote" | "subject" | "description" | "invite_code",
+      "value": "Novo Título", // Apenas para subject/description
+      "participants": ["jid1", "jid2"] // Apenas para ações de membros
+    }
+    ```
+
+### 3.6. Tratamento de Canais (Newsletters)
+- O sistema identifica automaticamente JIDs com sufixo `@newsletter`.
+- A RPC `get_my_chat_list` retorna a flag `is_newsletter` = true.
+- A tabela `contacts` armazena o nome do canal em `name` e ignora a validação de número de telefone para estes casos.
 
 ---
 
@@ -223,6 +287,14 @@ O serviço de inteligência (`sentinel.js`) implementa uma estratégia de resolu
 
 * **Gatilhos Imediatos (`on_booking`):**
     *   Devem ser disparados via **Database Webhook** ou processados imediatamente após a inserção do agendamento, sem esperar o Cron.
+
+### 4.7. Smart Sync Strategy (Filtragem de Histórico)
+Para otimizar o tempo de carregamento e reduzir custos de armazenamento, o sistema implementa uma estratégia de "Janela Deslizante" na importação inicial:
+1. O Baileys envia o histórico completo bruto.
+2. O Backend agrupa as mensagens por conversa (`remote_jid`).
+3. Apenas as **10 mensagens mais recentes** de cada conversa são processadas e salvas.
+4. Para essas mensagens selecionadas, o sistema **força o download de mídias** e a **atualização da foto de perfil** do contato.
+5. Mensagens antigas (>10) são descartadas silenciosamente para manter o banco leve e rápido.
 ---
 
 ## 5. 📡 Realtime & WebSocket Events (Webhook Specs)

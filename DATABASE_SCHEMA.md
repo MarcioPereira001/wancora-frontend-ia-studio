@@ -25,6 +25,12 @@ Gerencia o estado físico da conexão com o WhatsApp.
 * `sync_percent`: integer (0-100)
 * `updated_at`: timestamptz
 
+### `identity_map` (NOVO: LID Resolver)
+Tabela técnica para resolver conflitos entre IDs de telefone e IDs ocultos (LID).
+* `lid_jid`: text (PK)
+* `phone_jid`: text
+* `company_id`: uuid
+
 ### `contacts` (Agenda)
 Contatos brutos sincronizados do celular.
 * `jid`: text (PK) - Ex: `551199999999@s.whatsapp.net`
@@ -37,6 +43,8 @@ Contatos brutos sincronizados do celular.
 * `last_message_at`: timestamptz
 * `last_seen_at`: timestamptz
 * `is_online`: boolean
+* `phone`: text (Telefone limpo para vínculo com Leads e Buscas)
+* `is_newsletter`: boolean (Virtual/Derivado) - Identifica Canais de Transmissão.
 
 ### `leads` (CRM)
 A entidade de negócio principal.
@@ -72,11 +80,12 @@ Histórico de mensagens.
 * `content`: text
 * `message_type`: text ('text', 'image', 'audio', 'video', 'document', 'poll', 'location', 'sticker', 'contact', 'pix')
 * `media_url`: text
-* `poll_votes`: jsonb (Default: '[]')
-* `reactions`: jsonb (Default: '[]')
 * `created_at`: timestamptz
 * `delivered_at`: timestamptz
 * `read_at`: timestamptz
+* ... (colunas existentes) ...
+* `reactions`: jsonb (Default: '[]') - Array de reações `{ text: "👍", actor: "jid", ts: 123 }`.
+* `poll_votes`: jsonb (Default: '[]') - Array de votos `{ voterJid: "...", selectedOptions: [...] }`.
 
 ### `pipelines` & `pipeline_stages`
 Estrutura do Kanban.
@@ -147,8 +156,8 @@ Unificação de calendário e gerenciador de tarefas.
 * `meet_link`: text
 * `origin`: text (Default: 'internal')
 * `ai_summary`: text
-* `reminder_sent`: boolean (NOVO: Controle do Worker)
-* `confirmation_sent`: boolean (NOVO: Controle do Controller)
+* `reminder_sent`: boolean (Default: false) - Controle do worker de lembretes.
+* `confirmation_sent`: boolean (Default: false) - Controle de envio imediato.
 
 ### `availability_rules` (Agendamento Inteligente)
 Define as regras de horários para o sistema de agendamento (tipo Calendly).
@@ -253,6 +262,10 @@ Busca dados de uma regra de agendamento (`availability_rules`) de forma segura p
 ### `get_busy_slots`
 Retorna horários ocupados (`start_time`, `end_time`) de um usuário em uma data específica para cálculo de disponibilidade.
 * Parâmetros: `p_rule_id` (uuid), `p_date` (date)
+
+### `get_my_chat_list` (V5)
+Retorna a lista de conversas da Inbox com dados agregados.
+* Retorno Atualizado: Inclui `is_newsletter` (boolean), `is_group`, `is_online`, `last_seen_at`.
 
 ### `get_my_chat_list`
 Retorna a lista de conversas da Inbox com dados agregados (não lidas, última mensagem, dados do lead).

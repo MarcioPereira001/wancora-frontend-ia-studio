@@ -78,6 +78,14 @@ Isso obriga o PostgreSQL a enviar o registro completo (old + new) no payload do 
 * `name`: Nome salvo manualmente ou Título do Grupo.
 * `push_name`: Nome público do perfil do usuário.
 * `profile_pic_url`: Foto do avatar (sincronizada via Backend).
+* `phone`: Coluna indexada para joins rápidos com a tabela `leads`.
+* `is_online` / `last_seen_at`: Suporte a presença em tempo real.
+* *Newsletters:* Canais são identificados na RPC `get_my_chat_list` através do sufixo `@newsletter`.
+
+**X. identity_map (LID Resolver - NOVO)**
+* Tabela vital para o ecossistema iOS/Multi-Device.
+* Mapeia `12345@lid` -> `55119999@s.whatsapp.net`.
+* Permite que mensagens vindas de LIDs sejam atribuídas corretamente ao contato principal.
 
 **3. leads (O Negócio/CRM)**
 * Vinculado a um contato via lógica de negócio (telefone).
