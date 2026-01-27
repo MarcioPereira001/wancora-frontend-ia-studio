@@ -8,7 +8,7 @@ import { RefreshCw, CheckCircle2, Database, Users, MessageSquare, Radio, Loader2
 import { cn } from '@/lib/utils';
 
 export function GlobalSyncIndicator() {
-  const { instances, forcedSyncId, clearSyncAnimation } = useRealtimeStore();
+  const { forcedSyncId, clearSyncAnimation } = useRealtimeStore();
   const [show, setShow] = useState(false);
   const [isVisible, setIsVisible] = useState(false); // Controle de Animação CSS
   const [localPercent, setLocalPercent] = useState(0);
@@ -17,14 +17,11 @@ export function GlobalSyncIndicator() {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const closingRef = useRef(false); // Lock para evitar múltiplos triggers de fechamento
 
-  // Lógica Híbrida:
-  // 1. Prioridade Absoluta: ID forçado pelo modal (Conexão Manual)
-  // 2. Fallback: Qualquer instância conectada que não tenha terminado (F5 na página)
-  const targetInstanceId = forcedSyncId || instances.find(i => 
-      (i.status === 'connected' || i.status === 'connecting') && 
-      i.status !== 'disconnected' &&
-      i.sync_status !== 'completed'
-  )?.id;
+  // MODIFICAÇÃO CRÍTICA:
+  // O indicador agora obedece estritamente ao 'forcedSyncId'.
+  // Ele NÃO busca mais instâncias aleatórias que estejam conectando em background (Auto-Reconnect).
+  // Isso garante que ele só apareça quando o usuário acaba de ler o QR Code no Modal.
+  const targetInstanceId = forcedSyncId;
 
   useEffect(() => {
     // Se não tem alvo e não estamos em processo de fechamento
@@ -63,7 +60,6 @@ export function GlobalSyncIndicator() {
             const dbPercent = data.sync_percent || 0;
 
             // CRITÉRIO DE SUCESSO: Status completed OU 100% atingido
-            // Isso corrige o problema de "não fechar no 100%"
             const isDone = dbSyncStatus === 'completed' || dbPercent >= 100;
 
             if (isDone) {
@@ -118,7 +114,7 @@ export function GlobalSyncIndicator() {
     return () => {
         if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [targetInstanceId, forcedSyncId, show]);
+  }, [targetInstanceId, forcedSyncId, show, clearSyncAnimation]);
 
   if (!show) return null;
 

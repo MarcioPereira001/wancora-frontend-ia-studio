@@ -12,25 +12,21 @@ const SOUNDS = {
   success: "data:audio/mp3;base64,//NkxAAAAANIAAAAAExBTUUzLjEwMKqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq//NkxAAAAANIAAAAAExBTUUzLjEwMKqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq//NkxAAAAANIAAAAAExBTUUzLjEwMKqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq//NkxAAAAANIAAAAAExBTUUzLjEwMKqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq//NkxAAAAANIAAAAAExBTUUzLjEwMKqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq"
 };
 
-// Como os base64 acima são placeholders curtos, em produção você usaria URLs reais. 
-// Para este exemplo, usaremos objetos Audio nativos.
-
 export function useSound() {
   const play = useCallback((type: 'message' | 'success') => {
     try {
-        // Em um app real, use arquivos .mp3 na pasta public.
-        // Aqui simulamos com um beep simples do navegador se possível ou console
-        // Para a experiência completa, substitua as strings acima por arquivos reais.
+        // CORREÇÃO: Usa o Data URI diretamente para evitar 404 (Network Error)
+        // Isso carrega o som da memória em vez de buscar um arquivo inexistente
+        const soundSrc = SOUNDS[type];
         
-        // Fallback visual/log se não tiver arquivo
-        // console.log(`🔊 Playing sound: ${type}`);
-        
-        // Exemplo real com arquivo local (assumindo que existam na pasta public)
-        const audio = new Audio(`/sounds/${type}.mp3`);
-        audio.volume = 0.5;
-        audio.play().catch(e => {
-            // Ignora erro de autoplay policy
-        });
+        if (soundSrc) {
+            const audio = new Audio(soundSrc);
+            audio.volume = 0.5;
+            audio.play().catch(e => {
+                // Ignora erro de autoplay policy (comum se o usuário não interagiu com a página ainda)
+                // console.debug("Autoplay prevented:", e);
+            });
+        }
     } catch (error) {
       console.error("Audio playback error", error);
     }

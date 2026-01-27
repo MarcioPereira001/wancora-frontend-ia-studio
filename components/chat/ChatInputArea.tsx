@@ -56,6 +56,13 @@ export function ChatInputArea() {
   const [locLng, setLocLng] = useState<number | null>(null);
   const [locLoading, setLocLoading] = useState(false);
 
+  // 0. RESET DE ESTADO AO TROCAR DE CONVERSA
+  useEffect(() => {
+      setMediaMenuOpen(false);
+      setEmojiPickerOpen(false);
+      setActiveModal(null);
+  }, [activeContact?.id]);
+
   // Fecha menus ao clicar fora
   useEffect(() => {
       function handleClickOutside(event: MouseEvent) {
@@ -66,9 +73,11 @@ export function ChatInputArea() {
               setEmojiPickerOpen(false);
           }
       }
-      document.addEventListener("mousedown", handleClickOutside);
+      if (mediaMenuOpen || emojiPickerOpen) {
+          document.addEventListener("mousedown", handleClickOutside);
+      }
       return () => { document.removeEventListener("mousedown", handleClickOutside); };
-  }, []);
+  }, [mediaMenuOpen, emojiPickerOpen]);
 
   // Auto-Start Location quando abre o modal
   useEffect(() => {
@@ -304,7 +313,7 @@ export function ChatInputArea() {
 
   return (
     <>
-    <div className="p-3 md:p-4 border-t border-zinc-800 bg-zinc-900/30 backdrop-blur relative shrink-0">
+    <div className="p-3 md:p-4 border-t border-zinc-800 bg-zinc-900/30 backdrop-blur relative shrink-0 z-[50]">
         <div className="flex items-end gap-2 bg-zinc-950/80 border border-zinc-800 rounded-xl p-2 focus-within:ring-1 focus-within:ring-primary/50 transition-all shadow-inner relative">
             
             {/* Botão de Emojis */}
@@ -313,13 +322,13 @@ export function ChatInputArea() {
                     variant="ghost" 
                     size="icon" 
                     className={`h-9 w-9 ${emojiPickerOpen ? 'text-yellow-400' : 'text-zinc-400'} hover:text-yellow-400 transition-colors`} 
-                    onClick={() => setEmojiPickerOpen(!emojiPickerOpen)}
+                    onClick={() => { setEmojiPickerOpen(!emojiPickerOpen); setMediaMenuOpen(false); }}
                 >
                     <Smile className="h-5 w-5" />
                 </Button>
                 
                 {emojiPickerOpen && (
-                    <div className="absolute bottom-12 left-0 z-50 animate-in zoom-in-95 origin-bottom-left shadow-2xl">
+                    <div className="absolute bottom-14 left-0 z-[100] animate-in zoom-in-95 origin-bottom-left shadow-2xl drop-shadow-2xl">
                         <EmojiPicker 
                             onEmojiClick={onEmojiClick}
                             theme={Theme.DARK}
@@ -335,9 +344,9 @@ export function ChatInputArea() {
 
             {/* Anexo Menu */}
             <div className="relative" ref={mediaMenuRef}>
-                <Button variant="ghost" size="icon" className="h-9 w-9 text-zinc-400 hover:text-zinc-100" onClick={() => setMediaMenuOpen(!mediaMenuOpen)}><Paperclip className="h-5 w-5" /></Button>
+                <Button variant="ghost" size="icon" className="h-9 w-9 text-zinc-400 hover:text-zinc-100" onClick={() => { setMediaMenuOpen(!mediaMenuOpen); setEmojiPickerOpen(false); }}><Paperclip className="h-5 w-5" /></Button>
                 {mediaMenuOpen && (
-                    <div className="absolute bottom-12 left-0 bg-zinc-900 border border-zinc-800 rounded-xl shadow-xl p-2 w-64 z-50 grid grid-cols-2 gap-2 animate-in slide-in-from-bottom-2">
+                    <div className="absolute bottom-14 left-0 bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl p-2 w-64 z-[100] grid grid-cols-2 gap-2 animate-in slide-in-from-bottom-2 ring-1 ring-white/10">
                         <label className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
                             <IconImage className="w-5 h-5 text-purple-400" /> Galeria
                             <input type="file" className="hidden" accept="image/*,video/*" onChange={handleFileUpload} />
