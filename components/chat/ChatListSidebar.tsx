@@ -1,13 +1,13 @@
 
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useChatList } from '@/hooks/useChatList';
 import { useChatStore } from '@/store/useChatStore';
 import { 
     Search, Plus, MessageSquare, Loader2, 
     Camera, Mic, Video, FileText, MapPin, 
-    BarChart2, User, DollarSign, Sticker, AlertTriangle, RefreshCw
+    BarChart2, User, DollarSign, Sticker, AlertTriangle, RefreshCw, Users, Megaphone
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -27,8 +27,25 @@ export function ChatListSidebar() {
   
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
   const [isChannelModalOpen, setIsChannelModalOpen] = useState(false);
-  const [isNewChatModalOpen, setIsNewChatModalOpen] = useState(false); // STATE DO NOVO MODAL
+  const [isNewChatModalOpen, setIsNewChatModalOpen] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  
+  // Estado para o Menu de Criação (+)
+  const [showCreateMenu, setShowCreateMenu] = useState(false);
+  const createMenuRef = useRef<HTMLDivElement>(null);
+
+  // Fecha menu ao clicar fora
+  useEffect(() => {
+      function handleClickOutside(event: MouseEvent) {
+          if (createMenuRef.current && !createMenuRef.current.contains(event.target as Node)) {
+              setShowCreateMenu(false);
+          }
+      }
+      if (showCreateMenu) {
+          document.addEventListener("mousedown", handleClickOutside);
+      }
+      return () => { document.removeEventListener("mousedown", handleClickOutside); };
+  }, [showCreateMenu]);
 
   const handleManualRefresh = async () => {
       setIsRefreshing(true);
@@ -134,19 +151,56 @@ export function ChatListSidebar() {
         <div className="p-4 border-b border-zinc-800 shrink-0">
             <div className="flex items-center justify-between mb-4">
                 <h2 className="font-bold text-xl text-white">Conversas</h2>
-                <div className="flex gap-1">
+                <div className="flex gap-1" ref={createMenuRef}>
                     <Button variant="ghost" size="icon" title="Atualizar Lista" onClick={handleManualRefresh} disabled={isRefreshing}>
                         <RefreshCw className={cn("w-4 h-4 text-zinc-400", isRefreshing && "animate-spin")} />
                     </Button>
-                    {/* BOTÃO NOVA CONVERSA (PRINCIPAL) */}
-                    <Button 
-                        size="icon" 
-                        title="Nova Conversa" 
-                        onClick={() => setIsNewChatModalOpen(true)}
-                        className="bg-primary hover:bg-primary/90 text-white w-8 h-8 rounded-full shadow-lg shadow-green-500/20"
-                    >
-                        <Plus className="w-5 h-5" />
-                    </Button>
+                    
+                    {/* BOTÃO NOVA CONVERSA COM MENU */}
+                    <div className="relative">
+                        <Button 
+                            size="icon" 
+                            title="Nova..." 
+                            onClick={() => setShowCreateMenu(!showCreateMenu)}
+                            className={cn("bg-primary hover:bg-primary/90 text-white w-8 h-8 rounded-full shadow-lg shadow-green-500/20 transition-transform", showCreateMenu ? "rotate-45" : "")}
+                        >
+                            <Plus className="w-5 h-5" />
+                        </Button>
+
+                        {showCreateMenu && (
+                            <div className="absolute right-0 top-10 z-50 bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl w-48 animate-in fade-in zoom-in-95 origin-top-right ring-1 ring-white/10 overflow-hidden">
+                                <div className="p-1">
+                                    <button 
+                                        onClick={() => { setIsNewChatModalOpen(true); setShowCreateMenu(false); }}
+                                        className="w-full text-left px-3 py-2.5 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-white flex items-center gap-3 rounded-lg transition-colors"
+                                    >
+                                        <div className="p-1.5 bg-blue-500/10 text-blue-400 rounded-md">
+                                            <MessageSquare className="w-4 h-4" />
+                                        </div>
+                                        Conversa
+                                    </button>
+                                    <button 
+                                        onClick={() => { setIsGroupModalOpen(true); setShowCreateMenu(false); }}
+                                        className="w-full text-left px-3 py-2.5 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-white flex items-center gap-3 rounded-lg transition-colors"
+                                    >
+                                        <div className="p-1.5 bg-green-500/10 text-green-400 rounded-md">
+                                            <Users className="w-4 h-4" />
+                                        </div>
+                                        Novo Grupo
+                                    </button>
+                                    <button 
+                                        onClick={() => { setIsChannelModalOpen(true); setShowCreateMenu(false); }}
+                                        className="w-full text-left px-3 py-2.5 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-white flex items-center gap-3 rounded-lg transition-colors"
+                                    >
+                                        <div className="p-1.5 bg-purple-500/10 text-purple-400 rounded-md">
+                                            <Megaphone className="w-4 h-4" />
+                                        </div>
+                                        Novo Canal
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
             
@@ -225,7 +279,11 @@ export function ChatListSidebar() {
                                 <div className="w-12 h-12 rounded-full bg-zinc-800 flex items-center justify-center text-lg font-bold text-zinc-500 overflow-hidden border border-zinc-700/50">
                                     {contact.profile_pic_url ? (
                                         <img src={contact.profile_pic_url} alt="" className="w-full h-full object-cover" />
-                                    ) : displayName.charAt(0).toUpperCase()}
+                                    ) : (
+                                        (contact.is_group || contact.is_newsletter) 
+                                        ? <Users className="w-5 h-5 text-zinc-500" /> 
+                                        : displayName.charAt(0).toUpperCase()
+                                    )}
                                 </div>
                                 {contact.is_online && (
                                     <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 border-2 border-zinc-900 rounded-full"></div>
