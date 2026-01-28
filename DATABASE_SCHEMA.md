@@ -44,6 +44,7 @@ Contatos brutos sincronizados do celular.
 * `last_seen_at`: timestamptz
 * `is_online`: boolean
 * `phone`: text (Telefone limpo para vínculo com Leads e Buscas)
+* `unread_count`: integer (Default: 0) - **[NOVO]** Contador atômico atualizado via Trigger.
 * `is_newsletter`: boolean (Virtual/Derivado) - Identifica Canais de Transmissão.
 
 ### `leads` (CRM)
@@ -260,61 +261,31 @@ Gestão de planos do sistema.
 
 Estas funções são vitais para a performance e lógica do sistema.
 
+### `get_my_chat_list` (Inbox Core)
+A query mais pesada do sistema. Retorna a lista de conversas com dados agregados de Leads, Mensagens e Contatos.
+*   **Parâmetro:** `p_company_id` (uuid)
+*   **Retorno:** Tabela contendo `unread_count`, `last_message_content`, `last_message_type`, `lead_status`, `is_muted`, etc.
+*   **Lógica:** Faz um `LEFT JOIN LATERAL` com a tabela `messages` para pegar a última mensagem sem subqueries lentas.
+
 ### `get_gamification_ranking`
 Calcula o ranking de vendas e XP da equipe em um período.
-* Retorna: `user_name`, `total_sales`, `leads_won`, `xp`, `rank`.
+*   **Parâmetros:** `p_company_id`, `p_start_date`, `p_end_date`
+*   **Lógica:** XP = (Leads Ganhos * 1000) + (Valor Vendido / 10). Retorna `rank` calculado via window function.
 
 ### `get_sales_funnel_stats`
-Retorna métricas do funil (Contagem e Valor Total) agrupado por estágio.
-* Retorna: `stage_name`, `lead_count`, `total_value`, `color`.
+Retorna métricas do funil para gráficos.
+*   **Parâmetros:** `p_company_id`, `p_owner_id` (Opcional)
+*   **Retorno:** `stage_name`, `lead_count`, `total_value`, `color`.
 
 ### `get_recent_activity`
 Feed unificado de atividades recentes (Novos leads + Vendas ganhas) para o Dashboard.
-
-### `link_identities`
-Função crítica que vincula um `LID` (ID oculto) ao `Phone JID` real, unificando o histórico de conversas e impedindo leads duplicados.
-
-### `get_public_availability_by_slug`
-Busca dados de uma regra de agendamento (`availability_rules`) de forma segura para usuários não logados.
-* Parâmetros: `p_slug` (text)
-* Retorna: Detalhes da regra + nome e avatar do dono.
-* Segurança: `SECURITY DEFINER` (Bypassa RLS de leitura).
-
-### `get_busy_slots`
-Retorna horários ocupados (`start_time`, `end_time`) de um usuário em uma data específica para cálculo de disponibilidade.
-* Parâmetros: `p_rule_id` (uuid), `p_date` (date)
-
-### `get_my_chat_list` (V5)
-Retorna a lista de conversas da Inbox com dados agregados.
-* Retorno Atualizado: Inclui `is_newsletter` (boolean), `is_group`, `is_online`, `last_seen_at`.
-
-### `get_my_chat_list`
-Retorna a lista de conversas da Inbox com dados agregados (não lidas, última mensagem, dados do lead).
-```sql
-function get_my_chat_list(p_company_id uuid, p_session_id text)
-returns table (...)
-```
+*   **Parâmetros:** `p_company_id`, `p_limit`
 
 ### `increment_campaign_count`
 Incrementa contadores de campanha de forma atômica (sem concorrência de leitura/escrita).
-```sql
-function increment_campaign_count(p_campaign_id uuid, p_field text)
-returns void
-```
 
-### `reorder_pipeline_stages`
-Reordena estágios do funil em lote, garantindo atomicidade.
-```sql
-function reorder_pipeline_stages(p_updates jsonb) 
-returns void
-```
-
-### `create_public_appointment`
-Cria um agendamento público e, se necessário, o lead correspondente.
-```sql
-function create_public_appointment(p_slug text, p_date date, ...) 
-returns jsonb
-```
+### `link_identities`
+Vincula um `LID` (ID oculto) ao `Phone JID` real na tabela `identity_map`.
 
 ---
 
@@ -331,6 +302,14 @@ Cria leads automaticamente ao receber mensagens, mas APENAS se o contato já tiv
 
 ### `handle_updated_at`
 Mantém a coluna `updated_at` sempre atualizada nas tabelas principais.
+
+### `trigger_update_chat_stats` (Cérebro da Inbox)
+*   **Alvo:** Tabela `messages` (AFTER INSERT).
+*   **Função:** `handle_new_message_stats()`.
+*   **Ação:** Sempre que uma nova mensagem entra:
+    1. Atualiza `last_message_at` na tabela `contacts`.
+    2. Se `from_me = false`, incrementa `unread_count` em +1.
+    3. Garante que a conversa suba para o topo da lista instantaneamente.
 
 ---
 

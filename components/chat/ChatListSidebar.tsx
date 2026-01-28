@@ -76,15 +76,28 @@ export function ChatListSidebar() {
   // Helper de Prévia de Mensagem Rica
   const getMessagePreview = (contact: any) => {
       const type = contact.last_message_type || 'text';
-      const content = contact.last_message_content || '';
+      let content = contact.last_message_content || '';
       
       const iconClass = "w-3.5 h-3.5 inline-block mr-1 opacity-70";
 
+      // Tenta parsear se for um JSON (comum em poll/location)
+      if (typeof content === 'string' && (content.startsWith('{') || content.startsWith('['))) {
+          try {
+              const parsed = JSON.parse(content);
+              if (type === 'poll' && parsed.name) content = parsed.name;
+              else if (type === 'location') content = 'Localização';
+              else if (type === 'contact') content = parsed.displayName || 'Contato';
+          } catch(e) {
+              // Se falhar parse, mostra raw se for curto, senão define tipo
+              if (content.length > 50) content = `[${type}]`;
+          }
+      }
+
       switch (type) {
           case 'image':
-              return <span className="flex items-center"><Camera className={iconClass} /> Foto</span>;
+              return <span className="flex items-center"><Camera className={iconClass} /> {content && content !== '[Mídia]' ? content : 'Foto'}</span>;
           case 'video':
-              return <span className="flex items-center"><Video className={iconClass} /> Vídeo</span>;
+              return <span className="flex items-center"><Video className={iconClass} /> {content && content !== '[Mídia]' ? content : 'Vídeo'}</span>;
           case 'audio':
           case 'ptt':
           case 'voice':
@@ -94,21 +107,14 @@ export function ChatListSidebar() {
           case 'sticker':
               return <span className="flex items-center"><Sticker className={iconClass} /> Figurinha</span>;
           case 'location':
-              return <span className="flex items-center"><MapPin className={iconClass} /> Localização</span>;
+              return <span className="flex items-center"><MapPin className={iconClass} /> {content || 'Localização'}</span>;
           case 'contact':
-              return <span className="flex items-center"><User className={iconClass} /> Contato</span>;
+              return <span className="flex items-center"><User className={iconClass} /> {content || 'Contato'}</span>;
           case 'poll':
-              return <span className="flex items-center"><BarChart2 className={iconClass} /> Enquete</span>;
+              return <span className="flex items-center"><BarChart2 className={iconClass} /> {content || 'Enquete'}</span>;
           case 'pix':
-              return <span className="flex items-center"><DollarSign className={iconClass} /> Chave Pix</span>;
+              return <span className="flex items-center"><DollarSign className={iconClass} /> Pix</span>;
           default:
-              // Tratamento para JSONs residuais (ex: Polls salvas como texto no passado)
-              if (content.startsWith('{') && content.includes('"name":')) {
-                  try {
-                       const parsed = JSON.parse(content);
-                       if(parsed.name) return <span className="flex items-center"><BarChart2 className={iconClass} /> {parsed.name}</span>;
-                  } catch(e) {}
-              }
               return <span className="truncate block">{content}</span>;
       }
   };
@@ -213,8 +219,6 @@ export function ChatListSidebar() {
                                 
                                 <div className="flex justify-between items-center h-5">
                                     <div className={cn("text-xs truncate max-w-[160px] flex items-center gap-1", isActive ? "text-zinc-300" : "text-zinc-400")}>
-                                        {/* Ticks de leitura se fui eu que mandei a ultima */}
-                                        {/* Nota: Idealmente teriamos from_me no contact list, mas assumimos que se não tem unread e tem last_msg, mostramos preview */}
                                         {getMessagePreview(contact)}
                                     </div>
                                     

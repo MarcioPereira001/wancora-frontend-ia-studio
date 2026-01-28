@@ -29,6 +29,9 @@ export function ChatWindow() {
   const [fetchingMore, setFetchingMore] = useState(false);
   const [showScrollButton, setShowScrollButton] = useState(false);
   
+  // Throttle Ref
+  const lastScrollTime = useRef(0);
+  
   // Ref para detectar nova mensagem
   const prevMessagesLength = useRef(messages.length);
 
@@ -94,22 +97,37 @@ export function ChatWindow() {
   // Scroll Handler (Pagination + FAB Visibility)
   const handleScroll = async (e: React.UIEvent<HTMLDivElement>) => {
       const container = e.currentTarget;
+      const now = Date.now();
       
       // Lógica do Botão Flutuante
       const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
       setShowScrollButton(distanceFromBottom > 300);
 
+      // THROTTLE: Limita verificação de paginação a cada 200ms
+      if (now - lastScrollTime.current < 200) return;
+      lastScrollTime.current = now;
+
       // Trigger Paginação
-      if (container.scrollTop < 50 && hasMoreMessages && !fetchingMore) {
+      if (container.scrollTop < 100 && hasMoreMessages && !fetchingMore) {
           setFetchingMore(true);
           const currentHeight = container.scrollHeight; 
+          const currentTopMsgId = messages.length > 0 ? messages[0].id : null;
+
           const olderMessages = await loadMessages(messages.length);
           
           if (olderMessages.length > 0) {
+              // Evita duplicatas na junção (Safety check)
+              if (currentTopMsgId && olderMessages[olderMessages.length - 1].id === currentTopMsgId) {
+                  olderMessages.pop();
+              }
+
               setMessages(prev => [...olderMessages, ...prev]);
+              
+              // Ajuste de scroll position para manter o usuário no lugar
               requestAnimationFrame(() => { 
-                  if (scrollContainerRef.current) 
+                  if (scrollContainerRef.current) {
                       scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight - currentHeight; 
+                  }
               });
           } else { 
               setHasMoreMessages(false); 

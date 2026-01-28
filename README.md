@@ -130,10 +130,11 @@ O Frontend **NÃO** deve fazer queries complexas ("Joins") manualmente. Usamos f
     * **Função:** Calcula XP e Ranking.
     * **Lógica:** XP = (Vendas * 1000) + (Valor / 10).
 
-#### Realtime Strategy (The Hammer Fix)
-* O Frontend escuta o canal `public:messages` filtrando apenas por `company_id`.
-* Ao receber **qualquer** evento de `INSERT` para a empresa, dispara um **Force Refresh** na lista de mensagens e na Sidebar.
-* *Motivo:* Garante que mensagens de LIDs (que não batem com o ID do contato aberto) ou de outros dispositivos sejam renderizadas imediatamente, confiando na consistência do Banco de Dados.
+#### Realtime Strategy (The Database Brain)
+O Backend Node.js **não** gerencia mais contadores de mensagens ou ordenação de chat manualmente. Isso foi movido para o PostgreSQL para garantir consistência atômica:
+
+*   **Trigger `handle_new_message_stats`:** Ao inserir uma mensagem, o banco recalcula automaticamente o `unread_count` e o `last_message_at` do contato.
+*   **Frontend Subscription:** O Frontend escuta mudanças na tabela `contacts`. Assim que o Trigger roda, a UI recebe o update e reordena a lista de chats em tempo real, sem necessidade de lógica de "sort" no Javascript.
 
 ---
 

@@ -10,101 +10,99 @@ export function useChatList() {
   const [contacts, setContacts] = useState<ChatContact[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Função isolada para recarregar tudo (usada em casos drásticos)
+  const refreshList = async () => {
+      if (!user?.company_id) return;
+      try {
+          const { data, error } = await supabase.rpc('get_my_chat_list', {
+              p_company_id: user.company_id
+          });
+
+          if (error) throw error;
+
+          // Mapping para garantir compatibilidade com componentes legados
+          const formatted: ChatContact[] = (data || []).map((row: any) => ({
+              ...row,
+              last_message_time: row.last_message_at, // Alias
+              phone_number: row.phone_number || row.remote_jid.split('@')[0]
+          }));
+
+          setContacts(formatted);
+      } catch (e) {
+          console.error("ChatList RPC Error:", e);
+      }
+  };
+
   useEffect(() => {
     if (!user?.company_id) return;
 
-    const fetchContacts = async () => {
-      try {
-        // 1. Fetch Contacts (Agenda)
-        // Filtra para trazer apenas contatos que tenham uma mensagem registrada (last_message_at não nulo)
-        const { data: contactsData, error } = await supabase
-          .from('contacts')
-          .select('*')
-          .eq('company_id', user.company_id)
-          .eq('is_ignored', false)
-          .not('last_message_at', 'is', null) // <--- FILTRO VITAL
-          .order('last_message_at', { ascending: false });
-
-        if (error) throw error;
-
-        // 2. Fetch Leads (CRM) para enriquecer dados (Badge Novo, Status)
-        // Otimização: Busca leads cujos telefones estão na lista de contatos
-        const phones = contactsData
-            .map((c: any) => c.phone)
-            .filter((p: string | null) => p && p !== '0' && p.length > 5);
-
-        let leadsMap = new Map();
-        
-        if (phones.length > 0) {
-            // Em batch para performance
-            const { data: leadsData } = await supabase
-                .from('leads')
-                .select('phone, created_at, status')
-                .eq('company_id', user.company_id)
-                .in('phone', phones);
-            
-            if (leadsData) {
-                leadsData.forEach((l: any) => leadsMap.set(l.phone, l));
-            }
-        }
-
-        const formatted: ChatContact[] = (contactsData || []).map((row: any) => {
-            const leadInfo = leadsMap.get(row.phone);
-            
-            return {
-                id: row.id,
-                company_id: row.company_id,
-                jid: row.jid,
-                remote_jid: row.jid,
-                name: row.name || '',
-                push_name: row.push_name,
-                profile_pic_url: row.profile_pic_url,
-                unread_count: row.unread_count || 0,
-                last_message: row.last_message_content,
-                last_message_content: row.last_message_content,
-                last_message_type: row.last_message_type,
-                last_message_time: row.last_message_at,
-                phone_number: row.phone || row.jid.split('@')[0],
-                is_muted: false,
-                is_group: row.jid.includes('@g.us'),
-                is_newsletter: row.jid.includes('@newsletter'),
-                updated_at: row.updated_at,
-                is_online: row.is_online,
-                last_seen_at: row.last_seen_at,
-                // Dados Injetados do Lead
-                lead_created_at: leadInfo?.created_at || null,
-                lead_status: leadInfo?.status || null
-            };
-        });
-
-        setContacts(formatted);
-      } catch (error) {
-        console.error("Error fetching chats:", error);
-      } finally {
-        setLoading(false);
-      }
+    const init = async () => {
+      setLoading(true);
+      await refreshList();
+      setLoading(false);
     };
 
-    fetchContacts();
+    init();
 
-    // Escuta mudanças em Contacts E Leads para atualizar badges em tempo real
-    const contactSub = supabase.channel(`chat-list-contacts:${user.company_id}`)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'contacts', filter: `company_id=eq.${user.company_id}` }, () => {
-            fetchContacts();
-        })
-        .subscribe();
-        
-    // Se um lead for criado, atualiza a lista para mostrar o badge "Novo"
-    const leadSub = supabase.channel(`chat-list-leads:${user.company_id}`)
-        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'leads', filter: `company_id=eq.${user.company_id}` }, () => {
-            fetchContacts();
-        })
-        .subscribe();
+    // REALTIME PATCHING
+    // Escuta a tabela 'contacts'. Como temos um Trigger no banco que atualiza 'contacts'
+    // sempre que chega mensagem, só precisamos ouvir esta tabela.
+    const channel = supabase.channel(`chat-list-sync:${user.company_id}`)
+      .on('postgres_changes', { 
+          event: '*', 
+          schema: 'public', 
+          table: 'contacts', 
+          filter: `company_id=eq.${user.company_id}` 
+      }, (payload) => {
+          
+          if (payload.eventType === 'UPDATE') {
+              const updatedRow = payload.new;
+              
+              setContacts(prev => {
+                  const exists = prev.find(c => c.jid === updatedRow.jid);
+                  
+                  if (exists) {
+                      // PATCH LOCAL: Atualiza apenas o que mudou e reordena
+                      const updatedList = prev.map(c => {
+                          if (c.jid === updatedRow.jid) {
+                              return {
+                                  ...c,
+                                  name: updatedRow.name || c.name,
+                                  unread_count: updatedRow.unread_count,
+                                  last_message_at: updatedRow.last_message_at,
+                                  last_message_time: updatedRow.last_message_at,
+                                  profile_pic_url: updatedRow.profile_pic_url,
+                                  is_muted: updatedRow.is_muted,
+                                  // Nota: last_message_content não vem no payload da tabela contacts (está em messages),
+                                  // mas para performance, aceitamos que o conteúdo da msg atualize no próximo refresh ou 
+                                  // implementamos um listener duplo se for crítico.
+                                  // Para a lista subir, last_message_at é o que importa.
+                              };
+                          }
+                          return c;
+                      });
 
-    return () => { 
-        supabase.removeChannel(contactSub); 
-        supabase.removeChannel(leadSub);
-    };
+                      // Reordenação Javascript (Mais rápido que refetch)
+                      return updatedList.sort((a, b) => {
+                          const tA = new Date(a.last_message_at || 0).getTime();
+                          const tB = new Date(b.last_message_at || 0).getTime();
+                          return tB - tA;
+                      });
+                  } else {
+                      // Se não existe (novo contato), faz fetch completo para garantir dados do Lead/Joins
+                      refreshList();
+                      return prev;
+                  }
+              });
+          } 
+          else if (payload.eventType === 'INSERT') {
+              // Novo contato inserido -> Fetch para pegar dados completos
+              refreshList();
+          }
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
   }, [user?.company_id]);
 
   return { contacts, loading };

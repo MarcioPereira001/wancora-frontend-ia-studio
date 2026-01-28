@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
@@ -36,6 +35,9 @@ export function ChatInputArea() {
   const audioChunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [recorderMimeType, setRecorderMimeType] = useState<string>('');
+  
+  // Ref para controlar cancelamento (Evita envio no onstop)
+  const isCancelledRef = useRef(false);
 
   // Refs de Input
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -61,6 +63,8 @@ export function ChatInputArea() {
       setMediaMenuOpen(false);
       setEmojiPickerOpen(false);
       setActiveModal(null);
+      // Reseta gravação se trocar de chat
+      if (isRecording) stopRecording(true);
   }, [activeContact?.id]);
 
   // Fecha menus ao clicar fora
@@ -196,9 +200,18 @@ export function ChatInputArea() {
           mediaRecorderRef.current = mediaRecorder;
           audioChunksRef.current = [];
           
+          isCancelledRef.current = false; // Reset cancel flag
+
           mediaRecorder.ondataavailable = (event) => { if (event.data.size > 0) audioChunksRef.current.push(event.data); };
           
           mediaRecorder.onstop = async () => {
+              // VERIFICAÇÃO CRÍTICA DE CANCELAMENTO
+              if (isCancelledRef.current) {
+                  // console.log("Gravação cancelada. Descartes.");
+                  stream.getTracks().forEach(track => track.stop());
+                  return;
+              }
+
               const mime = recorderMimeType || 'audio/webm';
               const audioBlob = new Blob(audioChunksRef.current, { type: mime });
               
@@ -209,7 +222,7 @@ export function ChatInputArea() {
               if (audioFile.size > 0 && user?.company_id) {
                   try {
                       const { publicUrl } = await uploadChatMedia(audioFile, user.company_id);
-                      // Envia mimetype real para backend processar (Baileys lida bem com WebM para PTT)
+                      // Envia mimetype real para backend processar
                       await dispatchMessage({ 
                           type: 'audio', 
                           url: publicUrl, 
@@ -228,14 +241,11 @@ export function ChatInputArea() {
   };
 
   const stopRecording = (cancel = false) => {
+      // Define a flag ANTES de parar
+      isCancelledRef.current = cancel;
+
       if (mediaRecorderRef.current && isRecording) {
-          if (cancel) { 
-              mediaRecorderRef.current.stream.getTracks().forEach(t => t.stop()); 
-              mediaRecorderRef.current = null; 
-          } 
-          else { 
-              mediaRecorderRef.current.stop(); 
-          }
+          mediaRecorderRef.current.stop(); // Isso dispara o onstop
       }
       setIsRecording(false);
       if (timerRef.current) clearInterval(timerRef.current);

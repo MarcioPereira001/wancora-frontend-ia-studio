@@ -84,26 +84,8 @@ export function KanbanBoard() {
         // 2. Calcular onde soltou (baseado no Y do mouse)
         // Precisamos encontrar o card que está LOGO ABAIXO do mouse
         const dropY = e.clientY;
-        let cardBelowId: string | null = null;
         
-        // Itera sobre os elementos visuais da coluna
-        // Nota: Isso usa o DOM apenas para calcular a geometria relativa
-        cardsInColumn.forEach(card => {
-            if (card.id === draggingId) return; // Ignora a si mesmo
-
-            const element = document.getElementById(`card-${card.id}`);
-            if (element) {
-                const rect = element.getBoundingClientRect();
-                const center = rect.top + rect.height / 2;
-                
-                // Se o mouse está acima do centro deste card, este card é o "abaixo"
-                if (dropY < center) {
-                     // Queremos o primeiro que satisfaz isso (o mais alto visualmente)
-                     if (!cardBelowId) cardBelowId = card.id; 
-                }
-            }
-        });
-
+        // Itera sobre os elementos visuais da coluna (usando o DOM, pois a geometria importa)
         if (draggingId) {
             let newPosition = 0;
             
@@ -127,8 +109,8 @@ export function KanbanBoard() {
             if (existingIdx !== -1) targetCards.splice(existingIdx, 1);
 
             if (targetCards.length === 0) {
-                // Coluna vazia
-                newPosition = Date.now();
+                // Coluna vazia: Usa Date.now() + Random para evitar colisão absoluta em drops rápidos
+                newPosition = Date.now() + Math.random();
             } else if (indexToInsert === 0) {
                 // Topo
                 newPosition = (targetCards[0].position || 0) - 1000;
@@ -136,7 +118,7 @@ export function KanbanBoard() {
                 // Fundo
                 newPosition = (targetCards[targetCards.length - 1].position || 0) + 1000;
             } else {
-                // Meio
+                // Meio (Média aritmética)
                 const posAbove = targetCards[indexToInsert - 1]?.position || 0;
                 const posBelow = targetCards[indexToInsert]?.position || 0;
                 newPosition = (posAbove + posBelow) / 2;

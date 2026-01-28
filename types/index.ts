@@ -8,20 +8,23 @@ export interface ChatContact {
   push_name?: string;
   profile_pic_url?: string | null;
   unread_count: number;
-  last_message?: string;
   last_message_content?: string;
   last_message_type?: string;
-  last_message_time?: string;
+  last_message_at?: string; // Alinhado com SQL
   phone_number: string;
   is_muted?: boolean;
   is_group?: boolean;
   is_newsletter?: boolean;
-  updated_at?: string;
   is_online?: boolean;
   last_seen_at?: string;
-  // Campos injetados via Join/Map
-  lead_created_at?: string | null;
+  
+  // Dados enriquecidos via Join/RPC
   lead_status?: string | null;
+  lead_created_at?: string | null;
+  
+  // Campos legados para compatibilidade de UI
+  last_message?: string; 
+  last_message_time?: string;
 }
 
 export interface TeamMember {
