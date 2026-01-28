@@ -28,9 +28,8 @@ export function formatPhone(jid: string | null | undefined): string {
       return `Grupo ${clean.slice(0, 4)}...`;
   }
 
-  // Formato simples +55 (DDD) 9xxxx-xxxx
+  // Formato +55 (DDD) 9xxxx-xxxx
   if (clean.length >= 10) {
-      // Tenta detectar DDI 55
       let ddd = '';
       let num = '';
       
@@ -55,31 +54,26 @@ export function formatPhone(jid: string | null | undefined): string {
   return `+${clean}`;
 }
 
-// LÓGICA DE OURO v3: HIERARQUIA DE NOMES (NULL SAFE)
+// LÓGICA DE OURO v4: HIERARQUIA DE NOMES (NULL SAFE)
+// Define o que será exibido na lista de chat e cabeçalho
 export function getDisplayName(contact: any): string {
     if (!contact) return "Usuário";
 
     // 1. Grupos (Prioridade Total para o Nome se existir)
     if (contact.is_group || contact.remote_jid?.includes('@g.us')) {
         if (contact.name && contact.name !== contact.remote_jid) return contact.name;
-        if (contact.push_name) return contact.push_name;
-        return "Grupo (Sem Nome)";
+        // Fallback para grupos sem nome (raro)
+        return "Grupo Sem Nome";
     }
     
-    // 2. Nome da Agenda (contact.name) - Se não for NULL e não for telefone
+    // 2. Nome da Agenda (contact.name) - Se não for NULL
     if (contact.name && contact.name.trim() !== '') {
-        // Validação extra: Se o nome for igual ao telefone, ignora
-        const cleanName = contact.name.replace(/\D/g, '');
-        const cleanPhone = (contact.phone_number || contact.remote_jid || '').replace(/\D/g, '');
-        
-        if (cleanName !== cleanPhone) {
-            return contact.name;
-        }
+        return contact.name;
     }
     
     // 3. Nome do Perfil (push_name)
     if (contact.push_name && contact.push_name.trim() !== '') {
-        return contact.push_name;
+        return `~${contact.push_name}`; // O til indica que é o nome público
     }
     
     // 4. Fallback: Número Formatado

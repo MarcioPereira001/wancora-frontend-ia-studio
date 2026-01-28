@@ -7,7 +7,7 @@ import { useChatStore } from '@/store/useChatStore';
 import { 
     Search, Plus, MessageSquare, Loader2, 
     Camera, Mic, Video, FileText, MapPin, 
-    BarChart2, User, DollarSign, Sticker, Check, CheckCheck 
+    BarChart2, User, DollarSign, Sticker, Check, CheckCheck, AlertTriangle
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -17,7 +17,7 @@ import { CreateChannelModal } from './CreateChannelModal';
 import { useAuthStore } from '@/store/useAuthStore';
 
 export function ChatListSidebar() {
-  const { contacts, loading } = useChatList();
+  const { contacts, loading, error } = useChatList(); // Agora suporta 'error'
   const { activeContact, setActiveContact, selectedInstance } = useChatStore();
   const { user } = useAuthStore();
   
@@ -30,9 +30,11 @@ export function ChatListSidebar() {
   // Ordenação e Filtro
   const filteredContacts = useMemo(() => {
       let list = contacts.filter(contact => {
-          const matchesSearch = (contact.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-                                (contact.push_name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-                                contact.phone_number.includes(searchTerm);
+          const displayName = getDisplayName(contact).toLowerCase();
+          const phone = (contact.phone_number || '').toLowerCase();
+          const search = searchTerm.toLowerCase();
+
+          const matchesSearch = displayName.includes(search) || phone.includes(search);
           
           if (!matchesSearch) return false;
 
@@ -80,7 +82,6 @@ export function ChatListSidebar() {
       
       const iconClass = "w-3.5 h-3.5 inline-block mr-1 opacity-70";
 
-      // Tenta parsear se for um JSON (comum em poll/location)
       if (typeof content === 'string' && (content.startsWith('{') || content.startsWith('['))) {
           try {
               const parsed = JSON.parse(content);
@@ -88,7 +89,6 @@ export function ChatListSidebar() {
               else if (type === 'location') content = 'Localização';
               else if (type === 'contact') content = parsed.displayName || 'Contato';
           } catch(e) {
-              // Se falhar parse, mostra raw se for curto, senão define tipo
               if (content.length > 50) content = `[${type}]`;
           }
       }
@@ -167,12 +167,20 @@ export function ChatListSidebar() {
             </div>
         </div>
 
+        {/* Error State */}
+        {error && (
+            <div className="p-4 bg-red-500/10 border-b border-red-500/20 flex items-center gap-3">
+                <AlertTriangle className="w-5 h-5 text-red-500 shrink-0" />
+                <p className="text-xs text-red-200">{error}</p>
+            </div>
+        )}
+
         {/* List */}
         <div className="flex-1 overflow-y-auto custom-scrollbar">
             {loading ? (
                 <div className="flex flex-col items-center justify-center h-40 gap-3">
                     <Loader2 className="w-6 h-6 animate-spin text-primary" />
-                    <span className="text-xs text-zinc-500">Carregando conversas...</span>
+                    <span className="text-xs text-zinc-500">Sincronizando...</span>
                 </div>
             ) : filteredContacts.length === 0 ? (
                 <div className="text-center p-8 text-zinc-500 text-sm">
@@ -183,7 +191,6 @@ export function ChatListSidebar() {
                     const isActive = activeContact?.id === contact.id;
                     const displayName = getDisplayName(contact);
                     
-                    // LÓGICA DO BADGE "NOVO LEAD"
                     const isNewLead = !contact.is_group && contact.lead_created_at && 
                         (new Date().getTime() - new Date(contact.lead_created_at).getTime() < 24 * 60 * 60 * 1000);
 
@@ -242,7 +249,6 @@ export function ChatListSidebar() {
             )}
         </div>
 
-        {/* Modais */}
         <CreateGroupModal 
             isOpen={isGroupModalOpen} 
             onClose={() => setIsGroupModalOpen(false)}

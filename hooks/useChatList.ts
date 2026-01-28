@@ -9,27 +9,36 @@ export function useChatList() {
   const supabase = createClient();
   const [contacts, setContacts] = useState<ChatContact[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Função isolada para recarregar tudo (usada em casos drásticos)
+  // Função isolada para recarregar tudo com tratamento de erro
   const refreshList = async () => {
       if (!user?.company_id) return;
       try {
-          const { data, error } = await supabase.rpc('get_my_chat_list', {
+          // Chamada RPC - Se a função no banco estiver quebrada (PGRST203), vai cair no catch
+          const { data, error: rpcError } = await supabase.rpc('get_my_chat_list', {
               p_company_id: user.company_id
           });
 
-          if (error) throw error;
+          if (rpcError) throw rpcError;
 
-          // Mapping para garantir compatibilidade com componentes legados
+          // Mapping e Sanitização
           const formatted: ChatContact[] = (data || []).map((row: any) => ({
               ...row,
-              last_message_time: row.last_message_at, // Alias
-              phone_number: row.phone_number || row.remote_jid.split('@')[0]
+              last_message_time: row.last_message_at, // Alias para UI
+              phone_number: row.phone_number || row.remote_jid.split('@')[0],
+              // Garante que name null seja mantido como null para a UI tratar
+              name: row.name || null
           }));
 
           setContacts(formatted);
-      } catch (e) {
-          console.error("ChatList RPC Error:", e);
+          setError(null);
+      } catch (e: any) {
+          console.error("ChatList RPC Error:", e.message);
+          // Se for erro de ambiguidade (PGRST203), não adianta tentar de novo imediatamente
+          if (e.code === 'PGRST203') {
+              setError("Erro crítico no banco de dados. Contate o suporte.");
+          }
       }
   };
 
@@ -44,9 +53,8 @@ export function useChatList() {
 
     init();
 
-    // REALTIME PATCHING
-    // Escuta a tabela 'contacts'. Como temos um Trigger no banco que atualiza 'contacts'
-    // sempre que chega mensagem, só precisamos ouvir esta tabela.
+    // REALTIME: Ouve apenas a tabela CONTACTS
+    // O backend atualiza 'contacts' com last_message_at e unread_count via Trigger
     const channel = supabase.channel(`chat-list-sync:${user.company_id}`)
       .on('postgres_changes', { 
           event: '*', 
@@ -62,41 +70,37 @@ export function useChatList() {
                   const exists = prev.find(c => c.jid === updatedRow.jid);
                   
                   if (exists) {
-                      // PATCH LOCAL: Atualiza apenas o que mudou e reordena
+                      // PATCH LOCAL: Atualiza apenas o que mudou
                       const updatedList = prev.map(c => {
                           if (c.jid === updatedRow.jid) {
                               return {
                                   ...c,
-                                  name: updatedRow.name || c.name,
+                                  name: updatedRow.name || c.name, // Mantém local se vier null e já tiver
                                   unread_count: updatedRow.unread_count,
                                   last_message_at: updatedRow.last_message_at,
                                   last_message_time: updatedRow.last_message_at,
                                   profile_pic_url: updatedRow.profile_pic_url,
                                   is_muted: updatedRow.is_muted,
-                                  // Nota: last_message_content não vem no payload da tabela contacts (está em messages),
-                                  // mas para performance, aceitamos que o conteúdo da msg atualize no próximo refresh ou 
-                                  // implementamos um listener duplo se for crítico.
-                                  // Para a lista subir, last_message_at é o que importa.
+                                  is_online: updatedRow.is_online
                               };
                           }
                           return c;
                       });
 
-                      // Reordenação Javascript (Mais rápido que refetch)
+                      // Reordenação Javascript (Bubbling Up)
                       return updatedList.sort((a, b) => {
                           const tA = new Date(a.last_message_at || 0).getTime();
                           const tB = new Date(b.last_message_at || 0).getTime();
-                          return tB - tA;
+                          return tB - tA; // Mais recente primeiro
                       });
                   } else {
-                      // Se não existe (novo contato), faz fetch completo para garantir dados do Lead/Joins
+                      // Se não existe na lista (novo contato ativo), faz fetch completo
                       refreshList();
                       return prev;
                   }
               });
           } 
           else if (payload.eventType === 'INSERT') {
-              // Novo contato inserido -> Fetch para pegar dados completos
               refreshList();
           }
       })
@@ -105,5 +109,5 @@ export function useChatList() {
     return () => { supabase.removeChannel(channel); };
   }, [user?.company_id]);
 
-  return { contacts, loading };
+  return { contacts, loading, error };
 }
