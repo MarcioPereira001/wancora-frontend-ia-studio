@@ -35,6 +35,8 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  const isSticker = message.message_type === 'sticker';
+
   // Format Time (HH:mm)
   const formatTime = (dateString?: string) => {
     if (!dateString) return '';
@@ -188,24 +190,24 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
             {/* 3.1. Container Principal (Neon Style) */}
             <div 
                 className={cn(
-                    "relative flex flex-col min-w-[100px] break-words rounded-xl p-1.5 cursor-pointer border transition-all duration-300",
-                    isMe 
-                        ? "bg-[#005c4b] text-white rounded-tr-none border-[#005c4b] shadow-[0_4px_15px_-3px_rgba(34,197,94,0.3)]" 
-                        : "bg-zinc-800 text-zinc-100 rounded-tl-none border-zinc-700 shadow-[0_4px_15px_-3px_rgba(59,130,246,0.2)]",
+                    "relative flex flex-col min-w-[100px] break-words rounded-xl p-1.5 cursor-pointer transition-all duration-300",
+                    isSticker ? "bg-transparent shadow-none border-none p-0" : "border",
+                    !isSticker && isMe ? "bg-[#005c4b] text-white rounded-tr-none border-[#005c4b] shadow-[0_4px_15px_-3px_rgba(34,197,94,0.3)]" : "",
+                    !isSticker && !isMe ? "bg-zinc-800 text-zinc-100 rounded-tl-none border-zinc-700 shadow-[0_4px_15px_-3px_rgba(59,130,246,0.2)]" : "",
                     isSelectionMode && isSelected ? "ring-2 ring-primary ring-offset-2 ring-offset-zinc-950 opacity-90" : "",
                     (message as any).is_deleted && "bg-zinc-900/50 border-zinc-800 text-zinc-500 italic shadow-none"
                 )}
                 onClick={() => isSelectionMode && onSelect && onSelect()}
             >
                 {/* 3.2. Nome em Grupos */}
-                {!isMe && message.contact?.push_name && (
+                {!isMe && !isSticker && message.contact?.push_name && (
                     <span className="text-[11px] font-bold text-orange-400 px-1 mb-0.5 truncate max-w-[200px] block opacity-90">
                         {message.contact.push_name}
                     </span>
                 )}
 
                 {/* 3.3. Conteúdo Real */}
-                <div className="px-1 pb-1">
+                <div className={cn(!isSticker && "px-1 pb-1")}>
                     {(message as any).is_deleted ? (
                         <div className="flex items-center gap-2 text-sm py-1">
                             <Ban className="w-4 h-4" /> <span>⊘ Mensagem apagada</span>
@@ -216,15 +218,15 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
                 </div>
 
                 {/* 3.4. Rodapé (Hora + Ticks) */}
-                <div className={cn("flex justify-end items-end gap-1 px-1 mt-auto select-none -mt-1")}>
-                    <span className={cn("text-[10px] leading-none mb-0.5 font-medium", isMe ? "text-emerald-100/70" : "text-zinc-500")}>
+                <div className={cn("flex justify-end items-end gap-1 px-1 mt-auto select-none", !isSticker && "-mt-1", isSticker && "absolute bottom-1 right-2 bg-black/40 rounded-full px-1.5 py-0.5 backdrop-blur-sm")}>
+                    <span className={cn("text-[10px] leading-none font-medium", isMe ? "text-emerald-100/70" : "text-zinc-300")}>
                         {formatTime(message.created_at)}
                     </span>
                     {isMe && <div className="mb-[1px]">{renderStatusIcon()}</div>}
                 </div>
 
                 {/* 3.5. Pontinha da Bolha (SVG Shape) */}
-                {!isSelectionMode && (
+                {!isSelectionMode && !isSticker && (
                     <div className={cn(
                         "absolute top-0 w-3 h-3 -z-10",
                         isMe 

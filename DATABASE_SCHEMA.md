@@ -255,6 +255,13 @@ Gestão de planos do sistema.
 * `max_connections`: integer
 * `features`: jsonb
 
+### `baileys_auth_state`
+Armazena chaves criptográficas e credenciais de sessão do WhatsApp (Multi-Device).
+* `session_id`: text (PK)
+* `data_type`: text (PK)
+* `key_id`: text (PK)
+* `payload`: jsonb
+* `updated_at`: timestamptz
 ---
 
 ## 2. Funções RPC (Server-Side Logic)
@@ -338,3 +345,19 @@ ALTER TABLE public.lead_activities REPLICA IDENTITY FULL;
 * `idx_messages_remote_jid_company` (Vital para carregar histórico de chat)
 * `idx_agents_company`
 * `idx_appointments_worker_lookup` (Vital para o Agenda Worker)
+
+---
+
+## 6. Storage (Arquivos & Mídia)
+
+O sistema utiliza o Supabase Storage para armazenar arquivos pesados, mantendo o banco de dados leve.
+
+### Bucket: `chat-media` (Público)
+* **Função:** Armazenar imagens, áudios, vídeos e documentos recebidos ou enviados pelo WhatsApp.
+* **Estrutura de Pastas:** `/{instance_id}/{message_id}.{ext}`
+* **Política de Acesso:**
+    * **Leitura (Select):** Pública (Qualquer pessoa com o link pode ver). Necessário para o Frontend renderizar imagens.
+    * **Escrita (Insert/Update):** Restrita a usuários autenticados (`authenticated`) e backend (`service_role`).
+* **Uso no Código:** O backend salva o arquivo aqui e grava apenas a URL pública na coluna `messages.media_url`.
+
+---

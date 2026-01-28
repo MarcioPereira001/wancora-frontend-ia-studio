@@ -1,7 +1,8 @@
+
 "use client";
 
 import React, { useState } from 'react';
-import { FileText, MapPin, Download, PlayCircle, Image as ImageIcon, Film, BarChart2, User, Copy, QrCode, DollarSign, CheckCircle2, AlertCircle, Loader2, Circle, Check } from "lucide-react";
+import { FileText, MapPin, Download, PlayCircle, Image as ImageIcon, Film, BarChart2, User, Copy, QrCode, DollarSign, CheckCircle2, AlertCircle, Loader2, Circle, Check, Sticker, AlertTriangle } from "lucide-react";
 import { Message } from "@/types";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/useToast";
@@ -48,17 +49,10 @@ export function MessageContent({ message }: MessageContentProps) {
                 />
             ) : (
                 <div className="h-40 w-56 flex flex-col items-center justify-center text-zinc-500 bg-zinc-900">
-                    {!mediaUrl && !imgError ? (
-                        <>
-                            <Loader2 className="w-8 h-8 text-primary animate-spin mb-2" />
-                            <span className="text-xs text-zinc-400">Baixando mídia...</span>
-                        </>
-                    ) : (
-                        <>
-                            <ImageIcon className="w-10 h-10 opacity-30 mb-2" />
-                            <span className="text-xs text-zinc-400">Imagem expirada</span>
-                        </>
-                    )}
+                    <ImageIcon className="w-10 h-10 opacity-30 mb-2" />
+                    <span className="text-xs text-zinc-400">
+                        {mediaUrl ? "Erro ao carregar" : "Mídia indisponível"}
+                    </span>
                 </div>
             )}
         </div>
@@ -80,7 +74,7 @@ export function MessageContent({ message }: MessageContentProps) {
             "w-10 h-10 rounded-full flex items-center justify-center shrink-0",
             isMe ? "bg-primary text-primary-foreground" : "bg-zinc-700 text-zinc-400"
         )}>
-            {mediaUrl ? <PlayCircle className="w-6 h-6" /> : <Loader2 className="w-5 h-5 animate-spin" />}
+            {mediaUrl ? <PlayCircle className="w-6 h-6" /> : <AlertTriangle className="w-5 h-5 text-red-500" />}
         </div>
         <div className="flex-1 flex flex-col justify-center overflow-hidden">
             {mediaUrl ? (
@@ -89,7 +83,7 @@ export function MessageContent({ message }: MessageContentProps) {
                 </audio>
             ) : (
                 <div className="flex items-center gap-1 text-xs text-zinc-500">
-                    <span className="italic">Processando áudio...</span>
+                    <span className="italic">Áudio não disponível</span>
                 </div>
             )}
         </div>
@@ -109,8 +103,8 @@ export function MessageContent({ message }: MessageContentProps) {
                 </video>
             ) : (
                 <div className="h-32 w-48 flex items-center justify-center text-zinc-500 bg-zinc-800 flex-col">
-                    <Loader2 className="w-8 h-8 text-primary animate-spin mb-2" />
-                    <span className="text-xs">Baixando vídeo...</span>
+                    <Film className="w-8 h-8 opacity-30 mb-2" />
+                    <span className="text-xs">Vídeo indisponível</span>
                 </div>
             )}
         </div>
@@ -128,7 +122,8 @@ export function MessageContent({ message }: MessageContentProps) {
       <div 
         onClick={() => mediaUrl && window.open(mediaUrl, '_blank')}
         className={cn(
-            "flex items-center gap-3 p-3 mt-1 rounded-md border cursor-pointer transition-all group max-w-[280px]",
+            "flex items-center gap-3 p-3 mt-1 rounded-md border transition-all group max-w-[280px]",
+            mediaUrl ? "cursor-pointer" : "cursor-default opacity-70",
             isMe ? "bg-primary/10 border-primary/20 hover:bg-primary/20" : "bg-zinc-800/80 border-zinc-700 hover:bg-zinc-800"
         )}
       >
@@ -140,15 +135,44 @@ export function MessageContent({ message }: MessageContentProps) {
             {fileName}
           </p>
           <span className="text-[10px] opacity-70 uppercase tracking-wide flex items-center gap-1">
-             {mediaUrl ? "Clique para baixar" : "Processando..."}
+             {mediaUrl ? "Clique para baixar" : "Arquivo removido"}
           </span>
         </div>
-        {mediaUrl ? <Download className="w-4 h-4 opacity-50 group-hover:opacity-100" /> : <Loader2 className="w-3 h-3 animate-spin opacity-50" />}
+        {mediaUrl ? <Download className="w-4 h-4 opacity-50 group-hover:opacity-100" /> : <AlertCircle className="w-3 h-3 text-red-500 opacity-50" />}
       </div>
     );
   }
 
-  // --- 5. LOCALIZAÇÃO (NATIVO WHATSAPP STYLE) ---
+  // --- 5. STICKER (FIGURINHA) ---
+  if (type === 'sticker') {
+      return (
+          <div className="relative mt-1 overflow-hidden w-32 h-32 flex items-center justify-center">
+                {mediaUrl ? (
+                    <img 
+                        src={mediaUrl} 
+                        alt="Sticker" 
+                        className="w-full h-full object-contain" 
+                        loading="lazy"
+                        onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                            // Fallback visual se a imagem quebrar
+                            const parent = e.currentTarget.parentElement;
+                            if(parent) {
+                                parent.innerHTML = '<div class="text-zinc-600 text-[10px] flex flex-col items-center"><svg class="w-6 h-6 mb-1" ...>...</svg>Sticker erro</div>';
+                            }
+                        }}
+                    />
+                ) : (
+                    <div className="flex flex-col items-center justify-center text-zinc-500">
+                        <Sticker className="w-8 h-8 opacity-20" />
+                        <span className="text-[9px] mt-1 opacity-50">Sticker off</span>
+                    </div>
+                )}
+          </div>
+      );
+  }
+
+  // --- 6. LOCALIZAÇÃO (NATIVO WHATSAPP STYLE) ---
   if (type === 'location') {
     let lat: number | null = null;
     let long: number | null = null;
@@ -213,7 +237,7 @@ export function MessageContent({ message }: MessageContentProps) {
     );
   }
 
-  // --- 6. CONTATO ---
+  // --- 7. CONTATO ---
   if (type === 'contact') {
       let contactData = { displayName: 'Contato', vcard: '', phone: '' };
       try {
@@ -256,7 +280,7 @@ export function MessageContent({ message }: MessageContentProps) {
       );
   }
 
-  // --- 7. PIX ---
+  // --- 8. PIX ---
   const isExplicitPix = type === 'pix';
   const isTextPix = type === 'text' && typeof content === 'string' && (content.startsWith('Chave Pix:') || content.includes('PIX'));
 
@@ -300,7 +324,7 @@ export function MessageContent({ message }: MessageContentProps) {
       );
   }
 
-  // --- 8. ENQUETE (POLL) NATIVA VIA POLL BUBBLE ---
+  // --- 9. ENQUETE (POLL) NATIVA VIA POLL BUBBLE ---
   if (type === 'poll') {
       return <PollBubble message={message} isMe={isMe} />;
   }
