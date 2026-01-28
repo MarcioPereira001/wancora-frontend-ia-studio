@@ -7,17 +7,18 @@ import { useChatStore } from '@/store/useChatStore';
 import { 
     Search, Plus, MessageSquare, Loader2, 
     Camera, Mic, Video, FileText, MapPin, 
-    BarChart2, User, DollarSign, Sticker, Check, CheckCheck, AlertTriangle, RefreshCw
+    BarChart2, User, DollarSign, Sticker, AlertTriangle, RefreshCw
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { cn, getDisplayName } from '@/lib/utils';
 import { CreateGroupModal } from './CreateGroupModal';
 import { CreateChannelModal } from './CreateChannelModal';
+import { NewChatModal } from './NewChatModal'; // NOVO IMPORT
 import { useAuthStore } from '@/store/useAuthStore';
 
 export function ChatListSidebar() {
-  const { contacts, loading, error, refreshList } = useChatList(); // Usando o refreshList exportado
+  const { contacts, loading, error, refreshList } = useChatList(); 
   const { activeContact, setActiveContact, selectedInstance } = useChatStore();
   const { user } = useAuthStore();
   
@@ -26,6 +27,7 @@ export function ChatListSidebar() {
   
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
   const [isChannelModalOpen, setIsChannelModalOpen] = useState(false);
+  const [isNewChatModalOpen, setIsNewChatModalOpen] = useState(false); // STATE DO NOVO MODAL
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const handleManualRefresh = async () => {
@@ -136,11 +138,14 @@ export function ChatListSidebar() {
                     <Button variant="ghost" size="icon" title="Atualizar Lista" onClick={handleManualRefresh} disabled={isRefreshing}>
                         <RefreshCw className={cn("w-4 h-4 text-zinc-400", isRefreshing && "animate-spin")} />
                     </Button>
-                    <Button variant="ghost" size="icon" title="Novo Grupo" onClick={() => setIsGroupModalOpen(true)}>
-                        <MessageSquare className="w-5 h-5 text-zinc-400" />
-                    </Button>
-                    <Button variant="ghost" size="icon" title="Novo Canal" onClick={() => setIsChannelModalOpen(true)}>
-                        <Plus className="w-5 h-5 text-zinc-400" />
+                    {/* BOTÃO NOVA CONVERSA (PRINCIPAL) */}
+                    <Button 
+                        size="icon" 
+                        title="Nova Conversa" 
+                        onClick={() => setIsNewChatModalOpen(true)}
+                        className="bg-primary hover:bg-primary/90 text-white w-8 h-8 rounded-full shadow-lg shadow-green-500/20"
+                    >
+                        <Plus className="w-5 h-5" />
                     </Button>
                 </div>
             </div>
@@ -193,8 +198,11 @@ export function ChatListSidebar() {
                     <span className="text-xs text-zinc-500">Sincronizando...</span>
                 </div>
             ) : filteredContacts.length === 0 ? (
-                <div className="text-center p-8 text-zinc-500 text-sm">
-                    Nenhuma conversa encontrada.
+                <div className="flex flex-col items-center justify-center h-full p-8 text-center gap-4">
+                    <p className="text-zinc-500 text-sm">Nenhuma conversa encontrada.</p>
+                    <Button variant="outline" onClick={() => setIsNewChatModalOpen(true)} className="border-dashed border-zinc-700 text-zinc-400 hover:text-white">
+                        Iniciar Nova Conversa
+                    </Button>
                 </div>
             ) : (
                 filteredContacts.map(contact => {
@@ -258,6 +266,12 @@ export function ChatListSidebar() {
                 })
             )}
         </div>
+
+        {/* MODAIS */}
+        <NewChatModal 
+            isOpen={isNewChatModalOpen}
+            onClose={() => setIsNewChatModalOpen(false)}
+        />
 
         <CreateGroupModal 
             isOpen={isGroupModalOpen} 
