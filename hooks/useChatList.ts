@@ -24,10 +24,10 @@ export function useChatList() {
           });
 
           if (rpcError) {
-              // Detecção de erro de ambiguidade ou função inexistente
-              if (rpcError.code === 'PGRST203' || rpcError.message.includes('ambiguous')) {
+              // Detecção de erro de ambiguidade (PGRST203)
+              if (rpcError.code === 'PGRST203' || rpcError.message.includes('ambiguous') || rpcError.code === '42883') {
                   criticalErrorRef.current = true;
-                  throw new Error("Erro crítico de banco de dados (Função duplicada). Execute o SQL de correção.");
+                  throw new Error("Erro de banco de dados (Função duplicada). Execute o SQL de correção.");
               }
               throw rpcError;
           }
