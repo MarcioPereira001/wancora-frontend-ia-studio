@@ -24,6 +24,9 @@ Gerencia o estado físico da conexão com o WhatsApp.
 * `sync_status`: text ('waiting', 'importing_contacts', 'importing_messages', 'processing_history', 'completed')
 * `sync_percent`: integer (0-100)
 * `updated_at`: timestamptz
+* `webhook_url`: text
+* `webhook_enabled`: boolean (Default: false)
+* `webhook_events`: text[] (Default: ['message.upsert'])
 
 ### `identity_map` (NOVO: LID Resolver)
 Tabela técnica para resolver conflitos entre IDs de telefone e IDs ocultos (LID).
@@ -262,6 +265,16 @@ Armazena chaves criptográficas e credenciais de sessão do WhatsApp (Multi-Devi
 * `key_id`: text (PK)
 * `payload`: jsonb
 * `updated_at`: timestamptz
+
+### `webhook_logs` (Integrações) [NOVO]
+Logs de disparos de eventos para sistemas externos (n8n, Typebot).
+* `id`: uuid (PK)
+* `instance_id`: uuid (FK -> instances)
+* `event_type`: text (Ex: 'message.upsert')
+* `status`: integer (HTTP Status Code)
+* `payload`: jsonb
+* `response_body`: text
+* `created_at`: timestamptz
 ---
 
 ## 2. Funções RPC (Server-Side Logic)
@@ -349,15 +362,14 @@ ALTER TABLE public.lead_activities REPLICA IDENTITY FULL;
 ---
 
 ## 6. Storage (Arquivos & Mídia)
-
 O sistema utiliza o Supabase Storage para armazenar arquivos pesados, mantendo o banco de dados leve.
 
 ### Bucket: `chat-media` (Público)
 * **Função:** Armazenar imagens, áudios, vídeos e documentos recebidos ou enviados pelo WhatsApp.
-* **Estrutura de Pastas:** `/{instance_id}/{message_id}.{ext}`
+* **Estrutura de Pastas:** `/{company_id}/{timestamp_nome_arquivo}.{ext}`
 * **Política de Acesso:**
     * **Leitura (Select):** Pública (Qualquer pessoa com o link pode ver). Necessário para o Frontend renderizar imagens.
     * **Escrita (Insert/Update):** Restrita a usuários autenticados (`authenticated`) e backend (`service_role`).
-* **Uso no Código:** O backend salva o arquivo aqui e grava apenas a URL pública na coluna `messages.media_url`.
+* **Uso no Código:** O backend e frontend salvam o arquivo aqui e gravam apenas a URL pública na coluna `messages.media_url`.
 
 ---

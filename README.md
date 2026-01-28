@@ -44,11 +44,16 @@ Este é o coração pulsante. Ele não é apenas uma API REST; é um Gerenciador
     * **Entrada:** Webhooks do Baileys (`messages.upsert`, `connection.update`, `messages.update`).
     * **Saída:** API REST para o Frontend (`POST /api/message/send`).
     * **Persistência:** Gravação direta no Supabase via `supabase-js` (Service Role) ignorando RLS.
+* **Controle de Concorrência (Message Queue):**
+    * Implementação do `messageQueue.js` para processar mensagens recebidas (`messages.upsert`).
+    * **Concurrency Limit:** 10 mensagens simultâneas por thread.
+    * **Objetivo:** Evitar *Event Loop Lag* e garantir que operações pesadas de banco (Upsert Contact/Lead) não travem o WebSocket do Baileys durante rajadas de mensagens (Storm).
 * **Estratégia de Sincronização (Sync Strategy):**
     * **Sync First Protocol (Visual Feedback):** Ao conectar, o Backend atualiza a tabela `instances` com `sync_status` ('importing_contacts' -> 'importing_messages' -> 'completed') e `sync_percent`. Isso permite que o Frontend exiba uma tela de bloqueio com barra de progresso real.
     * **Gerenciamento de Mídia (Supabase Storage):**
         * Bucket: `chat-media` (Público).
-        * Fluxo: O Backend intercepta msg com mídia -> Baixa o buffer -> Faz upload no Storage -> Salva a URL pública na coluna `messages.media_url`.
+        * Estrutura: Organizado por `company_id` para isolamento e facilidade de backup.
+        * Fluxo: O Backend intercepta msg com mídia -> Baixa o buffer -> Faz upload -> Salva URL no banco.
     * **Chunking:** Processamos mensagens históricas em lotes seguros (ex: 50 msgs) para evitar *Out of Memory*.
     * **Unwrap:** Função nativa (`unwrapMessage`) para desenrolar mensagens complexas (ViewOnce, Editadas, Docs com Legenda) antes de salvar.
     * **Deduplicação:** Uso rigoroso de `whatsapp_id` + `remote_jid` como chave composta única para evitar mensagens repetidas.

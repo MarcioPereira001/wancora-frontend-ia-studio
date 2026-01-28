@@ -192,46 +192,67 @@ Verifica se o servidor está online.
 
 #### `POST /management/group/create`
 Cria um novo grupo com participantes iniciais.
-* **Body:**
-    ```json
-    {
-      "sessionId": "string",
-      "companyId": "uuid",
-      "subject": "Nome do Grupo",
-      "participants": ["5511999999999"] // Array de JIDs ou Telefones
-    }
-    ```
-
-#### `POST /management/channel/create`
-Cria um novo Canal (Newsletter) para transmissão.
-* **Body:**
-    ```json
-    {
-      "sessionId": "string",
-      "companyId": "uuid",
-      "name": "Nome do Canal",
-      "description": "Descrição opcional"
-    }
-    ```
+* **Body:** `{ "sessionId": "string", "companyId": "uuid", "subject": "Nome", "participants": ["5511999999999"] }`
 
 #### `POST /management/group/update`
-Gerencia configurações, participantes e metadados de grupo.
+Gerencia configurações e metadados.
 * **Body:**
     ```json
     {
       "sessionId": "string",
       "groupId": "123456@g.us",
-      "action": "add" | "remove" | "promote" | "demote" | "subject" | "description" | "invite_code",
-      "value": "Novo Título", // Apenas para subject/description
-      "participants": ["jid1", "jid2"] // Apenas para ações de membros
+      "action": "add" | "remove" | "promote" | "demote" | "subject" | "description" | "invite_code" | "picture",
+      "value": "...", // URL da imagem se action='picture', ou texto para subject/desc
+      "participants": ["jid1"] // Apenas para ações de membros
     }
     ```
+
+#### `POST /management/channel/create`
+Cria um novo Canal.
+* **Body:** `{ "sessionId": "string", "companyId": "uuid", "name": "Nome", "description": "Desc" }`
+
+#### `POST /management/channel/delete`
+Remove um Canal (Unfollow/Delete).
+* **Body:** `{ "sessionId": "string", "channelId": "123@newsletter" }`
 
 ### 3.6. Tratamento de Canais (Newsletters)
 - O sistema identifica automaticamente JIDs com sufixo `@newsletter`.
 - A RPC `get_my_chat_list` retorna a flag `is_newsletter` = true.
 - A tabela `contacts` armazena o nome do canal em `name` e ignora a validação de número de telefone para estes casos.
 
+### 3.7. Webhooks de Saída (Outgoing Events)
+Se configurado na instância, o Wancora envia POST requests para a URL definida.
+
+**Evento: `message.upsert` (Nova Mensagem)**
+Payload enviado para o seu n8n/Typebot:
+```json
+{
+  "event": "message.upsert",
+  "timestamp": "2024-03-20T10:00:00Z",
+  "data": {
+    "company_id": "uuid",
+    "session_id": "string",
+    "remote_jid": "551199999999@s.whatsapp.net",
+    "pushName": "João Silva",
+    "content": "Olá",
+    "message_type": "text",
+    "media_url": "https://...",
+    "whatsapp_id": "BAE5F...",
+    "from_me": false,
+    "isGroup": false
+  }
+}```
+
+### 3.8. Automação de Agenda (Automation Service)
+POST /appointments/confirm
+Dispara notificações imediatas (WhatsApp) de confirmação de agendamento para o Admin e para o Lead, baseado nas regras configuradas.
+Body:
+```json
+{
+  "appointmentId": "uuid",
+  "companyId": "uuid",
+  "sessionId": "string" // Opcional (O backend resolve a sessão ativa se omitido)
+}```
 ---
 
 ## 4. ⚙️ Lógica Interna & Workers (Black Box)
