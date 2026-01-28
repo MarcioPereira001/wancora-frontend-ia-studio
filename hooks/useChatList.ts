@@ -24,16 +24,19 @@ export function useChatList() {
           });
 
           if (rpcError) {
-              // Detecção de erro de ambiguidade (PGRST203)
-              if (rpcError.code === 'PGRST203' || rpcError.message.includes('ambiguous') || rpcError.code === '42883') {
+              console.error("ChatList RPC Raw Error:", rpcError);
+              
+              // Erros de estrutura (PGRST203, 42804 datatype mismatch, etc)
+              if (rpcError.code === 'PGRST203' || rpcError.code === '42883' || rpcError.code === '42804') {
                   criticalErrorRef.current = true;
-                  throw new Error("Erro de banco de dados (Função duplicada). Execute o SQL de correção.");
+                  throw new Error(`Erro crítico de banco de dados (Schema Mismatch: ${rpcError.message}). Execute o SQL de correção.`);
               }
               throw rpcError;
           }
 
           const formatted: ChatContact[] = (data || []).map((row: any) => ({
               ...row,
+              id: row.id || row.jid, // Fallback para JID se ID vier nulo
               last_message_time: row.last_message_at,
               phone_number: row.phone_number || row.remote_jid.split('@')[0],
               name: row.name || null
@@ -42,7 +45,7 @@ export function useChatList() {
           setContacts(formatted);
           setError(null);
       } catch (e: any) {
-          console.error("ChatList RPC Error:", e.message);
+          console.error("ChatList Hook Error:", e.message);
           setError(e.message);
       }
   };
@@ -65,7 +68,7 @@ export function useChatList() {
           table: 'contacts', 
           filter: `company_id=eq.${user.company_id}` 
       }, (payload) => {
-          if (criticalErrorRef.current) return; // Para de ouvir se o DB estiver quebrado
+          if (criticalErrorRef.current) return;
 
           if (payload.eventType === 'UPDATE') {
               const updatedRow = payload.new;
@@ -93,6 +96,7 @@ export function useChatList() {
                           return tB - tA;
                       });
                   } else {
+                      // Se é um contato novo que acabou de receber mensagem, recarrega
                       refreshList();
                       return prev;
                   }
