@@ -1,5 +1,5 @@
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { useAuthStore } from '@/store/useAuthStore';
 import { ChatContact } from '@/types';
@@ -10,24 +10,32 @@ export function useChatList() {
   const [contacts, setContacts] = useState<ChatContact[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // Ref para evitar retry loop infinito se o DB estiver quebrado
+  const criticalErrorRef = useRef(false);
 
-  // Função isolada para recarregar tudo com tratamento de erro
   const refreshList = async () => {
-      if (!user?.company_id) return;
+      if (!user?.company_id || criticalErrorRef.current) return;
+      
       try {
-          // Chamada RPC - Se a função no banco estiver quebrada (PGRST203), vai cair no catch
+          // Chamada RPC Única (Assinatura: p_company_id uuid)
           const { data, error: rpcError } = await supabase.rpc('get_my_chat_list', {
               p_company_id: user.company_id
           });
 
-          if (rpcError) throw rpcError;
+          if (rpcError) {
+              // Detecção de erro de ambiguidade ou função inexistente
+              if (rpcError.code === 'PGRST203' || rpcError.message.includes('ambiguous')) {
+                  criticalErrorRef.current = true;
+                  throw new Error("Erro crítico de banco de dados (Função duplicada). Execute o SQL de correção.");
+              }
+              throw rpcError;
+          }
 
-          // Mapping e Sanitização
           const formatted: ChatContact[] = (data || []).map((row: any) => ({
               ...row,
-              last_message_time: row.last_message_at, // Alias para UI
+              last_message_time: row.last_message_at,
               phone_number: row.phone_number || row.remote_jid.split('@')[0],
-              // Garante que name null seja mantido como null para a UI tratar
               name: row.name || null
           }));
 
@@ -35,10 +43,7 @@ export function useChatList() {
           setError(null);
       } catch (e: any) {
           console.error("ChatList RPC Error:", e.message);
-          // Se for erro de ambiguidade (PGRST203), não adianta tentar de novo imediatamente
-          if (e.code === 'PGRST203') {
-              setError("Erro crítico no banco de dados. Contate o suporte.");
-          }
+          setError(e.message);
       }
   };
 
@@ -53,8 +58,6 @@ export function useChatList() {
 
     init();
 
-    // REALTIME: Ouve apenas a tabela CONTACTS
-    // O backend atualiza 'contacts' com last_message_at e unread_count via Trigger
     const channel = supabase.channel(`chat-list-sync:${user.company_id}`)
       .on('postgres_changes', { 
           event: '*', 
@@ -62,20 +65,18 @@ export function useChatList() {
           table: 'contacts', 
           filter: `company_id=eq.${user.company_id}` 
       }, (payload) => {
-          
+          if (criticalErrorRef.current) return; // Para de ouvir se o DB estiver quebrado
+
           if (payload.eventType === 'UPDATE') {
               const updatedRow = payload.new;
-              
               setContacts(prev => {
                   const exists = prev.find(c => c.jid === updatedRow.jid);
-                  
                   if (exists) {
-                      // PATCH LOCAL: Atualiza apenas o que mudou
                       const updatedList = prev.map(c => {
                           if (c.jid === updatedRow.jid) {
                               return {
                                   ...c,
-                                  name: updatedRow.name || c.name, // Mantém local se vier null e já tiver
+                                  name: updatedRow.name || c.name,
                                   unread_count: updatedRow.unread_count,
                                   last_message_at: updatedRow.last_message_at,
                                   last_message_time: updatedRow.last_message_at,
@@ -86,15 +87,12 @@ export function useChatList() {
                           }
                           return c;
                       });
-
-                      // Reordenação Javascript (Bubbling Up)
                       return updatedList.sort((a, b) => {
                           const tA = new Date(a.last_message_at || 0).getTime();
                           const tB = new Date(b.last_message_at || 0).getTime();
-                          return tB - tA; // Mais recente primeiro
+                          return tB - tA;
                       });
                   } else {
-                      // Se não existe na lista (novo contato ativo), faz fetch completo
                       refreshList();
                       return prev;
                   }
