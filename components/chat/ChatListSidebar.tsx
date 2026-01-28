@@ -7,7 +7,7 @@ import { useChatStore } from '@/store/useChatStore';
 import { 
     Search, Plus, MessageSquare, Loader2, 
     Camera, Mic, Video, FileText, MapPin, 
-    BarChart2, User, DollarSign, Sticker, Check, CheckCheck, AlertTriangle
+    BarChart2, User, DollarSign, Sticker, Check, CheckCheck, AlertTriangle, RefreshCw
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -17,7 +17,7 @@ import { CreateChannelModal } from './CreateChannelModal';
 import { useAuthStore } from '@/store/useAuthStore';
 
 export function ChatListSidebar() {
-  const { contacts, loading, error } = useChatList(); // Agora suporta 'error'
+  const { contacts, loading, error, refreshList } = useChatList(); // Usando o refreshList exportado
   const { activeContact, setActiveContact, selectedInstance } = useChatStore();
   const { user } = useAuthStore();
   
@@ -26,6 +26,13 @@ export function ChatListSidebar() {
   
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
   const [isChannelModalOpen, setIsChannelModalOpen] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const handleManualRefresh = async () => {
+      setIsRefreshing(true);
+      await refreshList();
+      setIsRefreshing(false);
+  };
 
   // Ordenação e Filtro
   const filteredContacts = useMemo(() => {
@@ -126,6 +133,9 @@ export function ChatListSidebar() {
             <div className="flex items-center justify-between mb-4">
                 <h2 className="font-bold text-xl text-white">Conversas</h2>
                 <div className="flex gap-1">
+                    <Button variant="ghost" size="icon" title="Atualizar Lista" onClick={handleManualRefresh} disabled={isRefreshing}>
+                        <RefreshCw className={cn("w-4 h-4 text-zinc-400", isRefreshing && "animate-spin")} />
+                    </Button>
                     <Button variant="ghost" size="icon" title="Novo Grupo" onClick={() => setIsGroupModalOpen(true)}>
                         <MessageSquare className="w-5 h-5 text-zinc-400" />
                     </Button>

@@ -111,5 +111,5 @@ export function useChatList() {
     return () => { supabase.removeChannel(channel); };
   }, [user?.company_id]);
 
-  return { contacts, loading, error };
+  return { contacts, loading, error, refreshList };
 }
