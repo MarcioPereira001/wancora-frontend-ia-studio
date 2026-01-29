@@ -7,7 +7,7 @@ import { useChatStore } from '@/store/useChatStore';
 import { 
     Search, Plus, MessageSquare, Loader2, 
     Camera, Mic, Video, FileText, MapPin, 
-    BarChart2, User, DollarSign, Sticker, RefreshCw, Users, Megaphone, Check, CheckCheck
+    BarChart2, DollarSign, Sticker, RefreshCw, Users, Megaphone
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -23,7 +23,6 @@ export function ChatListSidebar() {
   const { user } = useAuthStore();
   
   const [searchTerm, setSearchTerm] = useState('');
-  // Adicionado filtro 'channels'
   const [filterType, setFilterType] = useState<'all' | 'groups' | 'unread' | 'channels'>('all');
   
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
@@ -67,8 +66,6 @@ export function ChatListSidebar() {
           if (filterType === 'unread') return contact.unread_count > 0;
           return true;
       });
-
-      // Ordenação secundária já garantida pelo hook, mas reforçamos aqui
       return list;
   }, [contacts, searchTerm, filterType]);
 
@@ -196,12 +193,12 @@ export function ChatListSidebar() {
                     const isActive = activeContact?.id === contact.id;
                     const displayName = getDisplayName(contact);
                     
-                    // Lógica do Selo NOVO (24h)
-                    // Usa lead_created_at que vem da RPC atualizada
+                    // Lógica do Selo NOVO (24h) - FIX
+                    // Só aplica se for um contato "real" (não grupo/newsletter) e se lead_created_at existir
                     const isNewLead = !contact.is_group && 
                                       !contact.is_newsletter && 
                                       contact.lead_created_at && 
-                                      (new Date().getTime() - new Date(contact.lead_created_at).getTime() < 24 * 60 * 60 * 1000);
+                                      (Date.now() - new Date(contact.lead_created_at).getTime() < 24 * 60 * 60 * 1000);
 
                     return (
                         <div 
@@ -215,7 +212,15 @@ export function ChatListSidebar() {
                             <div className="relative shrink-0">
                                 <div className="w-12 h-12 rounded-full bg-zinc-800 flex items-center justify-center text-lg font-bold text-zinc-500 overflow-hidden border border-zinc-700/50">
                                     {contact.profile_pic_url ? (
-                                        <img src={contact.profile_pic_url} alt="" className="w-full h-full object-cover" />
+                                        <img 
+                                            src={contact.profile_pic_url} 
+                                            alt="" 
+                                            className="w-full h-full object-cover"
+                                            onError={(e) => {
+                                                // Fallback simples se a imagem falhar
+                                                e.currentTarget.style.display = 'none';
+                                            }}
+                                        />
                                     ) : (
                                         (contact.is_group) ? <Users className="w-5 h-5 text-zinc-500" /> :
                                         (contact.is_newsletter) ? <Megaphone className="w-5 h-5 text-zinc-500" /> :

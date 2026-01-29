@@ -13,12 +13,12 @@ export function useChatList() {
   
   const criticalErrorRef = useRef(false);
 
-  // Função auxiliar de ordenação
+  // Função de Ordenação Estrita (Mais recente -> Mais antigo)
   const sortContacts = (list: ChatContact[]) => {
-      return list.sort((a, b) => {
+      return [...list].sort((a, b) => {
           const tA = new Date(a.last_message_at || 0).getTime();
           const tB = new Date(b.last_message_at || 0).getTime();
-          return tB - tA; // Mais recente primeiro
+          return tB - tA; 
       });
   };
 
@@ -26,32 +26,24 @@ export function useChatList() {
       if (!user?.company_id || criticalErrorRef.current) return;
       
       try {
-          // Chamada RPC Otimizada (Lateral Join)
           const { data, error: rpcError } = await supabase.rpc('get_my_chat_list', {
               p_company_id: user.company_id
           });
 
-          if (rpcError) {
-              console.error("ChatList RPC Error:", rpcError);
-              if (rpcError.code === 'PGRST203' || rpcError.code === '42883') {
-                  criticalErrorRef.current = true;
-                  throw new Error(`Erro crítico de schema. Execute o SQL de atualização.`);
-              }
-              throw rpcError;
-          }
+          if (rpcError) throw rpcError;
 
           const formatted: ChatContact[] = (data || []).map((row: any) => ({
               ...row,
-              id: row.id || row.jid,
+              id: row.jid, // Usa JID como ID único
               last_message_time: row.last_message_at,
               phone_number: row.phone_number || row.remote_jid?.split('@')[0],
               name: row.name || null
           }));
 
-          setContacts(formatted); // O SQL já retorna ordenado
+          setContacts(formatted); // Já vem ordenado do SQL, mas o React pode precisar reordenar nos updates
           setError(null);
       } catch (e: any) {
-          console.error("ChatList Hook Error:", e.message);
+          console.error("ChatList Error:", e.message);
           setError(e.message);
       }
   };
@@ -67,37 +59,37 @@ export function useChatList() {
 
     init();
 
-    const channel = supabase.channel(`chat-list-sync:${user.company_id}`)
+    // CHANNEL 1: Contatos (Mudança de Ordem, Foto, Unread)
+    const contactsChannel = supabase.channel(`chat-list-contacts:${user.company_id}`)
       .on('postgres_changes', { 
           event: '*', 
           schema: 'public', 
           table: 'contacts', 
           filter: `company_id=eq.${user.company_id}` 
       }, (payload) => {
-          if (criticalErrorRef.current) return;
-
           if (payload.eventType === 'UPDATE') {
               const updatedRow = payload.new;
               setContacts(prev => {
-                  // 1. Remove a versão antiga do contato
-                  const filtered = prev.filter(c => c.jid !== updatedRow.jid);
-                  
-                  // 2. Prepara o contato atualizado
-                  // Precisamos preservar dados que não vêm no evento 'contacts' (como last_message_content se não mudou)
-                  // Mas o 'contacts' agora tem 'last_message_at' atualizado pelo trigger.
-                  
-                  const existing = prev.find(c => c.jid === updatedRow.jid);
-                  
+                  // Encontra o item existente para preservar dados que não vieram no payload
+                  const existingIndex = prev.findIndex(c => c.jid === updatedRow.jid);
+                  const existing = existingIndex >= 0 ? prev[existingIndex] : null;
+
+                  // Se o contato foi "ignorado" (removido do CRM), remove da lista
+                  if (updatedRow.is_ignored) {
+                      return prev.filter(c => c.jid !== updatedRow.jid);
+                  }
+
                   const newItem: ChatContact = {
-                      ...(existing || {}), // Mantém dados antigos
+                      ...(existing || {}),
                       id: updatedRow.jid,
                       jid: updatedRow.jid,
                       company_id: updatedRow.company_id,
                       remote_jid: updatedRow.jid,
-                      name: updatedRow.name || existing?.name,
+                      // Lógica de fallback visual
+                      name: updatedRow.name || updatedRow.verified_name || updatedRow.push_name || existing?.name,
                       push_name: updatedRow.push_name,
                       unread_count: updatedRow.unread_count,
-                      last_message_at: updatedRow.last_message_at,
+                      last_message_at: updatedRow.last_message_at, // O Trigger do banco atualiza isso
                       last_message_time: updatedRow.last_message_at,
                       profile_pic_url: updatedRow.profile_pic_url,
                       is_muted: updatedRow.is_muted,
@@ -107,21 +99,55 @@ export function useChatList() {
                       is_newsletter: updatedRow.jid.includes('@newsletter')
                   };
 
-                  // 3. Adiciona no TOPO (Move to Top)
-                  const newList = [newItem, ...filtered];
-                  
-                  // 4. Reordena para garantir (caso haja delay de rede)
-                  return sortContacts(newList);
+                  // Remove versão antiga e adiciona nova
+                  const filtered = prev.filter(c => c.jid !== updatedRow.jid);
+                  // Reordena tudo
+                  return sortContacts([newItem, ...filtered]);
               });
-          } 
-          else if (payload.eventType === 'INSERT') {
-              // Se é um contato novo, refresh completo para garantir dados do Lead (Join)
-              refreshList();
+          } else if (payload.eventType === 'INSERT') {
+              refreshList(); // Novo contato requer dados do Lead (Join), melhor recarregar
           }
       })
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    // CHANNEL 2: Mensagens (Para garantir "Move to Top" imediato)
+    const messagesChannel = supabase.channel(`chat-list-messages:${user.company_id}`)
+      .on('postgres_changes', { 
+          event: 'INSERT', 
+          schema: 'public', 
+          table: 'messages', 
+          filter: `company_id=eq.${user.company_id}` 
+      }, (payload) => {
+          const newMsg = payload.new;
+          setContacts(prev => {
+              const targetJid = newMsg.remote_jid;
+              const existingIndex = prev.findIndex(c => c.jid === targetJid);
+              
+              if (existingIndex === -1) return prev; // Se não está na lista (ex: novo contato), o Insert do contacts vai lidar
+
+              const contact = { ...prev[existingIndex] };
+              
+              // Atualização Otimista
+              contact.last_message_content = newMsg.content;
+              contact.last_message_type = newMsg.message_type;
+              contact.last_message_at = newMsg.created_at;
+              contact.last_message_time = newMsg.created_at;
+              
+              if (!newMsg.from_me) {
+                  contact.unread_count = (contact.unread_count || 0) + 1;
+              }
+
+              // Remove e põe no topo
+              const others = prev.filter(c => c.jid !== targetJid);
+              return [contact, ...others];
+          });
+      })
+      .subscribe();
+
+    return () => { 
+        supabase.removeChannel(contactsChannel);
+        supabase.removeChannel(messagesChannel);
+    };
   }, [user?.company_id]);
 
   return { contacts, loading, error, refreshList };
