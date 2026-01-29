@@ -261,29 +261,33 @@ O sistema implementa uma hierarquia de permissões estrita baseada na coluna `ro
 
 ## 4. Fluxos Críticos (Core Business Rules)
 
-### A. Fluxo "Anti-Ghost" & Identidade
-Como o sistema decide quem vira Lead e quem é ignorado?
+### A. Inbox & Visualização (Chat Rules)
+1.  **Zero Empty Contacts:** A lista de chat (Sidebar) é renderizada via SQL `INNER JOIN messages`. Contatos da agenda sem mensagens **não** aparecem na lista.
+2.  **Rich Previews:** O sidebar exibe prévias formatadas para todos os tipos de mensagem:
+    *   📸 Foto/Vídeo: Ícone de câmera + legenda.
+    *   📊 Enquete: "📊 Título da Enquete".
+    *   📍 Loc: "📍 Localização".
+    *   👤 Contato: "👤 Nome do Contato".
+3.  **Indicadores:**
+    *   Status Online / Visto por Último (Realtime).
+    *   Checks de Entrega e Leitura (Cinza/Azul).
 
-1.  **Chegada da Mensagem:** Webhook `messages.upsert` dispara.
-2.  **Verificação de Bloqueio:** O sistema checa `contacts.is_ignored`.
-    * Se `TRUE`: A mensagem é salva, mas **nenhum** Lead é criado/atualizado.
-    * Se `FALSE`: Segue para o passo 3.
-3.  **LID Safe:** O sistema aceita mensagens de IDs ocultos (`@lid`) sem quebrar (graças à remoção de FK restrita).
-4.  **Trigger de Unificação:** O Trigger `sync_lid_to_phone_contact` no banco garante que, se uma mensagem chegar via LID, o contato principal (telefone) sobe para o topo da lista.
-5.  **Smart Name:** Se o Lead está salvo apenas como número, e o contato manda mensagem com um Nome de Perfil (PushName), o sistema atualiza o nome do Lead automaticamente.
+### B. Gestão de Identidade e Leads
+1.  **Criação Seletiva:** Leads são criados apenas via mensagens diretas (Private Chat). Grupos e Canais são ignorados pelo CRM.
+2.  **Hierarquia de Nomes (Source of Truth):**
+    *   **Nível 1 (Agenda):** Se você salvou o contato no celular, esse nome prevalece.
+    *   **Nível 2 (Business):** Se é uma empresa verificada, usa o nome comercial.
+    *   **Nível 3 (PushName):** Usa o nome que a pessoa definiu no perfil dela.
+    *   **Nível 4 (Fallback):** Se tudo falhar, mantém `NULL` no banco e o Frontend formata `+55 (11) 99999-9999`.
 
-### B. Fluxo de Sincronização (Remover/Adicionar)
+### C. Fluxo de Sincronização (Remover/Adicionar)
 * **Remover:** Define `contacts.is_ignored = true` e deleta o Lead. O Backend para de processar mensagens para o CRM.
 * **Adicionar:** Define `contacts.is_ignored = false`. O sistema cria um novo Lead na primeira etapa e restaura a comunicação.
 
-### C. Fluxo de Histórico & Reconexão
+### D. Fluxo de Histórico & Reconexão
 * Baileys envia histórico -> Backend itera (em chunks) -> Executa `upsert`.
 * Chave de Conflito: `remote_jid + whatsapp_id`. O banco recusa a duplicata.
 
-### D. Gestão de Identidade (LID vs Phone)
-O WhatsApp moderno utiliza dois identificadores:
-1.  **Phone JID:** `551199999999@s.whatsapp.net` (Identidade Principal).
-2.  **LID:** `123456789@lid` (Identidade Privada/Oculta).
 
 **Estratégia de Implementação (LID Safe v3.5):**
 * **Dual Support:** O sistema aceita nativamente ambos os formatos na tabela `messages`.

@@ -7,14 +7,14 @@ import { useChatStore } from '@/store/useChatStore';
 import { 
     Search, Plus, MessageSquare, Loader2, 
     Camera, Mic, Video, FileText, MapPin, 
-    BarChart2, User, DollarSign, Sticker, AlertTriangle, RefreshCw, Users, Megaphone
+    BarChart2, User, DollarSign, Sticker, AlertTriangle, RefreshCw, Users, Megaphone, Check, CheckCheck
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { cn, getDisplayName } from '@/lib/utils';
 import { CreateGroupModal } from './CreateGroupModal';
 import { CreateChannelModal } from './CreateChannelModal';
-import { NewChatModal } from './NewChatModal'; // NOVO IMPORT
+import { NewChatModal } from './NewChatModal';
 import { useAuthStore } from '@/store/useAuthStore';
 
 export function ChatListSidebar() {
@@ -30,11 +30,9 @@ export function ChatListSidebar() {
   const [isNewChatModalOpen, setIsNewChatModalOpen] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   
-  // Estado para o Menu de Criação (+)
   const [showCreateMenu, setShowCreateMenu] = useState(false);
   const createMenuRef = useRef<HTMLDivElement>(null);
 
-  // Fecha menu ao clicar fora
   useEffect(() => {
       function handleClickOutside(event: MouseEvent) {
           if (createMenuRef.current && !createMenuRef.current.contains(event.target as Node)) {
@@ -53,7 +51,6 @@ export function ChatListSidebar() {
       setIsRefreshing(false);
   };
 
-  // Ordenação e Filtro
   const filteredContacts = useMemo(() => {
       let list = contacts.filter(contact => {
           const displayName = getDisplayName(contact).toLowerCase();
@@ -69,7 +66,6 @@ export function ChatListSidebar() {
           return true;
       });
 
-      // RANQUEAMENTO: Mais recentes no topo (Safety Sort)
       list = list.sort((a, b) => {
           const timeA = a.last_message_time ? new Date(a.last_message_time).getTime() : 0;
           const timeB = b.last_message_time ? new Date(b.last_message_time).getTime() : 0;
@@ -101,21 +97,22 @@ export function ChatListSidebar() {
       return date.toLocaleDateString([], { day: '2-digit', month: '2-digit', year: '2-digit' });
   };
 
-  // Helper de Prévia de Mensagem Rica
+  // --- PRÉVIA AVANÇADA (TODOS OS TIPOS) ---
   const getMessagePreview = (contact: any) => {
       const type = contact.last_message_type || 'text';
       let content = contact.last_message_content || '';
       
       const iconClass = "w-3.5 h-3.5 inline-block mr-1 opacity-70";
 
+      // Tratamento de JSONs
       if (typeof content === 'string' && (content.startsWith('{') || content.startsWith('['))) {
           try {
               const parsed = JSON.parse(content);
-              if (type === 'poll' && parsed.name) content = parsed.name;
+              if (type === 'poll') content = parsed.name || 'Enquete';
               else if (type === 'location') content = 'Localização';
               else if (type === 'contact') content = parsed.displayName || 'Contato';
           } catch(e) {
-              if (content.length > 50) content = `[${type}]`;
+              // Se falhar o parse, tenta mostrar algo genérico
           }
       }
 
@@ -141,7 +138,7 @@ export function ChatListSidebar() {
           case 'pix':
               return <span className="flex items-center"><DollarSign className={iconClass} /> Pix</span>;
           default:
-              return <span className="truncate block">{content}</span>;
+              return <span className="truncate block">{content || 'Mensagem'}</span>;
       }
   };
 
@@ -156,7 +153,6 @@ export function ChatListSidebar() {
                         <RefreshCw className={cn("w-4 h-4 text-zinc-400", isRefreshing && "animate-spin")} />
                     </Button>
                     
-                    {/* BOTÃO NOVA CONVERSA COM MENU */}
                     <div className="relative">
                         <Button 
                             size="icon" 
@@ -168,34 +164,16 @@ export function ChatListSidebar() {
                         </Button>
 
                         {showCreateMenu && (
-                            <div className="absolute right-0 top-10 z-50 bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl w-48 animate-in fade-in zoom-in-95 origin-top-right ring-1 ring-white/10 overflow-hidden">
+                            <div className="absolute right-0 top-10 z-50 bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl w-48 animate-in fade-in zoom-in-95 origin-top-right ring-1 ring-white/10">
                                 <div className="p-1">
-                                    <button 
-                                        onClick={() => { setIsNewChatModalOpen(true); setShowCreateMenu(false); }}
-                                        className="w-full text-left px-3 py-2.5 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-white flex items-center gap-3 rounded-lg transition-colors"
-                                    >
-                                        <div className="p-1.5 bg-blue-500/10 text-blue-400 rounded-md">
-                                            <MessageSquare className="w-4 h-4" />
-                                        </div>
-                                        Conversa
+                                    <button onClick={() => { setIsNewChatModalOpen(true); setShowCreateMenu(false); }} className="w-full text-left px-3 py-2.5 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-white flex items-center gap-3 rounded-lg transition-colors">
+                                        <div className="p-1.5 bg-blue-500/10 text-blue-400 rounded-md"><MessageSquare className="w-4 h-4" /></div> Conversa
                                     </button>
-                                    <button 
-                                        onClick={() => { setIsGroupModalOpen(true); setShowCreateMenu(false); }}
-                                        className="w-full text-left px-3 py-2.5 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-white flex items-center gap-3 rounded-lg transition-colors"
-                                    >
-                                        <div className="p-1.5 bg-green-500/10 text-green-400 rounded-md">
-                                            <Users className="w-4 h-4" />
-                                        </div>
-                                        Novo Grupo
+                                    <button onClick={() => { setIsGroupModalOpen(true); setShowCreateMenu(false); }} className="w-full text-left px-3 py-2.5 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-white flex items-center gap-3 rounded-lg transition-colors">
+                                        <div className="p-1.5 bg-green-500/10 text-green-400 rounded-md"><Users className="w-4 h-4" /></div> Novo Grupo
                                     </button>
-                                    <button 
-                                        onClick={() => { setIsChannelModalOpen(true); setShowCreateMenu(false); }}
-                                        className="w-full text-left px-3 py-2.5 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-white flex items-center gap-3 rounded-lg transition-colors"
-                                    >
-                                        <div className="p-1.5 bg-purple-500/10 text-purple-400 rounded-md">
-                                            <Megaphone className="w-4 h-4" />
-                                        </div>
-                                        Novo Canal
+                                    <button onClick={() => { setIsChannelModalOpen(true); setShowCreateMenu(false); }} className="w-full text-left px-3 py-2.5 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-white flex items-center gap-3 rounded-lg transition-colors">
+                                        <div className="p-1.5 bg-purple-500/10 text-purple-400 rounded-md"><Megaphone className="w-4 h-4" /></div> Novo Canal
                                     </button>
                                 </div>
                             </div>
@@ -215,34 +193,11 @@ export function ChatListSidebar() {
             </div>
 
             <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
-                <button 
-                    onClick={() => setFilterType('all')}
-                    className={cn("px-3 py-1 rounded-full text-xs font-medium border transition-colors whitespace-nowrap", filterType === 'all' ? "bg-zinc-100 text-zinc-900 border-zinc-100" : "bg-zinc-900 text-zinc-400 border-zinc-800 hover:border-zinc-700")}
-                >
-                    Todas
-                </button>
-                <button 
-                    onClick={() => setFilterType('unread')}
-                    className={cn("px-3 py-1 rounded-full text-xs font-medium border transition-colors whitespace-nowrap", filterType === 'unread' ? "bg-zinc-100 text-zinc-900 border-zinc-100" : "bg-zinc-900 text-zinc-400 border-zinc-800 hover:border-zinc-700")}
-                >
-                    Não lidas
-                </button>
-                <button 
-                    onClick={() => setFilterType('groups')}
-                    className={cn("px-3 py-1 rounded-full text-xs font-medium border transition-colors whitespace-nowrap", filterType === 'groups' ? "bg-zinc-100 text-zinc-900 border-zinc-100" : "bg-zinc-900 text-zinc-400 border-zinc-800 hover:border-zinc-700")}
-                >
-                    Grupos
-                </button>
+                <button onClick={() => setFilterType('all')} className={cn("px-3 py-1 rounded-full text-xs font-medium border transition-colors whitespace-nowrap", filterType === 'all' ? "bg-zinc-100 text-zinc-900 border-zinc-100" : "bg-zinc-900 text-zinc-400 border-zinc-800 hover:border-zinc-700")}>Todas</button>
+                <button onClick={() => setFilterType('unread')} className={cn("px-3 py-1 rounded-full text-xs font-medium border transition-colors whitespace-nowrap", filterType === 'unread' ? "bg-zinc-100 text-zinc-900 border-zinc-100" : "bg-zinc-900 text-zinc-400 border-zinc-800 hover:border-zinc-700")}>Não lidas</button>
+                <button onClick={() => setFilterType('groups')} className={cn("px-3 py-1 rounded-full text-xs font-medium border transition-colors whitespace-nowrap", filterType === 'groups' ? "bg-zinc-100 text-zinc-900 border-zinc-100" : "bg-zinc-900 text-zinc-400 border-zinc-800 hover:border-zinc-700")}>Grupos</button>
             </div>
         </div>
-
-        {/* Error State */}
-        {error && (
-            <div className="p-4 bg-red-500/10 border-b border-red-500/20 flex items-center gap-3">
-                <AlertTriangle className="w-5 h-5 text-red-500 shrink-0" />
-                <p className="text-xs text-red-200">{error}</p>
-            </div>
-        )}
 
         {/* List */}
         <div className="flex-1 overflow-y-auto custom-scrollbar">
@@ -254,17 +209,13 @@ export function ChatListSidebar() {
             ) : filteredContacts.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full p-8 text-center gap-4">
                     <p className="text-zinc-500 text-sm">Nenhuma conversa encontrada.</p>
-                    <Button variant="outline" onClick={() => setIsNewChatModalOpen(true)} className="border-dashed border-zinc-700 text-zinc-400 hover:text-white">
-                        Iniciar Nova Conversa
-                    </Button>
+                    <Button variant="outline" onClick={() => setIsNewChatModalOpen(true)} className="border-dashed border-zinc-700 text-zinc-400 hover:text-white">Iniciar Nova Conversa</Button>
                 </div>
             ) : (
                 filteredContacts.map(contact => {
                     const isActive = activeContact?.id === contact.id;
                     const displayName = getDisplayName(contact);
-                    
-                    const isNewLead = !contact.is_group && contact.lead_created_at && 
-                        (new Date().getTime() - new Date(contact.lead_created_at).getTime() < 24 * 60 * 60 * 1000);
+                    const isNewLead = !contact.is_group && contact.lead_created_at && (new Date().getTime() - new Date(contact.lead_created_at).getTime() < 24 * 60 * 60 * 1000);
 
                     return (
                         <div 
@@ -285,15 +236,19 @@ export function ChatListSidebar() {
                                         : displayName.charAt(0).toUpperCase()
                                     )}
                                 </div>
-                                {contact.is_online && (
+                                {contact.is_online && !contact.is_group && (
                                     <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 border-2 border-zinc-900 rounded-full"></div>
                                 )}
                             </div>
                             
                             <div className="flex-1 min-w-0 flex flex-col justify-center gap-0.5">
                                 <div className="flex justify-between items-baseline">
-                                    <h3 className={cn("text-sm font-medium truncate", isActive ? "text-white" : "text-zinc-200")}>
+                                    <h3 className={cn("text-sm font-medium truncate flex items-center gap-1", isActive ? "text-white" : "text-zinc-200")}>
                                         {displayName}
+                                        {/* Badge Business */}
+                                        {contact.is_business && !contact.is_group && (
+                                            <span className="text-[9px] bg-zinc-700 text-zinc-300 px-1 rounded border border-zinc-600 ml-1">BIZ</span>
+                                        )}
                                     </h3>
                                     <span className={cn("text-[10px] shrink-0 font-medium", contact.unread_count > 0 ? "text-green-500" : "text-zinc-500")}>
                                         {formatTime(contact.last_message_time)}
@@ -306,11 +261,7 @@ export function ChatListSidebar() {
                                     </div>
                                     
                                     <div className="flex items-center gap-2">
-                                        {isNewLead && (
-                                            <span className="bg-blue-500/10 text-blue-400 border border-blue-500/20 text-[9px] font-bold px-1.5 py-0.5 rounded">
-                                                NOVO
-                                            </span>
-                                        )}
+                                        {isNewLead && <span className="bg-blue-500/10 text-blue-400 border border-blue-500/20 text-[9px] font-bold px-1.5 py-0.5 rounded">NOVO</span>}
                                         {contact.unread_count > 0 && (
                                             <span className="bg-green-500 text-black text-[10px] font-bold min-w-[20px] h-[20px] rounded-full flex items-center justify-center shadow-sm animate-in zoom-in duration-300">
                                                 {contact.unread_count}
@@ -326,24 +277,9 @@ export function ChatListSidebar() {
         </div>
 
         {/* MODAIS */}
-        <NewChatModal 
-            isOpen={isNewChatModalOpen}
-            onClose={() => setIsNewChatModalOpen(false)}
-        />
-
-        <CreateGroupModal 
-            isOpen={isGroupModalOpen} 
-            onClose={() => setIsGroupModalOpen(false)}
-            sessionId={selectedInstance?.session_id || 'default'}
-            companyId={user?.company_id || ''}
-            existingContacts={contacts}
-        />
-        <CreateChannelModal
-            isOpen={isChannelModalOpen}
-            onClose={() => setIsChannelModalOpen(false)}
-            sessionId={selectedInstance?.session_id || 'default'}
-            companyId={user?.company_id || ''}
-        />
+        <NewChatModal isOpen={isNewChatModalOpen} onClose={() => setIsNewChatModalOpen(false)} />
+        <CreateGroupModal isOpen={isGroupModalOpen} onClose={() => setIsGroupModalOpen(false)} sessionId={selectedInstance?.session_id || 'default'} companyId={user?.company_id || ''} existingContacts={contacts} />
+        <CreateChannelModal isOpen={isChannelModalOpen} onClose={() => setIsChannelModalOpen(false)} sessionId={selectedInstance?.session_id || 'default'} companyId={user?.company_id || ''} />
     </div>
   );
 }

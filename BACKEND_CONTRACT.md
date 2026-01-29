@@ -259,10 +259,16 @@ Body:
 
 ## 4.1. Sincronização de Dados e Name Hunter V3
 O processo de sincronização inicial (messaging-history.set) utiliza uma arquitetura de proteção e enriquecimento de dados:
-1. Concurrency Lock: Uma flag isProcessingHistory atua como um Mutex para impedir que o histórico seja processado em duplicidade, o que causaria inconsistência no banco.
-2. Name Hunter V3: O sistema mapeia nomes da agenda (notify, verifiedName, short) em um mapa de memória (contactsMap) antes de salvar as mensagens. Se um nome for identificado como "genérico" (apenas números ou igual ao JID), o sistema tenta substituí-lo pelo pushName mais recente.
-3. Data Propagation: Ao descobrir um nome real via WhatsApp, o backend propaga essa atualização automaticamente para a tabela leads, garantindo que o Kanban e o Chat reflitam a identidade correta do contato.
-4. Optimistic Sync Delay: Um atraso de 300ms é aplicado antes do upsertMessage para garantir que o contato e o lead já tenham sido criados/atualizados, evitando erros de chave estrangeira.
+1.  **Initial Sync:** Baixa contatos e histórico.
+2. Concurrency Lock: Uma flag isProcessingHistory atua como um Mutex para impedir que o histórico seja processado em duplicidade, o que causaria inconsistência no banco.
+3. Name Hunter V3: O sistema mapeia nomes da agenda (notify, verifiedName, short) em um mapa de memória (contactsMap) antes de salvar as mensagens. Se um nome for identificado como "genérico" (apenas números ou igual ao JID), o sistema tenta substituí-lo pelo pushName mais recente.
+4. Data Propagation: Ao descobrir um nome real via WhatsApp, o backend propaga essa atualização automaticamente para a tabela leads, garantindo que o Kanban e o Chat reflitam a identidade correta do contato.
+5. Optimistic Sync Delay: Um atraso de 300ms é aplicado antes do upsertMessage para garantir que o contato e o lead já tenham sido criados/atualizados, evitando erros de chave estrangeira.
+6.  **Realtime Refresh (`refreshContactInfo`):** A cada mensagem recebida (`messages.upsert`), o sistema verifica:
+    *   O contato tem foto de perfil? (Cache de 24h)
+    *   É uma conta Business? (Verifica `getBusinessProfile` se > 48h)
+    *   O nome mudou?
+    *   **Ação:** Se faltar dado, o backend busca na API do Baileys e atualiza o banco (Contacts e Leads) instantaneamente, inclusive baixando fotos faltantes.
 
 ### 4.1.1. Regra de Higiene de Nomes (Database Enforced)
 Um *Trigger* (`sanitize_contact_data`) no banco de dados garante que números de telefone nunca sejam salvos na coluna `name`.
@@ -316,6 +322,21 @@ Para otimizar o tempo de carregamento e reduzir custos de armazenamento, o siste
 3. Apenas as **10 mensagens mais recentes** de cada conversa são processadas e salvas.
 4. Para essas mensagens selecionadas, o sistema **força o download de mídias** e a **atualização da foto de perfil** do contato.
 5. Mensagens antigas (>10) são descartadas silenciosamente para manter o banco leve e rápido.
+
+### 4.8. Regras Estritas de Lead (Lead Guard)
+O worker `sync.js` implementa um firewall lógico antes de criar um lead:
+*   **Trigger:** Apenas eventos de Mensagem (`messages.upsert`). Eventos de presença ou status não criam leads.
+*   **Blocklist:**
+    *   Grupos (`@g.us`) -> Bloqueado.
+    *   Canais (`@newsletter`) -> Bloqueado.
+    *   Self (`meu próprio número`) -> Bloqueado.
+*   **Naming Strategy:**
+    *   Tenta obter nome da Agenda (`contacts.name`).
+    *   Se falhar, tenta nome Business (`verifiedName`).
+    *   Se falhar, tenta nome do Perfil (`pushName`).
+    *   Se falhar, grava `NULL` no banco (O Frontend exibe o número formatado).
+    *   **Atualização:** Se um lead com nome NULL receber uma mensagem com PushName, o nome é atualizado automaticamente.
+
 ---
 
 ## 5. 📡 Realtime & WebSocket Events (Webhook Specs)

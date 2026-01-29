@@ -38,9 +38,12 @@ Tabela técnica para resolver conflitos entre IDs de telefone e IDs ocultos (LID
 Contatos brutos sincronizados do celular.
 * `jid`: text (PK) - Ex: `551199999999@s.whatsapp.net`
 * `company_id`: uuid (PK)
-* `name`: text (Nome da agenda/grupo)
-* `push_name`: text (Nome público do perfil)
-* `profile_pic_url`: text
+* `name`: text (Nome da agenda do celular e grupos - **Autoridade Máxima**)
+* `verified_name`: text (Nome verificado do WhatsApp Business - **Autoridade Média**)
+* `push_name`: text (Nome do perfil público - **Autoridade Baixa**)
+* `is_business`: boolean (Default: false) - Identificado via API ou Sync.
+* `profile_pic_url`: text (Sincronizado via Lazy Load e Realtime Refresh)
+* `profile_pic_updated_at`: timestamptz (Controle de Cache de 24h)
 * `is_ignored`: boolean (Default: false) - Se true, não vira Lead.
 * `is_muted`: boolean (Default: false)
 * `last_message_at`: timestamptz
@@ -285,7 +288,13 @@ Estas funções são vitais para a performance e lógica do sistema.
 A query mais pesada do sistema. Retorna a lista de conversas com dados agregados de Leads, Mensagens e Contatos.
 *   **Parâmetro:** `p_company_id` (uuid)
 *   **Retorno:** Tabela contendo `unread_count`, `last_message_content`, `last_message_type`, `lead_status`, `is_muted`, etc.
-*   **Lógica:** Faz um `LEFT JOIN LATERAL` com a tabela `messages` para pegar a última mensagem sem subqueries lentas.
+**Regra de Ouro:** Apenas contatos **Com Mensagens** devem aparecer (Inbox Limpa).
+*   **Lógica:** Executa um `INNER JOIN` entre `contacts` e `messages`. Contatos sincronizados que nunca trocaram mensagem são excluídos da visualização.
+*   **Hierarquia de Exibição de Nome:**
+    1. `contacts.name` (Agenda)
+    2. `contacts.verified_name` (Business)
+    3. `contacts.push_name` (Perfil)
+    4. `contacts.phone` (Formatado pelo Frontend se os anteriores forem NULL)
 
 ### `get_gamification_ranking`
 Calcula o ranking de vendas e XP da equipe em um período.
