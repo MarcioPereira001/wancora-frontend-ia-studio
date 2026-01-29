@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useMemo } from 'react';
@@ -17,8 +18,7 @@ export function PollBubble({ message, isMe }: PollBubbleProps) {
   const { addToast } = useToast();
   const [votingOptionId, setVotingOptionId] = useState<number | null>(null);
 
-  // 1. Parse Seguro do Conteúdo da Enquete
-  // O backend agora salva o conteúdo como JSON stringificado
+  // 1. Parse Seguro do Conteúdo
   const pollData = useMemo(() => {
       try {
           const raw = message.content || message.body;
@@ -33,38 +33,26 @@ export function PollBubble({ message, isMe }: PollBubbleProps) {
       }
   }, [message.content, message.body]);
 
-  // 2. Processamento dos Votos (Agregação)
-  // O backend salva em poll_votes: [{ voterJid, selectedOptions: ['Sim'] }]
-  const { votesPerOption, totalVoters, myVotes } = useMemo(() => {
+  // 2. Processamento dos Votos (Agregação Visual)
+  const { votesPerOption, totalVoters } = useMemo(() => {
       const votes = Array.isArray(message.poll_votes) ? message.poll_votes : [];
       const counts = new Map<string, number>();
       const voterSet = new Set<string>();
-      const mySelections = new Set<string>();
-      
-      const myJid = user?.id; // Nota: Comparação ideal seria via JID do WhatsApp, mas usamos o que temos
 
       votes.forEach((v: any) => {
           if (v.selectedOptions && Array.isArray(v.selectedOptions)) {
               voterSet.add(v.voterJid);
-              
-              // Verifica se fui eu (comparação aproximada ou via flag isMe se o voto tiver from_me)
-              // No Baileys, o voterJid vem formatado.
-              
               v.selectedOptions.forEach((opt: string) => {
                   counts.set(opt, (counts.get(opt) || 0) + 1);
-                  if (v.voterJid?.includes(user?.id)) { // Lógica de detecção de "meu voto" pode variar
-                      mySelections.add(opt);
-                  }
               });
           }
       });
 
       return { 
           votesPerOption: counts, 
-          totalVoters: voterSet.size,
-          myVotes: mySelections
+          totalVoters: voterSet.size
       };
-  }, [message.poll_votes, user?.id]);
+  }, [message.poll_votes]);
 
   const options = pollData.options || [];
   const isMultiple = (pollData.selectableOptionsCount || 1) > 1;
@@ -82,8 +70,6 @@ export function PollBubble({ message, isMe }: PollBubbleProps) {
               pollId: message.id,
               optionId: idx
           });
-          // Feedback otimista visual seria complexo aqui sem state local duplicado, 
-          // então confiamos no realtime do supabase para atualizar a UI em ms.
           addToast({ type: 'success', title: 'Voto Enviado', message: 'Computando...' });
       } catch (error) {
           console.error(error);
@@ -119,8 +105,8 @@ export function PollBubble({ message, isMe }: PollBubbleProps) {
               {options.map((opt: string | {optionName: string}, idx: number) => {
                   const optionLabel = typeof opt === 'string' ? opt : opt.optionName;
                   const count = votesPerOption.get(optionLabel) || 0;
-                  // Calcula porcentagem baseada no total de votos computados (não eleitores)
-                  // Total de votos na enquete = soma de todos os counts
+                  
+                  // Total de votos computados (para barra de progresso)
                   const totalVotesInPoll = (Array.from(votesPerOption.values()) as number[]).reduce((a, b) => a + b, 0);
                   const percentage = totalVotesInPoll > 0 ? Math.round((count / totalVotesInPoll) * 100) : 0;
                   

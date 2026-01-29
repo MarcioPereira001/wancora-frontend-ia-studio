@@ -1,12 +1,12 @@
-
 "use client";
 
-import React, { useState } from 'react';
-import { FileText, MapPin, Download, PlayCircle, Image as ImageIcon, Film, BarChart2, User, Copy, QrCode, DollarSign, CheckCircle2, AlertCircle, Loader2, Circle, Check, Sticker, AlertTriangle } from "lucide-react";
+import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
+import { FileText, MapPin, Download, PlayCircle, Image as ImageIcon, Film, User, Copy, QrCode, DollarSign, CheckCircle2, AlertCircle, Sticker, AlertTriangle, ZoomIn, X } from "lucide-react";
 import { Message } from "@/types";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/useToast";
-import { PollBubble } from './PollBubble';
+import { PollBubble } from './PollBubble'; // Import do novo componente
 
 interface MessageContentProps {
   message: Message;
@@ -15,6 +15,12 @@ interface MessageContentProps {
 export function MessageContent({ message }: MessageContentProps) {
   const { addToast } = useToast();
   const [imgError, setImgError] = useState(false);
+  const [isZoomed, setIsZoomed] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const mediaUrl = message.media_url; 
   let content = message.content || message.body || "";
@@ -28,25 +34,62 @@ export function MessageContent({ message }: MessageContentProps) {
 
   // Helper para Mapa
   const getMapEmbedUrl = (lat: number, lng: number) => {
-      const bboxDelta = 0.002; // Zoom bem fechado para parecer o card nativo
+      const bboxDelta = 0.002; 
       const bbox = `${lng - bboxDelta},${lat - bboxDelta},${lng + bboxDelta},${lat + bboxDelta}`;
       return `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${lat},${lng}`;
   };
 
-  // --- 1. IMAGEM ---
+  // --- 9. ENQUETE (POLL) - NOVO ---
+  if (type === 'poll') {
+      return <PollBubble message={message} isMe={isMe} />;
+  }
+
+  // --- 1. IMAGEM (Com Lightbox) ---
   if (type === 'image') {
+    const ImageModal = () => {
+        if (!mounted) return null;
+        return createPortal(
+            <div 
+                className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/95 backdrop-blur-md p-4 animate-in fade-in duration-200 cursor-zoom-out"
+                onClick={() => setIsZoomed(false)}
+            >
+                <button 
+                    onClick={() => setIsZoomed(false)}
+                    className="absolute top-6 right-6 p-2 bg-white/10 hover:bg-white/20 rounded-full text-white transition-all z-50 group"
+                >
+                    <X className="w-8 h-8 group-hover:rotate-90 transition-transform" />
+                </button>
+
+                <img 
+                    src={mediaUrl} 
+                    alt="Zoom"
+                    className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl animate-in zoom-in-95 duration-300 select-none"
+                    onClick={(e) => e.stopPropagation()} 
+                />
+            </div>,
+            document.body
+        );
+    };
+
     return (
       <div className="space-y-1">
-        <div className="relative mt-1 overflow-hidden rounded-lg bg-black/20 border border-white/10 group cursor-pointer min-h-[150px] min-w-[200px]">
+        <div 
+            className="relative mt-1 overflow-hidden rounded-lg bg-black/20 border border-white/10 group cursor-zoom-in min-h-[150px] min-w-[200px]"
+            onClick={() => !imgError && mediaUrl && setIsZoomed(true)}
+        >
             {mediaUrl && !imgError ? (
-                <img 
-                src={mediaUrl} 
-                alt="Imagem" 
-                className="max-w-[280px] max-h-[300px] object-cover hover:scale-105 transition-transform duration-500" 
-                loading="lazy"
-                onError={() => setImgError(true)}
-                onClick={() => window.open(mediaUrl, '_blank')}
-                />
+                <>
+                    <img 
+                        src={mediaUrl} 
+                        alt="Imagem" 
+                        className="max-w-[280px] max-h-[300px] object-cover hover:scale-105 transition-transform duration-500" 
+                        loading="lazy"
+                        onError={() => setImgError(true)}
+                    />
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-[1px]">
+                        <ZoomIn className="w-8 h-8 text-white/90 drop-shadow-md" />
+                    </div>
+                </>
             ) : (
                 <div className="h-40 w-56 flex flex-col items-center justify-center text-zinc-500 bg-zinc-900">
                     <ImageIcon className="w-10 h-10 opacity-30 mb-2" />
@@ -59,6 +102,7 @@ export function MessageContent({ message }: MessageContentProps) {
         {content && content !== mediaUrl && content !== "Imagem" && (
             <p className="text-sm px-1 whitespace-pre-wrap mt-1">{content}</p>
         )}
+        {isZoomed && <ImageModal />}
       </div>
     );
   }
@@ -67,7 +111,7 @@ export function MessageContent({ message }: MessageContentProps) {
   if (type === 'audio' || type === 'ptt' || type === 'voice') {
     return (
       <div className={cn(
-          "flex items-center gap-3 min-w-[240px] mt-1 p-2 rounded-lg border transition-all",
+          "flex items-center gap-3 min-w-[260px] mt-1 p-2 rounded-lg border transition-all",
           isMe ? "bg-primary/20 border-primary/30" : "bg-zinc-800/80 border-zinc-700"
       )}>
         <div className={cn(
@@ -78,7 +122,7 @@ export function MessageContent({ message }: MessageContentProps) {
         </div>
         <div className="flex-1 flex flex-col justify-center overflow-hidden">
             {mediaUrl ? (
-                <audio controls className="h-8 w-full max-w-[200px] opacity-90 scale-[0.85] origin-left filter hue-rotate-15">
+                <audio controls className="h-8 w-full max-w-[220px] opacity-90 scale-95 origin-left" controlsList="nodownload">
                     <source src={mediaUrl} />
                 </audio>
             ) : (
@@ -97,7 +141,7 @@ export function MessageContent({ message }: MessageContentProps) {
       <div className="space-y-1">
         <div className="relative mt-1 overflow-hidden rounded-lg bg-black border border-zinc-800 max-w-[280px]">
             {mediaUrl ? (
-                <video controls className="w-full rounded-lg" preload="metadata">
+                <video controls className="w-full rounded-lg" preload="metadata" playsInline>
                     <source src={mediaUrl} />
                     Seu navegador não suporta vídeos.
                 </video>
@@ -146,16 +190,15 @@ export function MessageContent({ message }: MessageContentProps) {
   // --- 5. STICKER (FIGURINHA) ---
   if (type === 'sticker') {
       return (
-          <div className="relative mt-1 overflow-hidden w-32 h-32 flex items-center justify-center">
+          <div className="relative mt-1 overflow-hidden w-32 h-32 flex items-center justify-center p-1">
                 {mediaUrl ? (
                     <img 
                         src={mediaUrl} 
                         alt="Sticker" 
-                        className="w-full h-full object-contain" 
+                        className="w-full h-full object-contain drop-shadow-lg" 
                         loading="lazy"
                         onError={(e) => {
                             e.currentTarget.style.display = 'none';
-                            // Fallback visual se a imagem quebrar
                             const parent = e.currentTarget.parentElement;
                             if(parent) {
                                 parent.innerHTML = '<div class="text-zinc-600 text-[10px] flex flex-col items-center"><svg class="w-6 h-6 mb-1" ...>...</svg>Sticker erro</div>';
@@ -172,7 +215,7 @@ export function MessageContent({ message }: MessageContentProps) {
       );
   }
 
-  // --- 6. LOCALIZAÇÃO (NATIVO WHATSAPP STYLE) ---
+  // --- 6. LOCALIZAÇÃO ---
   if (type === 'location') {
     let lat: number | null = null;
     let long: number | null = null;
@@ -206,9 +249,8 @@ export function MessageContent({ message }: MessageContentProps) {
                             marginHeight={0} 
                             marginWidth={0} 
                             src={getMapEmbedUrl(lat, long)}
-                            className="pointer-events-none opacity-90 scale-110" // Escala leve para remover bordas do iframe
+                            className="pointer-events-none opacity-90 scale-110"
                         />
-                        {/* PIN Centralizado */}
                         <div className="absolute inset-0 flex items-center justify-center pointer-events-none pb-4">
                              <MapPin className="w-8 h-8 text-red-600 drop-shadow-md animate-bounce" fill="currentColor" />
                         </div>
@@ -220,7 +262,6 @@ export function MessageContent({ message }: MessageContentProps) {
                 )}
             </div>
             
-            {/* Footer Nativo Style */}
             <div className={cn("p-3 flex items-center gap-3 bg-zinc-800/80 backdrop-blur-sm border-t border-white/5")}>
                 <div className="w-10 h-10 rounded-full bg-zinc-700/50 flex items-center justify-center shrink-0">
                     <MapPin className="w-5 h-5 text-green-500" />
@@ -322,11 +363,6 @@ export function MessageContent({ message }: MessageContentProps) {
               </div>
           </div>
       );
-  }
-
-  // --- 9. ENQUETE (POLL) NATIVA VIA POLL BUBBLE ---
-  if (type === 'poll') {
-      return <PollBubble message={message} isMe={isMe} />;
   }
 
   // --- DEFAULT: TEXTO ---
