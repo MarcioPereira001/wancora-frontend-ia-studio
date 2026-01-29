@@ -10,6 +10,7 @@ import { ArrowDown, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useSound } from '@/hooks/useSound';
+import { api } from '@/services/api'; // Import da API
 
 const MESSAGES_PER_PAGE = 30;
 
@@ -18,7 +19,7 @@ export function ChatWindow() {
   const { user } = useAuthStore();
   const { play } = useSound();
   const { 
-      activeContact, messages, setMessages, 
+      activeContact, selectedInstance, messages, setMessages, 
       loadingMessages, setLoadingMessages, 
       hasMoreMessages, setHasMoreMessages,
       isMsgSelectionMode, selectedMsgIds, toggleMessageSelection 
@@ -29,28 +30,32 @@ export function ChatWindow() {
   const [fetchingMore, setFetchingMore] = useState(false);
   const [showScrollButton, setShowScrollButton] = useState(false);
   
-  // Throttle Ref
   const lastScrollTime = useRef(0);
-  
-  // Ref para detectar nova mensagem
   const prevMessagesLength = useRef(messages.length);
 
   // Efeito de SOM
   useEffect(() => {
       if (messages.length > prevMessagesLength.current) {
           const lastMsg = messages[messages.length - 1];
-          // Toca som se a msg for nova e não for minha
           if (!lastMsg.from_me) {
               play('message');
+              
+              // Se o chat está aberto e focado, marca como lido imediatamente
+              if (activeContact && selectedInstance && lastMsg.remote_jid === activeContact.remote_jid) {
+                   api.post('/message/read', {
+                       sessionId: selectedInstance.session_id,
+                       companyId: user?.company_id,
+                       remoteJid: activeContact.remote_jid
+                   }).catch(() => {}); // Silent catch
+              }
           }
       }
       prevMessagesLength.current = messages.length;
-  }, [messages, play]);
+  }, [messages, play, activeContact, selectedInstance, user?.company_id]);
 
   // PERFORMANCE: Use useLayoutEffect para scrollar ANTES do browser pintar a tela
   useLayoutEffect(() => {
       if (messagesEndRef.current && !fetchingMore && !loadingMessages) {
-          // Só scrolla automaticamente se estiver perto do fundo ou na carga inicial
           const container = scrollContainerRef.current;
           if (container) {
               const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
@@ -79,35 +84,41 @@ export function ChatWindow() {
       return (data || []).reverse(); 
   };
 
-  // Carga Inicial
+  // Carga Inicial e Trigger de Leitura/Presença
   useEffect(() => {
-      if (!activeContact) return;
+      if (!activeContact || !selectedInstance) return;
 
       const initChat = async () => {
           setHasMoreMessages(true);
           const initialMsgs = await loadMessages(0);
           setMessages(initialMsgs);
-          // Força scroll pro final na troca de chat
+          
+          // MISSION 4: Trigger Read Receipt & Presence
+          if (user?.company_id) {
+              api.post('/message/read', {
+                  sessionId: selectedInstance.session_id,
+                  companyId: user.company_id,
+                  remoteJid: activeContact.remote_jid
+              }).catch(err => console.error("Falha ao marcar lido:", err));
+          }
+
           setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "auto" }), 50);
       };
 
       initChat();
-  }, [activeContact?.id]);
+  }, [activeContact?.id, selectedInstance?.session_id]); // Recarrega se mudar chat ou instância
 
   // Scroll Handler (Pagination + FAB Visibility)
   const handleScroll = async (e: React.UIEvent<HTMLDivElement>) => {
       const container = e.currentTarget;
       const now = Date.now();
       
-      // Lógica do Botão Flutuante
       const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
       setShowScrollButton(distanceFromBottom > 300);
 
-      // THROTTLE: Limita verificação de paginação a cada 200ms
       if (now - lastScrollTime.current < 200) return;
       lastScrollTime.current = now;
 
-      // Trigger Paginação
       if (container.scrollTop < 100 && hasMoreMessages && !fetchingMore) {
           setFetchingMore(true);
           const currentHeight = container.scrollHeight; 
@@ -116,14 +127,12 @@ export function ChatWindow() {
           const olderMessages = await loadMessages(messages.length);
           
           if (olderMessages.length > 0) {
-              // Evita duplicatas na junção (Safety check)
               if (currentTopMsgId && olderMessages[olderMessages.length - 1].id === currentTopMsgId) {
                   olderMessages.pop();
               }
 
               setMessages(prev => [...olderMessages, ...prev]);
               
-              // Ajuste de scroll position para manter o usuário no lugar
               requestAnimationFrame(() => { 
                   if (scrollContainerRef.current) {
                       scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight - currentHeight; 
@@ -142,7 +151,6 @@ export function ChatWindow() {
 
   return (
     <div className="flex-1 relative flex flex-col overflow-hidden bg-[#0b0b0d]">
-        {/* Background Pattern SVG (Doodle Style) */}
         <div className="absolute inset-0 opacity-[0.03] pointer-events-none" 
              style={{ 
                  backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='1'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")` 
@@ -154,7 +162,6 @@ export function ChatWindow() {
             onScroll={handleScroll}
             className="flex-1 overflow-y-auto p-4 md:p-6 space-y-2 relative custom-scrollbar z-10" 
         >
-            {/* Loading Superior */}
             {fetchingMore && (
                 <div className="flex justify-center py-2">
                     <Loader2 className="w-5 h-5 text-zinc-500 animate-spin" />
@@ -183,7 +190,6 @@ export function ChatWindow() {
             <div ref={messagesEndRef} />
         </div>
 
-        {/* Floating Scroll Button */}
         <div className={cn(
             "absolute bottom-4 right-4 z-20 transition-all duration-300 transform",
             showScrollButton ? "translate-y-0 opacity-100" : "translate-y-10 opacity-0 pointer-events-none"
