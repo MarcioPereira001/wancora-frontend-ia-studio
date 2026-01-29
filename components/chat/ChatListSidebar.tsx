@@ -7,7 +7,7 @@ import { useChatStore } from '@/store/useChatStore';
 import { 
     Search, Plus, MessageSquare, Loader2, 
     Camera, Mic, Video, FileText, MapPin, 
-    BarChart2, User, DollarSign, Sticker, AlertTriangle, RefreshCw, Users, Megaphone, Check, CheckCheck
+    BarChart2, User, DollarSign, Sticker, RefreshCw, Users, Megaphone, Check, CheckCheck
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -18,12 +18,13 @@ import { NewChatModal } from './NewChatModal';
 import { useAuthStore } from '@/store/useAuthStore';
 
 export function ChatListSidebar() {
-  const { contacts, loading, error, refreshList } = useChatList(); 
+  const { contacts, loading, refreshList } = useChatList(); 
   const { activeContact, setActiveContact, selectedInstance } = useChatStore();
   const { user } = useAuthStore();
   
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterType, setFilterType] = useState<'all' | 'groups' | 'unread'>('all');
+  // Adicionado filtro 'channels'
+  const [filterType, setFilterType] = useState<'all' | 'groups' | 'unread' | 'channels'>('all');
   
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
   const [isChannelModalOpen, setIsChannelModalOpen] = useState(false);
@@ -58,20 +59,16 @@ export function ChatListSidebar() {
           const search = searchTerm.toLowerCase();
 
           const matchesSearch = displayName.includes(search) || phone.includes(search);
-          
           if (!matchesSearch) return false;
 
+          // Filtros
           if (filterType === 'groups') return contact.is_group;
+          if (filterType === 'channels') return contact.is_newsletter;
           if (filterType === 'unread') return contact.unread_count > 0;
           return true;
       });
 
-      list = list.sort((a, b) => {
-          const timeA = a.last_message_time ? new Date(a.last_message_time).getTime() : 0;
-          const timeB = b.last_message_time ? new Date(b.last_message_time).getTime() : 0;
-          return timeB - timeA;
-      });
-
+      // Ordenação secundária já garantida pelo hook, mas reforçamos aqui
       return list;
   }, [contacts, searchTerm, filterType]);
 
@@ -84,61 +81,35 @@ export function ChatListSidebar() {
       const date = new Date(dateString);
       if (isNaN(date.getTime())) return '';
       const now = new Date();
-      
       const isToday = date.toDateString() === now.toDateString();
-      const isYesterday = new Date(now.setDate(now.getDate() - 1)).toDateString() === date.toDateString();
-
-      if (isToday) {
-          return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      }
-      if (isYesterday) {
-          return 'Ontem';
-      }
-      return date.toLocaleDateString([], { day: '2-digit', month: '2-digit', year: '2-digit' });
+      if (isToday) return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      return date.toLocaleDateString([], { day: '2-digit', month: '2-digit' });
   };
 
-  // --- PRÉVIA AVANÇADA (TODOS OS TIPOS) ---
   const getMessagePreview = (contact: any) => {
       const type = contact.last_message_type || 'text';
       let content = contact.last_message_content || '';
-      
       const iconClass = "w-3.5 h-3.5 inline-block mr-1 opacity-70";
 
-      // Tratamento de JSONs
       if (typeof content === 'string' && (content.startsWith('{') || content.startsWith('['))) {
           try {
               const parsed = JSON.parse(content);
               if (type === 'poll') content = parsed.name || 'Enquete';
               else if (type === 'location') content = 'Localização';
               else if (type === 'contact') content = parsed.displayName || 'Contato';
-          } catch(e) {
-              // Se falhar o parse, tenta mostrar algo genérico
-          }
+          } catch(e) {}
       }
 
       switch (type) {
-          case 'image':
-              return <span className="flex items-center"><Camera className={iconClass} /> {content && content !== '[Mídia]' ? content : 'Foto'}</span>;
-          case 'video':
-              return <span className="flex items-center"><Video className={iconClass} /> {content && content !== '[Mídia]' ? content : 'Vídeo'}</span>;
-          case 'audio':
-          case 'ptt':
-          case 'voice':
-              return <span className="flex items-center"><Mic className={iconClass} /> Áudio</span>;
-          case 'document':
-              return <span className="flex items-center"><FileText className={iconClass} /> Documento</span>;
-          case 'sticker':
-              return <span className="flex items-center"><Sticker className={iconClass} /> Figurinha</span>;
-          case 'location':
-              return <span className="flex items-center"><MapPin className={iconClass} /> {content || 'Localização'}</span>;
-          case 'contact':
-              return <span className="flex items-center"><User className={iconClass} /> {content || 'Contato'}</span>;
-          case 'poll':
-              return <span className="flex items-center"><BarChart2 className={iconClass} /> {content || 'Enquete'}</span>;
-          case 'pix':
-              return <span className="flex items-center"><DollarSign className={iconClass} /> Pix</span>;
-          default:
-              return <span className="truncate block">{content || 'Mensagem'}</span>;
+          case 'image': return <span className="flex items-center"><Camera className={iconClass} /> Foto</span>;
+          case 'video': return <span className="flex items-center"><Video className={iconClass} /> Vídeo</span>;
+          case 'audio': case 'ptt': case 'voice': return <span className="flex items-center"><Mic className={iconClass} /> Áudio</span>;
+          case 'document': return <span className="flex items-center"><FileText className={iconClass} /> Documento</span>;
+          case 'sticker': return <span className="flex items-center"><Sticker className={iconClass} /> Figurinha</span>;
+          case 'location': return <span className="flex items-center"><MapPin className={iconClass} /> Loc</span>;
+          case 'poll': return <span className="flex items-center"><BarChart2 className={iconClass} /> Enquete</span>;
+          case 'pix': return <span className="flex items-center"><DollarSign className={iconClass} /> Pix</span>;
+          default: return <span className="truncate block">{content || 'Mensagem'}</span>;
       }
   };
 
@@ -152,7 +123,6 @@ export function ChatListSidebar() {
                     <Button variant="ghost" size="icon" title="Atualizar Lista" onClick={handleManualRefresh} disabled={isRefreshing}>
                         <RefreshCw className={cn("w-4 h-4 text-zinc-400", isRefreshing && "animate-spin")} />
                     </Button>
-                    
                     <div className="relative">
                         <Button 
                             size="icon" 
@@ -162,17 +132,16 @@ export function ChatListSidebar() {
                         >
                             <Plus className="w-5 h-5" />
                         </Button>
-
                         {showCreateMenu && (
                             <div className="absolute right-0 top-10 z-50 bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl w-48 animate-in fade-in zoom-in-95 origin-top-right ring-1 ring-white/10">
                                 <div className="p-1">
-                                    <button onClick={() => { setIsNewChatModalOpen(true); setShowCreateMenu(false); }} className="w-full text-left px-3 py-2.5 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-white flex items-center gap-3 rounded-lg transition-colors">
+                                    <button onClick={() => { setIsNewChatModalOpen(true); setShowCreateMenu(false); }} className="w-full text-left px-3 py-2.5 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-white flex items-center gap-3 rounded-lg">
                                         <div className="p-1.5 bg-blue-500/10 text-blue-400 rounded-md"><MessageSquare className="w-4 h-4" /></div> Conversa
                                     </button>
-                                    <button onClick={() => { setIsGroupModalOpen(true); setShowCreateMenu(false); }} className="w-full text-left px-3 py-2.5 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-white flex items-center gap-3 rounded-lg transition-colors">
+                                    <button onClick={() => { setIsGroupModalOpen(true); setShowCreateMenu(false); }} className="w-full text-left px-3 py-2.5 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-white flex items-center gap-3 rounded-lg">
                                         <div className="p-1.5 bg-green-500/10 text-green-400 rounded-md"><Users className="w-4 h-4" /></div> Novo Grupo
                                     </button>
-                                    <button onClick={() => { setIsChannelModalOpen(true); setShowCreateMenu(false); }} className="w-full text-left px-3 py-2.5 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-white flex items-center gap-3 rounded-lg transition-colors">
+                                    <button onClick={() => { setIsChannelModalOpen(true); setShowCreateMenu(false); }} className="w-full text-left px-3 py-2.5 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-white flex items-center gap-3 rounded-lg">
                                         <div className="p-1.5 bg-purple-500/10 text-purple-400 rounded-md"><Megaphone className="w-4 h-4" /></div> Novo Canal
                                     </button>
                                 </div>
@@ -193,9 +162,20 @@ export function ChatListSidebar() {
             </div>
 
             <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
-                <button onClick={() => setFilterType('all')} className={cn("px-3 py-1 rounded-full text-xs font-medium border transition-colors whitespace-nowrap", filterType === 'all' ? "bg-zinc-100 text-zinc-900 border-zinc-100" : "bg-zinc-900 text-zinc-400 border-zinc-800 hover:border-zinc-700")}>Todas</button>
-                <button onClick={() => setFilterType('unread')} className={cn("px-3 py-1 rounded-full text-xs font-medium border transition-colors whitespace-nowrap", filterType === 'unread' ? "bg-zinc-100 text-zinc-900 border-zinc-100" : "bg-zinc-900 text-zinc-400 border-zinc-800 hover:border-zinc-700")}>Não lidas</button>
-                <button onClick={() => setFilterType('groups')} className={cn("px-3 py-1 rounded-full text-xs font-medium border transition-colors whitespace-nowrap", filterType === 'groups' ? "bg-zinc-100 text-zinc-900 border-zinc-100" : "bg-zinc-900 text-zinc-400 border-zinc-800 hover:border-zinc-700")}>Grupos</button>
+                {['all', 'unread', 'groups', 'channels'].map(type => (
+                    <button 
+                        key={type}
+                        onClick={() => setFilterType(type as any)} 
+                        className={cn(
+                            "px-3 py-1 rounded-full text-xs font-medium border transition-colors whitespace-nowrap capitalize", 
+                            filterType === type 
+                                ? "bg-zinc-100 text-zinc-900 border-zinc-100" 
+                                : "bg-zinc-900 text-zinc-400 border-zinc-800 hover:border-zinc-700"
+                        )}
+                    >
+                        {type === 'all' ? 'Todas' : type === 'unread' ? 'Não Lidas' : type === 'groups' ? 'Grupos' : 'Canais'}
+                    </button>
+                ))}
             </div>
         </div>
 
@@ -215,7 +195,13 @@ export function ChatListSidebar() {
                 filteredContacts.map(contact => {
                     const isActive = activeContact?.id === contact.id;
                     const displayName = getDisplayName(contact);
-                    const isNewLead = !contact.is_group && contact.lead_created_at && (new Date().getTime() - new Date(contact.lead_created_at).getTime() < 24 * 60 * 60 * 1000);
+                    
+                    // Lógica do Selo NOVO (24h)
+                    // Usa lead_created_at que vem da RPC atualizada
+                    const isNewLead = !contact.is_group && 
+                                      !contact.is_newsletter && 
+                                      contact.lead_created_at && 
+                                      (new Date().getTime() - new Date(contact.lead_created_at).getTime() < 24 * 60 * 60 * 1000);
 
                     return (
                         <div 
@@ -231,9 +217,9 @@ export function ChatListSidebar() {
                                     {contact.profile_pic_url ? (
                                         <img src={contact.profile_pic_url} alt="" className="w-full h-full object-cover" />
                                     ) : (
-                                        (contact.is_group || contact.is_newsletter) 
-                                        ? <Users className="w-5 h-5 text-zinc-500" /> 
-                                        : displayName.charAt(0).toUpperCase()
+                                        (contact.is_group) ? <Users className="w-5 h-5 text-zinc-500" /> :
+                                        (contact.is_newsletter) ? <Megaphone className="w-5 h-5 text-zinc-500" /> :
+                                        displayName.charAt(0).toUpperCase()
                                     )}
                                 </div>
                                 {contact.is_online && !contact.is_group && (
@@ -245,7 +231,6 @@ export function ChatListSidebar() {
                                 <div className="flex justify-between items-baseline">
                                     <h3 className={cn("text-sm font-medium truncate flex items-center gap-1", isActive ? "text-white" : "text-zinc-200")}>
                                         {displayName}
-                                        {/* Badge Business */}
                                         {contact.is_business && !contact.is_group && (
                                             <span className="text-[9px] bg-zinc-700 text-zinc-300 px-1 rounded border border-zinc-600 ml-1">BIZ</span>
                                         )}
@@ -261,7 +246,11 @@ export function ChatListSidebar() {
                                     </div>
                                     
                                     <div className="flex items-center gap-2">
-                                        {isNewLead && <span className="bg-blue-500/10 text-blue-400 border border-blue-500/20 text-[9px] font-bold px-1.5 py-0.5 rounded">NOVO</span>}
+                                        {isNewLead && (
+                                            <span className="bg-blue-500/10 text-blue-400 border border-blue-500/20 text-[9px] font-bold px-1.5 py-0.5 rounded animate-pulse">
+                                                NOVO
+                                            </span>
+                                        )}
                                         {contact.unread_count > 0 && (
                                             <span className="bg-green-500 text-black text-[10px] font-bold min-w-[20px] h-[20px] rounded-full flex items-center justify-center shadow-sm animate-in zoom-in duration-300">
                                                 {contact.unread_count}
