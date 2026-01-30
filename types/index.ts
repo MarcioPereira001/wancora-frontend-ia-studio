@@ -17,6 +17,7 @@ export interface ChatContact {
   is_newsletter?: boolean;
   is_online?: boolean;
   last_seen_at?: string;
+  is_business?: boolean;
   
   // Dados enriquecidos via Join/RPC
   lead_status?: string | null;

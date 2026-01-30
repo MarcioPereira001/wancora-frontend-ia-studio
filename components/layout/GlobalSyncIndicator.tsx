@@ -4,30 +4,40 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useRealtimeStore } from '@/store/useRealtimeStore';
 import { createClient } from '@/utils/supabase/client';
-import { RefreshCw, CheckCircle2, Database, Users, MessageSquare, Radio, Loader2, Map as MapIcon, HardDrive } from 'lucide-react';
+import { RefreshCw, CheckCircle2, Database, Users, MessageSquare, Radio, Loader2, HardDrive } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useAuthStore } from '@/store/useAuthStore';
 
 export function GlobalSyncIndicator() {
-  const { forcedSyncId, clearSyncAnimation } = useRealtimeStore();
+  const { forcedSyncId, clearSyncAnimation, instances } = useRealtimeStore();
+  const { user } = useAuthStore();
   const [show, setShow] = useState(false);
-  const [isVisible, setIsVisible] = useState(false); // Controle de Animação CSS
+  const [isVisible, setIsVisible] = useState(false); 
   const [localPercent, setLocalPercent] = useState(0);
   const [localStatus, setLocalStatus] = useState<string>('waiting');
   
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const closingRef = useRef(false); // Lock para evitar múltiplos triggers de fechamento
+  const closingRef = useRef(false); 
 
-  // MODIFICAÇÃO CRÍTICA:
-  // O indicador agora obedece estritamente ao 'forcedSyncId'.
-  // Ele NÃO busca mais instâncias aleatórias que estejam conectando em background (Auto-Reconnect).
-  // Isso garante que ele só apareça quando o usuário acaba de ler o QR Code no Modal.
-  const targetInstanceId = forcedSyncId;
+  // Lógica de Alvo: Usa o ID forçado (QR Code recente) OU procura um que esteja sincronizando em background
+  const getTargetId = () => {
+      if (forcedSyncId) return forcedSyncId;
+      // Procura instância em estado de sync
+      const syncingInstance = instances.find(i => 
+          i.sync_status && 
+          i.sync_status !== 'completed' && 
+          i.sync_status !== 'waiting' &&
+          i.status === 'connected'
+      );
+      return syncingInstance?.id || null;
+  };
+
+  const targetInstanceId = getTargetId();
 
   useEffect(() => {
-    // Se não tem alvo e não estamos em processo de fechamento
+    // Se não tem alvo e não estamos fechando
     if (!targetInstanceId) {
-        if (show && !forcedSyncId && !closingRef.current) {
-             // Animação de saída se perdeu o alvo
+        if (show && !closingRef.current) {
              closingRef.current = true;
              setIsVisible(false);
              setTimeout(() => { 
@@ -38,12 +48,11 @@ export function GlobalSyncIndicator() {
         return;
     }
 
-    // Se temos um ID forçado (Gatilho Manual), mostramos imediatamente
-    if (forcedSyncId && !show) {
+    // Se achou um alvo, mostra a barra
+    if (targetInstanceId && !show && !closingRef.current) {
         setShow(true);
-        setTimeout(() => setIsVisible(true), 50); // Animação de entrada
+        setTimeout(() => setIsVisible(true), 50);
         setLocalStatus('waiting'); 
-        setLocalPercent(0);
     }
 
     const fetchDirectStatus = async () => {
@@ -59,39 +68,30 @@ export function GlobalSyncIndicator() {
             const dbSyncStatus = data.sync_status || 'waiting';
             const dbPercent = data.sync_percent || 0;
 
-            // CRITÉRIO DE SUCESSO: Status completed OU 100% atingido
             const isDone = dbSyncStatus === 'completed' || dbPercent >= 100;
 
             if (isDone) {
                 setLocalPercent(100);
                 setLocalStatus('completed');
 
-                // FINALIZAÇÃO AUTOMÁTICA
                 if (show && !closingRef.current) {
                     closingRef.current = true;
-                    console.log("✅ [Sync] Concluído. Iniciando fechamento...");
-
-                    // Mantém visível por 3 segundos para usuário ver o 100% verde
                     setTimeout(() => {
-                        setIsVisible(false); // Trigger CSS Exit
-                        
-                        // Desmonta após animação CSS (500ms)
+                        setIsVisible(false); 
                         setTimeout(() => {
                             setShow(false);
                             if(forcedSyncId) clearSyncAnimation(); 
                             closingRef.current = false;
                         }, 500);
-                    }, 3000);
+                    }, 3000); // 3s de glória verde
                 }
                 return;
             }
 
-            // EXIBIÇÃO CONTÍNUA (ENQUANTO CARREGA)
             setLocalStatus(dbSyncStatus);
             setLocalPercent(dbPercent);
 
             if (data.status === 'disconnected') {
-                // Se desconectou, fecha mais rápido
                 if (!closingRef.current) {
                     setIsVisible(false);
                     setTimeout(() => {
@@ -99,17 +99,12 @@ export function GlobalSyncIndicator() {
                         if(forcedSyncId) clearSyncAnimation();
                     }, 500);
                 }
-            } else if (!show && !closingRef.current) {
-                // Se conectou e não estava mostrando, mostra agora
-                setShow(true);
-                setTimeout(() => setIsVisible(true), 50);
             }
         }
     };
 
-    // Polling Agressivo (1s)
     fetchDirectStatus(); 
-    intervalRef.current = setInterval(fetchDirectStatus, 1000);
+    intervalRef.current = setInterval(fetchDirectStatus, 1500); // Polling menos agressivo
 
     return () => {
         if (intervalRef.current) clearInterval(intervalRef.current);
@@ -120,7 +115,6 @@ export function GlobalSyncIndicator() {
 
   const isComplete = localPercent >= 100 || localStatus === 'completed';
   
-  // Mapeamento Visual
   let statusLabel = 'Conexão Estabelecida';
   let Icon = Radio;
   let subLabel = 'Aguardando dados...';
@@ -128,22 +122,22 @@ export function GlobalSyncIndicator() {
   switch (localStatus) {
       case 'waiting': 
           statusLabel = 'Iniciando Sessão';
-          subLabel = 'Conectado! Preparando download...';
+          subLabel = 'Conectado! Preparando...';
           Icon = Loader2;
           break;
       case 'importing_contacts':
-          statusLabel = 'Mapeando Contatos';
-          subLabel = 'Identificando nomes e grupos...';
+          statusLabel = 'Importando Contatos';
+          subLabel = 'Organizando sua agenda...';
           Icon = Users;
           break;
       case 'importing_messages':
           statusLabel = 'Baixando Histórico';
-          subLabel = 'Recuperando conversas recentes...';
+          subLabel = 'Recuperando conversas...';
           Icon = MessageSquare;
           break;
       case 'processing_history':
-          statusLabel = 'Organizando CRM';
-          subLabel = 'Indexando leads e mensagens...';
+          statusLabel = 'Processando Dados';
+          subLabel = 'Finalizando importação...';
           Icon = Database;
           break;
       case 'completed':
@@ -153,8 +147,7 @@ export function GlobalSyncIndicator() {
           break;
       default:
           if (localPercent > 0) {
-              statusLabel = 'Processando Dados';
-              subLabel = 'Por favor, aguarde...';
+              statusLabel = 'Sincronizando...';
               Icon = HardDrive;
           }
           break;
@@ -166,26 +159,16 @@ export function GlobalSyncIndicator() {
         isVisible ? "translate-y-0 opacity-100" : "translate-y-20 opacity-0"
     )}>
       <div className="bg-[#09090b] border border-zinc-800 rounded-xl shadow-[0_0_80px_rgba(0,0,0,0.8)] p-4 w-80 ring-1 ring-white/10 relative overflow-hidden backdrop-blur-2xl">
-        
-        {/* Efeito de Fundo */}
         <div className={`absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent ${isComplete ? 'via-emerald-500' : 'via-blue-600'} to-transparent opacity-75`} />
 
         <div className="flex items-center justify-between mb-3 relative z-10">
           <div className="flex items-center gap-3">
             <div className={`p-2 rounded-lg transition-colors duration-500 ${isComplete ? 'bg-emerald-500/10 text-emerald-500' : 'bg-zinc-800 text-blue-400'}`}>
-               {isComplete ? (
-                 <CheckCircle2 className="w-5 h-5" />
-               ) : (
-                 <Icon className={`w-5 h-5 ${localStatus === 'waiting' || localPercent < 100 ? 'animate-pulse' : ''}`} />
-               )}
+               {isComplete ? <CheckCircle2 className="w-5 h-5" /> : <Icon className={`w-5 h-5 ${localStatus === 'waiting' || localPercent < 100 ? 'animate-pulse' : ''}`} />}
             </div>
             <div className="flex flex-col min-w-0">
-              <span className="text-sm font-bold text-white leading-none mb-1 truncate">
-                {statusLabel}
-              </span>
-              <span className="text-[10px] text-zinc-400 font-medium truncate max-w-[160px]">
-                {subLabel}
-              </span>
+              <span className="text-sm font-bold text-white leading-none mb-1 truncate">{statusLabel}</span>
+              <span className="text-[10px] text-zinc-400 font-medium truncate max-w-[160px]">{subLabel}</span>
             </div>
           </div>
           <span className={`text-lg font-mono font-bold transition-colors ${isComplete ? 'text-emerald-500' : 'text-white'}`}>
@@ -193,15 +176,12 @@ export function GlobalSyncIndicator() {
           </span>
         </div>
 
-        {/* Barra de Progresso */}
         <div className="h-1.5 w-full bg-zinc-800 rounded-full overflow-hidden relative z-10">
             <div 
               className={`h-full transition-all duration-700 ease-out relative ${isComplete ? 'bg-emerald-500' : 'bg-gradient-to-r from-blue-600 to-cyan-400'}`}
               style={{ width: `${Math.max(5, localPercent)}%` }} 
             >
-                {!isComplete && (
-                    <div className="absolute inset-0 bg-white/30 w-full animate-[shimmer_1s_infinite] -skew-x-12" />
-                )}
+                {!isComplete && <div className="absolute inset-0 bg-white/30 w-full animate-[shimmer_1s_infinite] -skew-x-12" />}
             </div>
         </div>
       </div>

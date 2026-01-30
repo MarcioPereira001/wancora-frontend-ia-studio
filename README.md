@@ -1,3 +1,4 @@
+
 # 📘 WANCORA CRM - System Architecture & Master Blueprint
 
 **Versão:** 4.2 (Gaming Mode & AI Agents)
@@ -32,7 +33,8 @@ Atualizado para a arquitetura mais moderna e segura do React.
     * **Snapshot Inicial:** Carrega dados via REST/Supabase SDK ao montar.
     * **WebSocket Subscription:** Mantém a store atualizada via canal `postgres_changes`.
     * **Optimistic UI:** Ações do usuário (ex: mover card) refletem em 0ms na tela antes da confirmação do servidor.
-* **Global Sync Indicator:** Componente flutuante (`GlobalSyncIndicator.tsx`) que intercepta estados de `syncing` do backend para mostrar progresso de importação em tempo real, sobrepondo qualquer rota.
+* **Global Sync Indicator:** Componente flutuante (`GlobalSyncIndicator.tsx`).
+    * **Comportamento Auto-Detect:** Ele varre a lista de instâncias no Zustand (`useRealtimeStore`). Se encontrar QUALQUER instância com `sync_status` diferente de `completed`, ele aparece automaticamente. Isso garante que, se o usuário der F5 durante a sincronização, a barra reaparece.
 
 ### B. O Core Backend (Node.js + @whiskeysockets/baileys)
 Este é o coração pulsante. Ele não é apenas uma API REST; é um Gerenciador de Estado Persistente.

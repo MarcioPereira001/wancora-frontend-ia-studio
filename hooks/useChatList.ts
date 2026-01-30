@@ -96,7 +96,8 @@ export function useChatList() {
                       is_online: updatedRow.is_online,
                       phone_number: updatedRow.phone || existing?.phone_number || '',
                       is_group: updatedRow.jid.includes('@g.us'),
-                      is_newsletter: updatedRow.jid.includes('@newsletter')
+                      is_newsletter: updatedRow.jid.includes('@newsletter'),
+                      is_business: updatedRow.is_business
                   };
 
                   // Remove versão antiga e adiciona nova
