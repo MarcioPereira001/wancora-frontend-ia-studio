@@ -58,7 +58,7 @@ A entidade de negócio principal.
 * `id`: uuid (PK)
 * `company_id`: uuid (FK)
 * `phone`: text (Vinculado ao contato)
-* `name`: text
+* `name`: text (Nullable) - Pode ser NULL se o contato não tiver identificação. O Frontend formata o telefone.
 * `status`: text ('new', 'open', 'won', 'lost', 'archived')
 * `pipeline_stage_id`: uuid (FK)
 * `owner_id`: uuid (FK)

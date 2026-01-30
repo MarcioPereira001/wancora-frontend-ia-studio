@@ -346,18 +346,18 @@ Para otimizar o tempo de carregamento e reduzir custos de armazenamento, o siste
 ### 4.8. Regras Estritas de Lead (Lead Guard)
 O sistema possui um **"Centralized Gatekeeper"** (`ensureLeadExists` em `sync.js`) que atua como autoridade única para criação de Leads.
 
-*   **Trigger Universal:** Tanto o Histórico (`historyHandler`) quanto Mensagens Novas (`messageHandler`) chamam esta função.
+*   **Trigger Universal:** Tanto o Histórico (`historyHandler` com flag `createLead: true`) quanto Mensagens Novas (`messageHandler`) chamam esta função.
 *   **Regras de Exclusão (Hard Block):**
     *   Grupos (`@g.us`) -> Bloqueado.
     *   Canais (`@newsletter`) -> Bloqueado.
     *   Broadcasts (`status@broadcast`) -> Bloqueado.
     *   Self (`meu próprio número`) -> Bloqueado.
     *   **Ignorados:** Se `contacts.is_ignored = true`, o lead é bloqueado (Feature "Remover do CRM").
-*   **Estratégia de Nomes (Name Fallback):**
+*   **Estratégia de Nomes (Null Safe Policy):**
     *   O sistema tenta obter nomes na ordem: Agenda > Business > PushName.
-    *   **Alteração v4.2:** Se nenhum nome for encontrado, o Lead **É CRIADO** usando o número formatado (`+55...`) como nome provisório, garantindo que nenhuma conversa válida seja perdida.
+    *   **Alteração v5.2:** Se o nome for genérico (apenas números) ou inexistente, o sistema força a gravação de `NULL` no banco. Isso permite que a constraint `NOT NULL` seja removida da tabela `leads`, delegando a formatação visual ao Frontend.
 
---
+---
 
 ## 5. 📡 Realtime & WebSocket Events (Webhook Specs)
 
