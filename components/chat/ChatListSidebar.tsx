@@ -119,7 +119,6 @@ export function ChatListSidebar() {
   const handleHideChat = async (contactJid: string) => {
       if(!user?.company_id) return;
       // Otimista
-      // O hook useChatList vai atualizar via realtime, mas para feedback imediato seria ideal atualizar local
       try {
            await supabase.from('contacts').update({ is_ignored: true }).eq('jid', contactJid).eq('company_id', user.company_id);
       } catch (e) {}

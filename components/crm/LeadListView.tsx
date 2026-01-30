@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { Lead, PipelineStage } from '@/types';
 import { useTeam } from '@/hooks/useTeam';
-import { formatCurrency, cn } from '@/lib/utils';
+import { formatCurrency, cn, formatPhone } from '@/lib/utils';
 import { Search, User, Filter, ArrowUpDown } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { LeadDetailsModal } from './LeadDetailsModal';
@@ -73,8 +73,8 @@ export function LeadListView({ leads, stages }: LeadListViewProps) {
                         const stageInfo = getStageName(lead.pipeline_stage_id);
                         const ownerName = getOwnerName(lead.owner_id);
                         
-                        // Fallback seguro
-                        const displayName = lead.name || lead.phone || 'Sem Nome';
+                        // LÓGICA DE EXIBIÇÃO: Se nome nulo, usa telefone formatado
+                        const displayName = lead.name || formatPhone(lead.phone) || 'Sem Nome';
                         const displayInitial = (displayName || '?').charAt(0).toUpperCase();
 
                         return (

@@ -2,7 +2,7 @@
 import React from 'react';
 import { Calendar, MessageCircle, Flame, User, Tag, Clock } from 'lucide-react';
 import { Lead, TeamMember } from '@/types';
-import { cn, formatCurrency } from '@/lib/utils';
+import { cn, formatCurrency, formatPhone } from '@/lib/utils';
 import { DeadlineTimer } from './DeadlineTimer'; 
 
 interface KanbanCardProps {
@@ -23,7 +23,9 @@ export function KanbanCard({ lead, owner, onDragStart, onClick }: KanbanCardProp
   };
 
   const temp = getTempConfig(lead.temperature);
-  const displayName = lead.name || lead.phone || "Sem Nome";
+  
+  // LÓGICA DE EXIBIÇÃO ROBUSTA: Se nome for nulo, formata o telefone
+  const displayName = lead.name || formatPhone(lead.phone) || "Sem Nome";
   const displayInitial = (displayName || "?").charAt(0).toUpperCase();
 
   return (
