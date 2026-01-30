@@ -260,11 +260,12 @@ Body:
 ## 4.1. Sincronização de Dados e Name Hunter V3
 O processo de sincronização inicial (messaging-history.set) utiliza uma arquitetura de proteção e enriquecimento de dados:
 1.  **Initial Sync:** Baixa contatos e histórico.
-2. Concurrency Lock: Uma flag isProcessingHistory atua como um Mutex para impedir que o histórico seja processado em duplicidade, o que causaria inconsistência no banco.
-3. Name Hunter V3: O sistema mapeia nomes da agenda (notify, verifiedName, short) em um mapa de memória (contactsMap) antes de salvar as mensagens. Se um nome for identificado como "genérico" (apenas números ou igual ao JID), o sistema tenta substituí-lo pelo pushName mais recente.
-4. Data Propagation: Ao descobrir um nome real via WhatsApp, o backend propaga essa atualização automaticamente para a tabela leads, garantindo que o Kanban e o Chat reflitam a identidade correta do contato.
-5. Optimistic Sync Delay: Um atraso de 300ms é aplicado antes do upsertMessage para garantir que o contato e o lead já tenham sido criados/atualizados, evitando erros de chave estrangeira.
-6.  **Realtime Refresh (`refreshContactInfo`):** A cada mensagem recebida (`messages.upsert`), o sistema verifica:
+2. **Smart Fetch de Mídia (Active Retrieval):** O payload de histórico do WhatsApp raramente traz a URL da foto de perfil. O Backend implementa um loop inteligente que detecta a ausência da foto e executa `sock.profilePictureUrl(jid)` ativamente para cada contato durante a importação, garantindo avatares visíveis desde o primeiro segundo.
+3. Concurrency Lock: Uma flag isProcessingHistory atua como um Mutex para impedir que o histórico seja processado em duplicidade, o que causaria inconsistência no banco.
+4. Name Hunter V3: O sistema mapeia nomes da agenda (notify, verifiedName, short) em um mapa de memória (contactsMap) antes de salvar as mensagens. Se um nome for identificado como "genérico" (apenas números ou igual ao JID), o sistema tenta substituí-lo pelo pushName mais recente.
+5. Data Propagation: Ao descobrir um nome real via WhatsApp, o backend propaga essa atualização automaticamente para a tabela leads, garantindo que o Kanban e o Chat reflitam a identidade correta do contato.
+6. Optimistic Sync Delay: Um atraso de 300ms é aplicado antes do upsertMessage para garantir que o contato e o lead já tenham sido criados/atualizados, evitando erros de chave estrangeira.
+7.  **Realtime Refresh (`refreshContactInfo`):** A cada mensagem recebida (`messages.upsert`), o sistema verifica:
     *   O contato tem foto de perfil? (Cache de 24h)
     *   É uma conta Business? (Verifica `getBusinessProfile` se > 48h)
     *   O nome mudou?
@@ -324,20 +325,20 @@ Para otimizar o tempo de carregamento e reduzir custos de armazenamento, o siste
 5. Mensagens antigas (>10) são descartadas silenciosamente para manter o banco leve e rápido.
 
 ### 4.8. Regras Estritas de Lead (Lead Guard)
-O worker `sync.js` implementa um firewall lógico antes de criar um lead:
-*   **Trigger:** Apenas eventos de Mensagem (`messages.upsert`). Eventos de presença ou status não criam leads.
-*   **Blocklist:**
+O sistema possui um **"Centralized Gatekeeper"** (`ensureLeadExists` em `sync.js`) que atua como autoridade única para criação de Leads.
+
+*   **Trigger Universal:** Tanto o Histórico (`historyHandler`) quanto Mensagens Novas (`messageHandler`) chamam esta função.
+*   **Regras de Exclusão (Hard Block):**
     *   Grupos (`@g.us`) -> Bloqueado.
     *   Canais (`@newsletter`) -> Bloqueado.
+    *   Broadcasts (`status@broadcast`) -> Bloqueado.
     *   Self (`meu próprio número`) -> Bloqueado.
-*   **Naming Strategy:**
-    *   Tenta obter nome da Agenda (`contacts.name`).
-    *   Se falhar, tenta nome Business (`verifiedName`).
-    *   Se falhar, tenta nome do Perfil (`pushName`).
-    *   Se falhar, grava `NULL` no banco (O Frontend exibe o número formatado).
-    *   **Atualização:** Se um lead com nome NULL receber uma mensagem com PushName, o nome é atualizado automaticamente.
+    *   **Ignorados:** Se `contacts.is_ignored = true`, o lead é bloqueado (Feature "Remover do CRM").
+*   **Estratégia de Nomes (Name Fallback):**
+    *   O sistema tenta obter nomes na ordem: Agenda > Business > PushName.
+    *   **Alteração v4.2:** Se nenhum nome for encontrado, o Lead **É CRIADO** usando o número formatado (`+55...`) como nome provisório, garantindo que nenhuma conversa válida seja perdida.
 
----
+--
 
 ## 5. 📡 Realtime & WebSocket Events (Webhook Specs)
 
@@ -406,20 +407,22 @@ Esta seção detalha os indicadores técnicos emitidos pelo Backend para monitor
 - Falha: Erro no envio para um lead específico (log salvo em campaign_logs).
 
 ### 8.5. STATUS DE INSTÂNCIA & SYNC (TABELA: instances)
-A atualização destes campos dispara o `GlobalSyncIndicator` no Frontend via WebSocket.
+O Backend atualiza estes campos em tempo real. O Frontend decide quando mostrá-los (Apenas no First-Sync via QR Code).
 
 - **STATUS DE CONEXÃO (`status`):**
-  - `connecting`: Socket inicializando (Spinner amarelo).
-  - `qrcode`: Aguardando leitura (QR Code visível).
-  - `connected`: Conexão estabelecida (Ícone Verde).
+  - `connecting`: Socket inicializando.
+  - `qrcode`: Aguardando leitura (QR Code gerado).
+  - `connected`: Conexão estabelecida.
   - `disconnected`: Sessão encerrada ou falha crítica.
 
 - **ESTÁGIOS DE SINCRONIZAÇÃO (`sync_status`):**
   1. `waiting`: Conectado, aguardando início do download.
   2. `importing_contacts`: Baixando lista de contatos e metadados.
-  3. `importing_messages`: Baixando histórico de mensagens (Chunking).
-  4. `processing_history`: Indexando mensagens e rodando IA (Se ativado).
-  5. `completed`: Sincronização finalizada. Barra em 100%.
+  3. `importing_messages`: Baixando histórico de mensagens (Batching/Lotes).
+  4. `processing_history`: Indexando mensagens no banco.
+  5. `completed`: Sincronização finalizada (Sinal para o Frontend fechar a barra).
+  
+  *Nota: O Backend envia esses status em toda conexão, mas o Frontend só exibe a barra se o usuário tiver acabado de parear o dispositivo.*
 
 // Anterior(Consultar) ### 8.5. STATUS DE INSTÂNCIA (TABELA: instances)
 // Anterior(Consultar)- STATUS: connecting | SIGNIFICADO: Socket inicializando | AÇÃO: Mostrar Spinner.

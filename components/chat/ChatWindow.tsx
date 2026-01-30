@@ -176,16 +176,21 @@ export function ChatWindow() {
                 </div>
             )}
 
-            {messages.map((msg, idx) => (
-                <div key={msg.id || idx} className={`flex w-full mb-1`}>
-                    <MessageBubble 
-                        message={msg} 
-                        isSelectionMode={isMsgSelectionMode}
-                        isSelected={selectedMsgIds.has(msg.id)}
-                        onSelect={() => toggleMessageSelection(msg.id)}
-                    />
-                </div>
-            ))}
+            {messages.map((msg, idx) => {
+                // CORREÇÃO ITEM 5: Filtra mensagens vazias ou com texto 'EMPTY' (bug backend)
+                if ((!msg.content && !msg.media_url) || (msg.message_type === 'text' && msg.content === 'EMPTY')) return null;
+
+                return (
+                    <div key={msg.id || idx} className={`flex w-full mb-1`}>
+                        <MessageBubble 
+                            message={msg} 
+                            isSelectionMode={isMsgSelectionMode}
+                            isSelected={selectedMsgIds.has(msg.id)}
+                            onSelect={() => toggleMessageSelection(msg.id)}
+                        />
+                    </div>
+                );
+            })}
             
             <div ref={messagesEndRef} />
         </div>

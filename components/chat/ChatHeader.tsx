@@ -113,12 +113,27 @@ export function ChatHeader() {
     if (isOnline) {
         return <span className="text-green-400 font-bold text-[11px] tracking-wide animate-in fade-in">Online</span>;
     }
-    return <span className="text-zinc-500 text-[11px]">{cleanJid(activeContact.remote_jid)}</span>;
+    
+    // CORREÇÃO ITEM 3: Removido o fallback que mostrava o número. Agora mostra Last Seen ou nada.
+    if (lastSeen) {
+        const date = new Date(lastSeen);
+        const now = new Date();
+        const diff = now.getTime() - date.getTime();
+        
+        // Se visto há menos de 24h, mostra hora. Senão, data.
+        const timeStr = diff < 86400000 
+            ? date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            : date.toLocaleDateString([], { day: '2-digit', month: '2-digit' });
+            
+        return <span className="text-zinc-500 text-[11px]">Visto: {timeStr}</span>;
+    }
+
+    return <span className="text-zinc-600 text-[11px] opacity-0 group-hover:opacity-100 transition-opacity">Ver detalhes</span>;
   };
 
   return (
     <>
-        <div className="h-16 border-b border-zinc-800 flex items-center justify-between px-4 md:px-6 bg-zinc-900/50 backdrop-blur-md z-10 shrink-0 relative transition-all duration-300">
+        <div className="h-16 border-b border-zinc-800 flex items-center justify-between px-4 md:px-6 bg-zinc-900/50 backdrop-blur-md z-20 shrink-0 relative transition-all duration-300">
             
             {isOnline && !activeContact.is_group && (
                 <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-green-500/50 to-transparent pointer-events-none animate-in fade-in" />
@@ -156,11 +171,12 @@ export function ChatHeader() {
                 </div>
             </div>
             
-            <div className="relative z-10 shrink-0" ref={menuRef}>
+            <div className="relative z-50 shrink-0" ref={menuRef}>
                 <Button variant="ghost" size="icon" onClick={() => setShowOptionsMenu(!showOptionsMenu)} className="text-zinc-400 hover:text-white">
                     <MoreVertical className="w-5 h-5" />
                 </Button>
                 {showOptionsMenu && (
+                    // CORREÇÃO ITEM 2: Z-Index 100 para sobrepor tudo
                     <div className="absolute right-0 top-12 bg-zinc-900 border border-zinc-800 rounded-lg shadow-2xl py-2 w-52 z-[100] animate-in fade-in slide-in-from-top-2 ring-1 ring-white/10">
                         <button 
                             onClick={() => { toggleMsgSelectionMode(); setShowOptionsMenu(false); }} 

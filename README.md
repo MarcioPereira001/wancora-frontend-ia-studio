@@ -33,8 +33,14 @@ Atualizado para a arquitetura mais moderna e segura do React.
     * **Snapshot Inicial:** Carrega dados via REST/Supabase SDK ao montar.
     * **WebSocket Subscription:** Mantém a store atualizada via canal `postgres_changes`.
     * **Optimistic UI:** Ações do usuário (ex: mover card) refletem em 0ms na tela antes da confirmação do servidor.
-* **Global Sync Indicator:** Componente flutuante (`GlobalSyncIndicator.tsx`).
-    * **Comportamento Auto-Detect:** Ele varre a lista de instâncias no Zustand (`useRealtimeStore`). Se encontrar QUALQUER instância com `sync_status` diferente de `completed`, ele aparece automaticamente. Isso garante que, se o usuário der F5 durante a sincronização, a barra reaparece.
+* **Global Sync Indicator (Strict Mode):** Componente flutuante (`GlobalSyncIndicator.tsx`).
+    * **Regra de Ouro:** Este componente obedece estritamente ao gatilho manual `forcedSyncId`.
+    * **Comportamento:**
+        1. O usuário lê o QR Code no modal `/connections`.
+        2. O Frontend detecta a conexão e chama `triggerSyncAnimation(id)`.
+        3. O Indicador aparece, consome o status do banco (`sync_percent`) até chegar em 100%.
+        4. Ao concluir, ele se auto-destrói e limpa o `forcedSyncId`.
+    * **Anti-Ruído:** Reconexões automáticas de background (ex: reinício do servidor) atualizam o banco, mas **NÃO** ativam o indicador visual para não poluir a tela do usuário.
 
 ### B. O Core Backend (Node.js + @whiskeysockets/baileys)
 Este é o coração pulsante. Ele não é apenas uma API REST; é um Gerenciador de Estado Persistente.
@@ -296,6 +302,25 @@ O sistema implementa uma hierarquia de permissões estrita baseada na coluna `ro
 * **Upsert Inteligente:** O Backend (`upsertContact`) detecta se o sufixo é `@lid` e salva corretamente na tabela `contacts`, evitando erros de chave estrangeira.
 * **Database Constraints:** A chave estrangeira restrita (`FK`) entre mensagens e contatos foi removida intencionalmente para permitir que mensagens de LIDs (ou Status) sejam salvas mesmo antes da criação do contato, garantindo zero perda de dados.
 * **Frontend:** A interface trata o `remote_jid` como opaco. Se for LID, exibe normalmente; se for Phone, formata.
+
+### E. Smart Sync Strategy (Otimização de Histórico)
+Para evitar sobrecarga no banco e na rede durante o pareamento inicial:
+1.  **Janela Deslizante:** O sistema processa apenas as **10 mensagens mais recentes** de cada conversa do histórico. Mensagens muito antigas são ignoradas para manter o banco leve.
+2.  **Smart Fetch de Mídia:** Durante a importação, o sistema detecta ativamente contatos sem foto e força uma busca (`profilePictureUrl`) em tempo real, garantindo que o CRM não fique com avatares em branco.
+
+### F. Lead Guard (Regras Estritas de Criação)
+O sistema possui um **"Centralized Gatekeeper"** (`ensureLeadExists` em `sync.js`) que atua como autoridade única para a criação de Leads no CRM.
+
+*   **Trigger Universal:** Tanto o Histórico quanto Mensagens Novas passam por este funil.
+*   **Regras de Exclusão (Hard Block):**
+    *   🚫 Grupos (`@g.us`) não viram Leads.
+    *   🚫 Canais (`@newsletter`) não viram Leads.
+    *   🚫 O próprio número do usuário (Self) não vira Lead.
+    *   🚫 Contatos marcados como "Removido do CRM" (`is_ignored = true`) são bloqueados.
+*   **Estratégia de Nomes (Fallback v4.2):**
+    1.  Tenta o nome da Agenda.
+    2.  Tenta o nome do Perfil Público (PushName).
+    3.  **Fallback:** Se nenhum nome for encontrado, o Lead **É CRIADO** automaticamente usando o número formatado (ex: `+55 11 9...`) como nome. Isso garante que nenhuma oportunidade de venda seja perdida por falta de dados de perfil.
 
 ---
 

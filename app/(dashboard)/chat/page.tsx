@@ -80,7 +80,23 @@ export default function ChatPage() {
             }
 
             if (activeContact && (newMessage.remote_jid === activeContact.remote_jid || newMessage.remote_jid.includes('@lid'))) {
-                addMessage(newMessage);
+                // CORREÇÃO ITEM 4: Deduplicação Otimista
+                // Removemos qualquer mensagem pendente (temp-*) que tenha o mesmo conteúdo e seja 'sending'
+                setMessages(prev => {
+                    const filtered = prev.filter(m => {
+                        const isTemp = m.id.startsWith('temp-') && m.status === 'sending';
+                        // Compara conteúdo ou media_url para identificar duplicata visual
+                        const sameContent = (m.content === newMessage.content) || (m.media_url && m.media_url === newMessage.media_url);
+                        return !(isTemp && sameContent);
+                    });
+                    
+                    // Adiciona a nova mensagem real se não existir
+                    if (!filtered.find(m => m.id === newMessage.id)) {
+                        return [...filtered, newMessage];
+                    }
+                    return filtered;
+                });
+
                 if (!newMessage.from_me) {
                     supabase.from('contacts').update({ unread_count: 0 }).eq('jid', activeContact.remote_jid).eq('company_id', user.company_id);
                 }

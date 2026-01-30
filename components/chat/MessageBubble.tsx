@@ -1,7 +1,7 @@
 
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Message } from '@/types';
 import { MessageContent } from './MessageContent';
 import { Check, CheckCheck, Clock, Ban, ChevronDown, Trash2, Info, AlertTriangle, SmilePlus } from 'lucide-react';
@@ -34,8 +34,28 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
   const [showInfo, setShowInfo] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // CORREÇÃO ITEM 5: Se a mensagem estiver vazia, não renderiza nada
+  if (!message.content && !message.media_url && !message.message_type) return null;
+  // Filtra mensagem "EMPTY" explicitamente se vier do backend
+  if (message.content === 'EMPTY' && message.message_type === 'text') return null;
 
   const isSticker = message.message_type === 'sticker';
+
+  // Fecha menu ao clicar fora
+  useEffect(() => {
+      function handleClickOutside(event: MouseEvent) {
+          if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+              setShowMenu(false);
+          }
+      }
+      if (showMenu) {
+          document.addEventListener("mousedown", handleClickOutside);
+      }
+      return () => { document.removeEventListener("mousedown", handleClickOutside); };
+  }, [showMenu]);
 
   // Format Time (HH:mm)
   const formatTime = (dateString?: string) => {
@@ -101,23 +121,16 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
       return (now - msgTime) < REVOKE_WINDOW_MS;
   };
 
-  // Agrupamento de Reações (Lógica de Exibição)
-  // O backend garante unicidade por ator. Aqui apenas contamos e agrupamos.
   const reactions: any[] = (message as any).reactions || [];
   
   const reactionCounts = React.useMemo(() => {
       if (!Array.isArray(reactions) || reactions.length === 0) return null;
-      
       const counts: Record<string, number> = {};
-      // Filtra reações vazias (remoção) e conta
       reactions.filter(r => r.text).forEach(r => {
           counts[r.text] = (counts[r.text] || 0) + 1;
       });
-      
       const entries = Object.entries(counts);
       if (entries.length === 0) return null;
-      
-      // Ordena por quantidade (mais populares primeiro)
       return entries.sort((a,b) => b[1] - a[1]);
   }, [reactions]);
 
@@ -126,9 +139,8 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
         className={cn(
             "flex items-start gap-2 w-full group/message relative z-10", 
             isMe ? "justify-end" : "justify-start", 
-            reactionCounts ? "mb-5" : "mb-1" // Espaço extra se tiver reações
+            reactionCounts ? "mb-5" : "mb-1"
         )}
-        onMouseLeave={() => setShowMenu(false)}
     >
         
         {/* 1. CHECKBOX SELEÇÃO */}
@@ -142,52 +154,58 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
             </div>
         )}
 
-        {/* 2. MENU FLUTUANTE (Setinha Hover) */}
+        {/* 2. MENU FLUTUANTE (CORREÇÃO ITEM 1) */}
         {!isSelectionMode && !(message as any).is_deleted && (
-            <div className={cn(
-                "opacity-0 group-hover/message:opacity-100 transition-all duration-200 flex items-center self-start mt-1 absolute z-20",
-                isMe ? "right-full mr-2" : "left-full ml-2"
-            )}>
-                <button 
-                    onClick={() => setShowMenu(!showMenu)} 
-                    className="w-7 h-7 rounded-full bg-zinc-800 border border-zinc-700 hover:bg-zinc-700 flex items-center justify-center text-zinc-400 shadow-xl"
-                >
-                    <ChevronDown className="w-4 h-4" />
-                </button>
-
-                {showMenu && (
-                    <div className={cn(
-                        "absolute top-8 z-50 bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl p-1 min-w-[200px] animate-in zoom-in-95 origin-top",
-                        isMe ? "right-0" : "left-0"
-                    )}>
-                        {/* Emojis Rápidos */}
-                        <div className="flex gap-1 p-2 bg-zinc-950/50 rounded-lg mb-1 justify-between">
-                            {COMMON_EMOJIS.slice(0, 5).map(emoji => (
-                                <button key={emoji} onClick={() => handleReact(emoji)} className="hover:scale-125 transition-transform text-lg p-1">
-                                    {emoji}
-                                </button>
-                            ))}
-                            <button className="hover:bg-zinc-800 rounded p-1 text-zinc-500"><SmilePlus className="w-4 h-4" /></button>
-                        </div>
-                        
-                        {/* Ações */}
-                        {isMe && (
-                            <button onClick={() => { setShowMenu(false); setShowInfo(true); }} className="flex items-center gap-2 px-3 py-2.5 text-sm text-zinc-300 hover:bg-zinc-800 rounded text-left w-full transition-colors">
-                                <Info className="w-4 h-4" /> Dados da mensagem
-                            </button>
-                        )}
-                        <button onClick={() => { setShowMenu(false); setShowDeleteModal(true); }} className="flex items-center gap-2 px-3 py-2.5 text-sm text-red-400 hover:bg-red-500/10 rounded text-left w-full transition-colors">
-                            <Trash2 className="w-4 h-4" /> Apagar mensagem
-                        </button>
-                    </div>
+            <div 
+                ref={menuRef}
+                className={cn(
+                    "opacity-0 group-hover/message:opacity-100 transition-all duration-200 flex items-center self-start mt-1 absolute",
+                    isMe ? "right-full mr-2" : "left-full ml-2",
+                    // Z-Index alto para garantir que o menu (filho) fique acima
+                    "z-50"
                 )}
+            >
+                <div className="relative">
+                    <button 
+                        onClick={() => setShowMenu(!showMenu)} 
+                        className="w-7 h-7 rounded-full bg-zinc-800 border border-zinc-700 hover:bg-zinc-700 flex items-center justify-center text-zinc-400 shadow-xl"
+                    >
+                        <ChevronDown className="w-4 h-4" />
+                    </button>
+
+                    {showMenu && (
+                        <div className={cn(
+                            "absolute top-8 bg-zinc-900 border border-zinc-800 rounded-xl shadow-[0_0_15px_rgba(0,0,0,0.5)] p-1 min-w-[200px] animate-in zoom-in-95 origin-top z-[9999]",
+                            isMe ? "right-0" : "left-0"
+                        )}>
+                            {/* Emojis Rápidos */}
+                            <div className="flex gap-1 p-2 bg-zinc-950/50 rounded-lg mb-1 justify-between">
+                                {COMMON_EMOJIS.slice(0, 5).map(emoji => (
+                                    <button key={emoji} onClick={() => handleReact(emoji)} className="hover:scale-125 transition-transform text-lg p-1">
+                                        {emoji}
+                                    </button>
+                                ))}
+                                <button className="hover:bg-zinc-800 rounded p-1 text-zinc-500"><SmilePlus className="w-4 h-4" /></button>
+                            </div>
+                            
+                            {/* Ações */}
+                            {isMe && (
+                                <button onClick={() => { setShowMenu(false); setShowInfo(true); }} className="flex items-center gap-2 px-3 py-2.5 text-sm text-zinc-300 hover:bg-zinc-800 rounded text-left w-full transition-colors">
+                                    <Info className="w-4 h-4" /> Dados da mensagem
+                                </button>
+                            )}
+                            <button onClick={() => { setShowMenu(false); setShowDeleteModal(true); }} className="flex items-center gap-2 px-3 py-2.5 text-sm text-red-400 hover:bg-red-500/10 rounded text-left w-full transition-colors">
+                                <Trash2 className="w-4 h-4" /> Apagar mensagem
+                            </button>
+                        </div>
+                    )}
+                </div>
             </div>
         )}
 
         {/* 3. BOLHA DA MENSAGEM */}
         <div className={cn(isMe ? "order-2" : "order-1", "max-w-[85%] md:max-w-[70%] relative")}>
             
-            {/* 3.1. Container Principal (Neon Style) */}
             <div 
                 className={cn(
                     "relative flex flex-col min-w-[100px] break-words rounded-xl p-1.5 cursor-pointer transition-all duration-300",
@@ -199,14 +217,14 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
                 )}
                 onClick={() => isSelectionMode && onSelect && onSelect()}
             >
-                {/* 3.2. Nome em Grupos */}
+                {/* Nome em Grupos */}
                 {!isMe && !isSticker && message.contact?.push_name && (
                     <span className="text-[11px] font-bold text-orange-400 px-1 mb-0.5 truncate max-w-[200px] block opacity-90">
                         {message.contact.push_name}
                     </span>
                 )}
 
-                {/* 3.3. Conteúdo Real */}
+                {/* Conteúdo Real */}
                 <div className={cn(!isSticker && "px-1 pb-1")}>
                     {(message as any).is_deleted ? (
                         <div className="flex items-center gap-2 text-sm py-1">
@@ -217,7 +235,7 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
                     )}
                 </div>
 
-                {/* 3.4. Rodapé (Hora + Ticks) */}
+                {/* Rodapé (Hora + Ticks) */}
                 <div className={cn("flex justify-end items-end gap-1 px-1 mt-auto select-none", !isSticker && "-mt-1", isSticker && "absolute bottom-1 right-2 bg-black/40 rounded-full px-1.5 py-0.5 backdrop-blur-sm")}>
                     <span className={cn("text-[10px] leading-none font-medium", isMe ? "text-emerald-100/70" : "text-zinc-300")}>
                         {formatTime(message.created_at)}
@@ -225,7 +243,7 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
                     {isMe && <div className="mb-[1px]">{renderStatusIcon()}</div>}
                 </div>
 
-                {/* 3.5. Pontinha da Bolha (SVG Shape) */}
+                {/* Pontinha da Bolha */}
                 {!isSelectionMode && !isSticker && (
                     <div className={cn(
                         "absolute top-0 w-3 h-3 -z-10",
@@ -236,7 +254,7 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
                 )}
             </div>
 
-            {/* 4. REAÇÕES VISUAIS (BADGE FLUTUANTE NA BORDA) */}
+            {/* 4. REAÇÕES VISUAIS */}
             {reactionCounts && !(message as any).is_deleted && (
                 <div className={cn(
                     "absolute -bottom-2.5 z-20 flex gap-1 animate-in zoom-in duration-300",
@@ -244,7 +262,6 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
                 )}>
                     <div 
                         className="flex items-center bg-zinc-800/95 backdrop-blur-md border border-zinc-700/50 rounded-full px-1.5 py-0.5 shadow-[0_2px_8px_rgba(0,0,0,0.3)] hover:scale-110 transition-transform cursor-pointer gap-1 select-none ring-1 ring-black/20"
-                        onClick={() => {/* Futuro: Abrir lista de quem reagiu */}}
                     >
                         {reactionCounts.map(([emoji, count], i) => (
                             <span key={i} className="text-[11px] flex items-center text-white leading-none px-0.5">

@@ -21,8 +21,8 @@ Gerencia o estado físico da conexão com o WhatsApp.
 * `session_id`: text (Unique)
 * `status`: text ('qrcode', 'connected', 'disconnected', 'connecting')
 * `qrcode_url`: text
-* `sync_status`: text ('waiting', 'importing_contacts', 'importing_messages', 'processing_history', 'completed')
-* `sync_percent`: integer (0-100)
+* `sync_status`: text ('waiting', 'importing_contacts', 'importing_messages', 'completed') - Controla a barra de progresso.
+* `sync_percent`: integer (0-100) - Feedback visual para o usuário.
 * `updated_at`: timestamptz
 * `webhook_url`: text
 * `webhook_enabled`: boolean (Default: false)
