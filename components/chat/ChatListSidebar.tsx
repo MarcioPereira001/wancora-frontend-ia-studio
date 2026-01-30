@@ -1,10 +1,11 @@
+
 'use client';
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useChatList } from '@/hooks/useChatList';
 import { useChatStore } from '@/store/useChatStore';
 import { 
-    Search, Plus, MessageSquare, Loader2, RefreshCw, Users, Megaphone, Filter, Tag
+    Search, Plus, MessageSquare, Loader2, RefreshCw, Users, Megaphone, Filter, Tag, Archive, ChevronDown, Reply
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -12,10 +13,11 @@ import { cn, getDisplayName } from '@/lib/utils';
 import { CreateGroupModal } from './CreateGroupModal';
 import { CreateChannelModal } from './CreateChannelModal';
 import { NewChatModal } from './NewChatModal';
-import { ChatListItem } from './ChatListItem'; // NOVO COMPONENTE EXTRAÍDO
-import { TagManageModal } from './TagManageModal'; // NOVO MODAL
+import { ChatListItem } from './ChatListItem'; 
+import { TagManageModal } from './TagManageModal'; 
 import { useAuthStore } from '@/store/useAuthStore';
 import { createClient } from '@/utils/supabase/client';
+import { ChatContact } from '@/types';
 
 export function ChatListSidebar() {
   const { contacts, loading, refreshList } = useChatList(); 
@@ -26,7 +28,13 @@ export function ChatListSidebar() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'groups' | 'unread' | 'channels'>('all');
   const [tagFilter, setTagFilter] = useState<string>('all');
+  const [showTagDropdown, setShowTagDropdown] = useState(false);
   
+  // View Mode: 'active' | 'archived' (Ocultas)
+  const [viewMode, setViewMode] = useState<'active' | 'archived'>('active');
+  const [archivedContacts, setArchivedContacts] = useState<ChatContact[]>([]);
+  const [loadingArchived, setLoadingArchived] = useState(false);
+
   // Modais
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
   const [isChannelModalOpen, setIsChannelModalOpen] = useState(false);
@@ -37,6 +45,52 @@ export function ChatListSidebar() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showCreateMenu, setShowCreateMenu] = useState(false);
   
+  const tagDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Click Outside para Tag Dropdown
+  useEffect(() => {
+      const handleClickOutside = (event: MouseEvent) => {
+          if (tagDropdownRef.current && !tagDropdownRef.current.contains(event.target as Node)) {
+              setShowTagDropdown(false);
+          }
+      };
+      if (showTagDropdown) document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showTagDropdown]);
+
+  // Carregar Arquivados
+  const loadArchived = async () => {
+      if(!user?.company_id) return;
+      setLoadingArchived(true);
+      const { data } = await supabase.from('contacts')
+          .select('*')
+          .eq('company_id', user.company_id)
+          .eq('is_ignored', true)
+          .order('last_message_at', { ascending: false })
+          .limit(50);
+          
+      if(data) {
+          const formatted: ChatContact[] = data.map((c: any) => ({
+              id: c.jid,
+              jid: c.jid,
+              remote_jid: c.jid,
+              company_id: c.company_id,
+              name: c.name || c.push_name,
+              phone_number: c.phone,
+              profile_pic_url: c.profile_pic_url,
+              unread_count: 0,
+              is_group: c.jid.includes('@g.us'),
+              is_newsletter: c.jid.includes('@newsletter')
+          }));
+          setArchivedContacts(formatted);
+      }
+      setLoadingArchived(false);
+  };
+
+  useEffect(() => {
+      if (viewMode === 'archived') loadArchived();
+  }, [viewMode]);
+
   // Available Tags (Extracted from contacts)
   const availableTags = useMemo(() => {
       const tags = new Set<string>();
@@ -44,9 +98,7 @@ export function ChatListSidebar() {
       
       contacts.forEach(c => {
           c.lead_tags?.forEach(t => tags.add(t));
-          if(c.stage_name && c.pipeline_stage_id) {
-              // Hack simples para unificar no dropdown. Idealmente seria um objeto complexo.
-              // Vamos usar um prefixo para distinguir
+          if(c.stage_name) {
               tags.add(`Fase: ${c.stage_name}`);
           }
       });
@@ -66,21 +118,25 @@ export function ChatListSidebar() {
 
   const handleHideChat = async (contactJid: string) => {
       if(!user?.company_id) return;
+      // Otimista
+      // O hook useChatList vai atualizar via realtime, mas para feedback imediato seria ideal atualizar local
       try {
-           // Soft Delete (Ignorar)
-           await supabase.from('contacts')
-               .update({ is_ignored: true })
-               .eq('jid', contactJid)
-               .eq('company_id', user.company_id);
-           
-           // O Realtime/Hook vai atualizar a lista automaticamente
-      } catch (e) {
-          console.error("Erro ao ocultar:", e);
-      }
+           await supabase.from('contacts').update({ is_ignored: true }).eq('jid', contactJid).eq('company_id', user.company_id);
+      } catch (e) {}
   };
 
+  const handleRestoreChat = async (contactJid: string) => {
+      if(!user?.company_id) return;
+      try {
+           await supabase.from('contacts').update({ is_ignored: false }).eq('jid', contactJid).eq('company_id', user.company_id);
+           setArchivedContacts(prev => prev.filter(c => c.jid !== contactJid));
+      } catch (e) {}
+  };
+
+  const currentList = viewMode === 'active' ? contacts : archivedContacts;
+
   const filteredContacts = useMemo(() => {
-      let list = contacts.filter(contact => {
+      let list = currentList.filter(contact => {
           const displayName = getDisplayName(contact).toLowerCase();
           const phone = (contact.phone_number || '').toLowerCase();
           const search = searchTerm.toLowerCase();
@@ -88,32 +144,41 @@ export function ChatListSidebar() {
           const matchesSearch = displayName.includes(search) || phone.includes(search);
           if (!matchesSearch) return false;
 
-          // Filtros de Tipo
-          if (filterType === 'groups' && !contact.is_group) return false;
-          if (filterType === 'channels' && !contact.is_newsletter) return false;
-          if (filterType === 'unread' && contact.unread_count === 0) return false;
-          
-          // Filtro de Tags
-          if (tagFilter !== 'all') {
-              if (tagFilter.startsWith('Fase: ')) {
-                  const stageName = tagFilter.replace('Fase: ', '');
-                  if (contact.stage_name !== stageName) return false;
-              } else {
-                  if (!contact.lead_tags?.includes(tagFilter)) return false;
+          // Filtros de Tipo (Só aplica no modo active)
+          if (viewMode === 'active') {
+              if (filterType === 'groups' && !contact.is_group) return false;
+              if (filterType === 'channels' && !contact.is_newsletter) return false;
+              if (filterType === 'unread' && contact.unread_count === 0) return false;
+              
+              // Filtro de Tags
+              if (tagFilter !== 'all') {
+                  if (tagFilter.startsWith('Fase: ')) {
+                      const stageName = tagFilter.replace('Fase: ', '');
+                      if (contact.stage_name !== stageName) return false;
+                  } else {
+                      if (!contact.lead_tags?.includes(tagFilter)) return false;
+                  }
               }
           }
 
           return true;
       });
       return list;
-  }, [contacts, searchTerm, filterType, tagFilter]);
+  }, [currentList, searchTerm, filterType, tagFilter, viewMode]);
 
   return (
     <div className="w-80 md:w-96 flex flex-col border-r border-zinc-800 bg-zinc-900/50 backdrop-blur-md h-full">
         {/* Header */}
         <div className="p-4 border-b border-zinc-800 shrink-0 space-y-3">
             <div className="flex items-center justify-between">
-                <h2 className="font-bold text-xl text-white">Conversas</h2>
+                <h2 className="font-bold text-xl text-white flex items-center gap-2">
+                    {viewMode === 'archived' && (
+                        <button onClick={() => setViewMode('active')} className="p-1 hover:bg-zinc-800 rounded-full mr-1 transition-colors">
+                            <Reply className="w-4 h-4 text-zinc-400" />
+                        </button>
+                    )}
+                    {viewMode === 'active' ? 'Conversas' : 'Arquivadas'}
+                </h2>
                 <div className="flex gap-1 relative">
                     <Button variant="ghost" size="icon" title="Atualizar Lista" onClick={handleManualRefresh} disabled={isRefreshing}>
                         <RefreshCw className={cn("w-4 h-4 text-zinc-400", isRefreshing && "animate-spin")} />
@@ -155,60 +220,86 @@ export function ChatListSidebar() {
                 <Input 
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    placeholder="Buscar conversa..."
+                    placeholder={viewMode === 'active' ? "Buscar conversa..." : "Buscar nos arquivos..."}
                     className="pl-9 bg-zinc-950 border-zinc-800 focus:border-zinc-700 h-9 text-sm"
                 />
             </div>
 
-            {/* Filter Tabs & Dropdown */}
-            <div className="flex items-center gap-2">
-                <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide flex-1">
-                    {['all', 'unread', 'groups', 'channels'].map(type => (
-                        <button 
-                            key={type}
-                            onClick={() => setFilterType(type as any)} 
-                            className={cn(
-                                "px-3 py-1 rounded-full text-[10px] font-bold border transition-colors whitespace-nowrap capitalize", 
-                                filterType === type 
-                                    ? "bg-zinc-100 text-zinc-900 border-zinc-100" 
-                                    : "bg-zinc-900 text-zinc-400 border-zinc-800 hover:border-zinc-700"
-                            )}
-                        >
-                            {type === 'all' ? 'Todas' : type === 'unread' ? 'Não Lidas' : type === 'groups' ? 'Grupos' : 'Canais'}
-                        </button>
-                    ))}
-                </div>
-                
-                {/* Tag Filter Dropdown */}
-                <div className="relative group/filter">
-                    <button className={cn("p-1.5 rounded-lg border transition-colors", tagFilter !== 'all' ? "bg-primary/20 border-primary text-primary" : "bg-zinc-900 border-zinc-800 text-zinc-500 hover:text-white")}>
-                        <Filter className="w-4 h-4" />
-                    </button>
-                    <select 
-                        value={tagFilter}
-                        onChange={(e) => setTagFilter(e.target.value)}
-                        className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-                    >
-                        <option value="all">Todas as Etiquetas</option>
-                        {availableTags.map(t => (
-                            <option key={t} value={t}>{t}</option>
+            {/* Filter Tabs & Custom Dropdown */}
+            {viewMode === 'active' && (
+                <div className="flex items-center gap-2">
+                    <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide flex-1">
+                        {['all', 'unread', 'groups', 'channels'].map(type => (
+                            <button 
+                                key={type}
+                                onClick={() => setFilterType(type as any)} 
+                                className={cn(
+                                    "px-3 py-1 rounded-full text-[10px] font-bold border transition-colors whitespace-nowrap capitalize", 
+                                    filterType === type 
+                                        ? "bg-zinc-100 text-zinc-900 border-zinc-100" 
+                                        : "bg-zinc-900 text-zinc-400 border-zinc-800 hover:border-zinc-700"
+                                )}
+                            >
+                                {type === 'all' ? 'Todas' : type === 'unread' ? 'Não Lidas' : type === 'groups' ? 'Grupos' : 'Canais'}
+                            </button>
                         ))}
-                    </select>
+                    </div>
+                    
+                    {/* Custom Tag Filter Dropdown */}
+                    <div className="relative" ref={tagDropdownRef}>
+                        <button 
+                            onClick={() => setShowTagDropdown(!showTagDropdown)}
+                            className={cn(
+                                "p-1.5 rounded-lg border transition-colors flex items-center justify-center gap-1 min-w-[32px]", 
+                                tagFilter !== 'all' ? "bg-primary/20 border-primary text-primary" : "bg-zinc-900 border-zinc-800 text-zinc-500 hover:text-white"
+                            )}
+                            title="Filtrar por Etiqueta"
+                        >
+                            <Filter className="w-4 h-4" />
+                        </button>
+
+                        {showTagDropdown && (
+                            <div className="absolute right-0 top-9 z-50 w-56 bg-zinc-950 border border-zinc-800 rounded-xl shadow-2xl animate-in zoom-in-95 p-1 max-h-64 overflow-y-auto custom-scrollbar">
+                                <div className="px-2 py-1.5 text-[10px] font-bold text-zinc-500 uppercase tracking-wider sticky top-0 bg-zinc-950 z-10">Filtrar por Tag/Fase</div>
+                                <button 
+                                    onClick={() => { setTagFilter('all'); setShowTagDropdown(false); }}
+                                    className={cn("w-full text-left px-3 py-2 text-xs rounded-md transition-colors", tagFilter === 'all' ? "bg-primary/10 text-primary" : "text-zinc-300 hover:bg-zinc-900")}
+                                >
+                                    Todas
+                                </button>
+                                {availableTags.map(tag => (
+                                    <button 
+                                        key={tag}
+                                        onClick={() => { setTagFilter(tag); setShowTagDropdown(false); }}
+                                        className={cn("w-full text-left px-3 py-2 text-xs rounded-md transition-colors flex items-center gap-2", tagFilter === tag ? "bg-primary/10 text-primary" : "text-zinc-300 hover:bg-zinc-900")}
+                                    >
+                                        <Tag className="w-3 h-3 opacity-50" />
+                                        <span className="truncate">{tag}</span>
+                                    </button>
+                                ))}
+                                {availableTags.length === 0 && <div className="p-3 text-center text-zinc-500 text-xs italic">Nenhuma etiqueta encontrada.</div>}
+                            </div>
+                        )}
+                    </div>
                 </div>
-            </div>
+            )}
         </div>
 
         {/* Chat List */}
         <div className="flex-1 overflow-y-auto custom-scrollbar relative">
-            {loading ? (
+            {(loading || loadingArchived) ? (
                 <div className="flex flex-col items-center justify-center h-40 gap-3">
                     <Loader2 className="w-6 h-6 animate-spin text-primary" />
-                    <span className="text-xs text-zinc-500">Sincronizando...</span>
+                    <span className="text-xs text-zinc-500">Carregando...</span>
                 </div>
             ) : filteredContacts.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full p-8 text-center gap-4">
-                    <p className="text-zinc-500 text-sm">Nenhuma conversa encontrada.</p>
-                    <Button variant="outline" onClick={() => setIsNewChatModalOpen(true)} className="border-dashed border-zinc-700 text-zinc-400 hover:text-white">Iniciar Nova Conversa</Button>
+                    <p className="text-zinc-500 text-sm">
+                        {viewMode === 'active' ? 'Nenhuma conversa encontrada.' : 'Arquivo vazio.'}
+                    </p>
+                    {viewMode === 'active' && (
+                        <Button variant="outline" onClick={() => setIsNewChatModalOpen(true)} className="border-dashed border-zinc-700 text-zinc-400 hover:text-white">Iniciar Nova Conversa</Button>
+                    )}
                 </div>
             ) : (
                 filteredContacts.map(contact => (
@@ -218,13 +309,27 @@ export function ChatListSidebar() {
                             isActive={activeContact?.id === contact.id}
                             onClick={() => setActiveContact(contact)}
                             onTag={() => contact.lead_id ? handleOpenTagModal(contact.lead_id, contact.lead_tags || []) : null}
-                            onHide={() => handleHideChat(contact.jid)}
-                            onDelete={() => { /* Lógica de Delete Complexa - Mantemos Hide por enquanto */ }}
+                            onHide={() => viewMode === 'active' ? handleHideChat(contact.jid) : handleRestoreChat(contact.jid)}
+                            onDelete={() => { /* Lógica de Hard Delete se necessário */ }}
+                            isArchived={viewMode === 'archived'}
                         />
                     </React.Fragment>
                 ))
             )}
         </div>
+
+        {/* Footer: Hidden Chats Toggle */}
+        {viewMode === 'active' && (
+            <div className="p-2 border-t border-zinc-800 shrink-0">
+                <button 
+                    onClick={() => setViewMode('archived')}
+                    className="w-full flex items-center justify-center gap-2 p-2 text-xs text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50 rounded-lg transition-colors"
+                >
+                    <Archive className="w-3.5 h-3.5" />
+                    Ver Conversas Ocultas
+                </button>
+            </div>
+        )}
 
         {/* MODAIS */}
         <NewChatModal isOpen={isNewChatModalOpen} onClose={() => setIsNewChatModalOpen(false)} />

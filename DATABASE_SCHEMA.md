@@ -75,6 +75,7 @@ A entidade de negócio principal.
 * `bot_status`: text ('active', 'paused', 'off')
 * `reactions`: jsonb (Default: '[]')
 * `poll_votes`: jsonb (Default: '[]')
+*   **Constraint de Integridade:** `UNIQUE (company_id, phone)` - Impede fisicamente a criação de dois leads com o mesmo número na mesma empresa, forçando o Backend a tratar a duplicidade antes da inserção.
 
 ### `lead_activities` (Logs & Timeline) [NOVO]
 Registro de interações e auditoria.

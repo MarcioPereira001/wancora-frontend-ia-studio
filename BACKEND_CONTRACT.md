@@ -285,6 +285,10 @@ O processo de sincronização inicial (messaging-history.set) utiliza uma arquit
     *   O Backend escuta eventos `presence.update` do Baileys.
     *   Atualiza as colunas `is_online` e `last_seen_at` na tabela `contacts` em tempo real.
     *   O Frontend assina estas mudanças para mostrar a "bolinha verde" na lista de chats.
+9.  **LID Resolver (Multi-Device Fix):**
+    *   O WhatsApp moderno envia mensagens de IDs secundários (`@lid`) que não batem com o telefone.
+    *   O Backend intercepta esses IDs na chegada (`message.upsert`), consulta a tabela `identity_map` e normaliza para o JID do telefone (`@s.whatsapp.net`) *antes* de passar para o CRM.
+    *   Isso evita leads duplicados ou mensagens que não aparecem no chat do contato correto.
 
 ### 4.1.1. Regra de Higiene de Nomes (Database Enforced)
 Um *Trigger* (`sanitize_contact_data`) no banco de dados garante que números de telefone nunca sejam salvos na coluna `name`.

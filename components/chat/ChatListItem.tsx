@@ -5,7 +5,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { ChatContact } from '@/types';
 import { 
     Users, Megaphone, MoreVertical, Archive, Tag, Trash2, 
-    Camera, Mic, Video, FileText, MapPin, BarChart2, DollarSign, Sticker, User
+    Camera, Mic, Video, FileText, MapPin, BarChart2, DollarSign, Sticker, RotateCcw
 } from 'lucide-react';
 import { cn, getDisplayName } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -17,15 +17,15 @@ interface ChatListItemProps {
     onTag: () => void;
     onHide: () => void;
     onDelete: () => void;
+    isArchived?: boolean; // Novo prop
 }
 
-export function ChatListItem({ contact, isActive, onClick, onTag, onHide, onDelete }: ChatListItemProps) {
+export function ChatListItem({ contact, isActive, onClick, onTag, onHide, onDelete, isArchived }: ChatListItemProps) {
     const [showMenu, setShowMenu] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
 
     const displayName = getDisplayName(contact);
 
-    // Click Outside para menu
     useEffect(() => {
         function handleClickOutside(event: MouseEvent) {
             if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
@@ -53,7 +53,6 @@ export function ChatListItem({ contact, isActive, onClick, onTag, onHide, onDele
         let content = contact.last_message_content || '';
         const iconClass = "w-3 h-3 inline-block mr-1 opacity-70";
 
-        // Parser simples de JSON content
         if (typeof content === 'string' && (content.startsWith('{') || content.startsWith('['))) {
             try {
                 const parsed = JSON.parse(content);
@@ -76,19 +75,15 @@ export function ChatListItem({ contact, isActive, onClick, onTag, onHide, onDele
         }
     };
 
-    // Lógica do Status Online / Visto
-    // Se is_online for true, mostra bolinha verde.
-    // Se não, não mostra nada (limpo)
-    
     return (
         <div 
             onClick={onClick}
             className={cn(
-                "flex items-center gap-3 p-3 cursor-pointer hover:bg-zinc-800/50 transition-all border-b border-zinc-800/30 group relative pr-8", // pr-8 para espaço do menu
-                isActive ? "bg-zinc-800/80 border-l-2 border-l-primary" : "border-l-2 border-l-transparent"
+                "flex items-center gap-3 p-3 cursor-pointer hover:bg-zinc-800/50 transition-all border-b border-zinc-800/30 group relative pr-8", 
+                isActive ? "bg-zinc-800/80 border-l-2 border-l-primary" : "border-l-2 border-l-transparent",
+                isArchived && "opacity-70 grayscale"
             )}
         >
-            {/* Avatar & Online Status */}
             <div className="relative shrink-0">
                 <div className="w-12 h-12 rounded-full bg-zinc-800 flex items-center justify-center text-lg font-bold text-zinc-500 overflow-hidden border border-zinc-700/50">
                     {contact.profile_pic_url ? (
@@ -105,13 +100,11 @@ export function ChatListItem({ contact, isActive, onClick, onTag, onHide, onDele
                     )}
                 </div>
                 
-                {/* ONLINE INDICATOR (IMPLEMENTADO VISUALMENTE) */}
                 {contact.is_online && !contact.is_group && !contact.is_newsletter && (
                     <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 border-2 border-zinc-900 rounded-full animate-in zoom-in duration-300"></div>
                 )}
             </div>
             
-            {/* Content Info */}
             <div className="flex-1 min-w-0 flex flex-col justify-center gap-0.5">
                 <div className="flex justify-between items-baseline">
                     <h3 className={cn("text-sm font-medium truncate flex items-center gap-1", isActive ? "text-white" : "text-zinc-200")}>
@@ -139,7 +132,7 @@ export function ChatListItem({ contact, isActive, onClick, onTag, onHide, onDele
                     </div>
                 </div>
 
-                {/* TAGS & STAGES ROW */}
+                {/* VISUALIZAÇÃO DE TAGS E ETAPAS - CORRIGIDO */}
                 {(contact.stage_name || (contact.lead_tags && contact.lead_tags.length > 0)) && (
                     <div className="flex items-center gap-1 mt-1 overflow-hidden h-4">
                         {contact.stage_name && (
@@ -150,8 +143,9 @@ export function ChatListItem({ contact, isActive, onClick, onTag, onHide, onDele
                                 {contact.stage_name}
                             </span>
                         )}
-                        {contact.lead_tags?.slice(0, 2).map(tag => (
-                            <span key={tag} className="text-[9px] bg-zinc-800 text-zinc-400 border border-zinc-700 px-1.5 rounded-sm truncate max-w-[60px]">
+                        {/* Iteração Segura de Tags */}
+                        {contact.lead_tags?.slice(0, 2).map((tag, idx) => (
+                            <span key={`${contact.id}-tag-${idx}`} className="text-[9px] bg-zinc-800 text-zinc-400 border border-zinc-700 px-1.5 rounded-sm truncate max-w-[60px]">
                                 {tag}
                             </span>
                         ))}
@@ -160,7 +154,6 @@ export function ChatListItem({ contact, isActive, onClick, onTag, onHide, onDele
                 )}
             </div>
 
-            {/* THREE DOTS MENU */}
             <div 
                 ref={menuRef}
                 className="absolute right-2 top-3 opacity-0 group-hover:opacity-100 transition-opacity"
@@ -177,16 +170,20 @@ export function ChatListItem({ contact, isActive, onClick, onTag, onHide, onDele
 
                 {showMenu && (
                     <div className="absolute right-0 top-8 w-40 bg-zinc-900 border border-zinc-800 rounded-lg shadow-xl z-50 py-1 animate-in fade-in zoom-in-95 origin-top-right ring-1 ring-white/5">
-                        <button onClick={() => { onTag(); setShowMenu(false); }} className="w-full text-left px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-800 hover:text-white flex items-center gap-2">
-                            <Tag className="w-3.5 h-3.5" /> Etiquetar
-                        </button>
+                        {!isArchived && (
+                            <button onClick={() => { onTag(); setShowMenu(false); }} className="w-full text-left px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-800 hover:text-white flex items-center gap-2">
+                                <Tag className="w-3.5 h-3.5" /> Etiquetar
+                            </button>
+                        )}
+                        
                         <button onClick={() => { onHide(); setShowMenu(false); }} className="w-full text-left px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-800 hover:text-white flex items-center gap-2">
-                            <Archive className="w-3.5 h-3.5" /> Ocultar Conversa
+                            {isArchived ? (
+                                <><RotateCcw className="w-3.5 h-3.5" /> Restaurar</>
+                            ) : (
+                                <><Archive className="w-3.5 h-3.5" /> Ocultar Conversa</>
+                            )}
                         </button>
-                        {/* 
-                           Nota: "Adicionar em Grupo" requereria um fluxo complexo de selecionar grupo. 
-                           Por simplicidade, omitimos aqui ou pode ser adicionado se a lógica existir.
-                        */}
+                        
                         <div className="h-px bg-zinc-800 my-1"></div>
                         <button onClick={() => { onDelete(); setShowMenu(false); }} className="w-full text-left px-3 py-2 text-xs text-red-400 hover:bg-red-900/20 flex items-center gap-2">
                             <Trash2 className="w-3.5 h-3.5" /> Excluir

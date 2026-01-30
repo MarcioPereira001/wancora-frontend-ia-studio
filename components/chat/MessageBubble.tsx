@@ -22,14 +22,13 @@ interface MessageBubbleProps {
 }
 
 const COMMON_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
-const REVOKE_WINDOW_MS = 24 * 60 * 60 * 1000; // 24h para apagar para todos
+const REVOKE_WINDOW_MS = 24 * 60 * 60 * 1000; 
 
 export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }: MessageBubbleProps) {
   const isMe = message.from_me;
   const { user } = useAuthStore();
   const { addToast } = useToast();
   
-  // States
   const [showMenu, setShowMenu] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -37,14 +36,11 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
   
   const menuRef = useRef<HTMLDivElement>(null);
 
-  // CORREÇÃO ITEM 5: Se a mensagem estiver vazia, não renderiza nada
   if (!message.content && !message.media_url && !message.message_type) return null;
-  // Filtra mensagem "EMPTY" explicitamente se vier do backend
   if (message.content === 'EMPTY' && message.message_type === 'text') return null;
 
   const isSticker = message.message_type === 'sticker';
 
-  // Fecha menu ao clicar fora
   useEffect(() => {
       function handleClickOutside(event: MouseEvent) {
           if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
@@ -57,30 +53,23 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
       return () => { document.removeEventListener("mousedown", handleClickOutside); };
   }, [showMenu]);
 
-  // Format Time (HH:mm)
   const formatTime = (dateString?: string) => {
     if (!dateString) return '';
     const date = new Date(dateString);
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
-  // Status Icon Logic (Ticks - Chegou/Visualizou)
   const renderStatusIcon = () => {
     if (!isMe) return null;
-
     const status = message.status;
     const iconClass = "w-[15px] h-[15px]"; 
-
     if (status === 'sending') return <Clock className={cn(iconClass, "text-zinc-500")} />;
     if (status === 'sent') return <Check className={cn(iconClass, "text-zinc-400")} />;
     if (status === 'delivered') return <CheckCheck className={cn(iconClass, "text-zinc-400")} />; 
-    // Status visualizou (Azul Wancora)
     if (status === 'read' || status === 'played') return <CheckCheck className={cn(iconClass, "text-blue-400")} />;
-
     return <Check className={cn(iconClass, "text-zinc-400")} />;
   };
 
-  // Handlers
   const handleReact = async (emoji: string) => {
       setShowMenu(false);
       try {
@@ -137,13 +126,13 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
   return (
     <div 
         className={cn(
-            "flex items-start gap-2 w-full group/message relative z-10", 
+            "flex items-start gap-2 w-full group/message relative", 
             isMe ? "justify-end" : "justify-start", 
-            reactionCounts ? "mb-5" : "mb-1"
+            reactionCounts ? "mb-5" : "mb-1",
+            // IMPORTANTE: z-index base para que a bolha fique atrás do menu
+            "z-10" 
         )}
     >
-        
-        {/* 1. CHECKBOX SELEÇÃO */}
         {isSelectionMode && (
             <div className="self-center animate-in fade-in zoom-in duration-200">
                 <Checkbox 
@@ -154,58 +143,59 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
             </div>
         )}
 
-        {/* 2. MENU FLUTUANTE (CORREÇÃO ITEM 1) */}
-        {!isSelectionMode && !(message as any).is_deleted && (
-            <div 
-                ref={menuRef}
-                className={cn(
-                    "opacity-0 group-hover/message:opacity-100 transition-all duration-200 flex items-center self-start mt-1 absolute",
-                    isMe ? "right-full mr-2" : "left-full ml-2",
-                    // Z-Index alto para garantir que o menu (filho) fique acima
-                    "z-50"
-                )}
-            >
-                <div className="relative">
-                    <button 
-                        onClick={() => setShowMenu(!showMenu)} 
-                        className="w-7 h-7 rounded-full bg-zinc-800 border border-zinc-700 hover:bg-zinc-700 flex items-center justify-center text-zinc-400 shadow-xl"
-                    >
-                        <ChevronDown className="w-4 h-4" />
-                    </button>
-
-                    {showMenu && (
-                        <div className={cn(
-                            "absolute top-8 bg-zinc-900 border border-zinc-800 rounded-xl shadow-[0_0_15px_rgba(0,0,0,0.5)] p-1 min-w-[200px] animate-in zoom-in-95 origin-top z-[9999]",
-                            isMe ? "right-0" : "left-0"
-                        )}>
-                            {/* Emojis Rápidos */}
-                            <div className="flex gap-1 p-2 bg-zinc-950/50 rounded-lg mb-1 justify-between">
-                                {COMMON_EMOJIS.slice(0, 5).map(emoji => (
-                                    <button key={emoji} onClick={() => handleReact(emoji)} className="hover:scale-125 transition-transform text-lg p-1">
-                                        {emoji}
-                                    </button>
-                                ))}
-                                <button className="hover:bg-zinc-800 rounded p-1 text-zinc-500"><SmilePlus className="w-4 h-4" /></button>
-                            </div>
-                            
-                            {/* Ações */}
-                            {isMe && (
-                                <button onClick={() => { setShowMenu(false); setShowInfo(true); }} className="flex items-center gap-2 px-3 py-2.5 text-sm text-zinc-300 hover:bg-zinc-800 rounded text-left w-full transition-colors">
-                                    <Info className="w-4 h-4" /> Dados da mensagem
-                                </button>
-                            )}
-                            <button onClick={() => { setShowMenu(false); setShowDeleteModal(true); }} className="flex items-center gap-2 px-3 py-2.5 text-sm text-red-400 hover:bg-red-500/10 rounded text-left w-full transition-colors">
-                                <Trash2 className="w-4 h-4" /> Apagar mensagem
-                            </button>
-                        </div>
-                    )}
-                </div>
-            </div>
-        )}
-
-        {/* 3. BOLHA DA MENSAGEM */}
-        <div className={cn(isMe ? "order-2" : "order-1", "max-w-[85%] md:max-w-[70%] relative")}>
+        {/* BUBBLE WRAPPER (Contém a mensagem e o botão de menu) */}
+        <div className="relative max-w-[85%] md:max-w-[70%] flex flex-col">
             
+            {/* BUTTON MENU FIX (Posicionado Absolutamente fora da bolha, mas dentro do wrapper) */}
+            {!isSelectionMode && !(message as any).is_deleted && (
+                <div 
+                    ref={menuRef}
+                    className={cn(
+                        "absolute top-0 opacity-0 group-hover/message:opacity-100 transition-all duration-200 z-50",
+                        isMe ? "-left-8" : "-right-8"
+                    )}
+                >
+                    <div className="relative">
+                        <button 
+                            onClick={() => setShowMenu(!showMenu)} 
+                            className="w-7 h-7 rounded-full bg-zinc-800 border border-zinc-700 hover:bg-zinc-700 flex items-center justify-center text-zinc-400 shadow-xl"
+                        >
+                            <ChevronDown className="w-4 h-4" />
+                        </button>
+
+                        {showMenu && (
+                            <>
+                                {/* BACKDROP CLICK OUTSIDE */}
+                                <div className="fixed inset-0 z-[60]" onClick={() => setShowMenu(false)} />
+                                
+                                <div className={cn(
+                                    "absolute top-8 bg-zinc-900 border border-zinc-800 rounded-xl shadow-[0_0_20px_rgba(0,0,0,0.6)] p-1 min-w-[200px] animate-in zoom-in-95 origin-top z-[70] ring-1 ring-white/10",
+                                    isMe ? "right-0" : "left-0"
+                                )}>
+                                    <div className="flex gap-1 p-2 bg-zinc-950/50 rounded-lg mb-1 justify-between">
+                                        {COMMON_EMOJIS.slice(0, 5).map(emoji => (
+                                            <button key={emoji} onClick={() => handleReact(emoji)} className="hover:scale-125 transition-transform text-lg p-1">
+                                                {emoji}
+                                            </button>
+                                        ))}
+                                        <button className="hover:bg-zinc-800 rounded p-1 text-zinc-500"><SmilePlus className="w-4 h-4" /></button>
+                                    </div>
+                                    {isMe && (
+                                        <button onClick={() => { setShowMenu(false); setShowInfo(true); }} className="flex items-center gap-2 px-3 py-2.5 text-sm text-zinc-300 hover:bg-zinc-800 rounded text-left w-full transition-colors">
+                                            <Info className="w-4 h-4" /> Dados da mensagem
+                                        </button>
+                                    )}
+                                    <button onClick={() => { setShowMenu(false); setShowDeleteModal(true); }} className="flex items-center gap-2 px-3 py-2.5 text-sm text-red-400 hover:bg-red-500/10 rounded text-left w-full transition-colors">
+                                        <Trash2 className="w-4 h-4" /> Apagar mensagem
+                                    </button>
+                                </div>
+                            </>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* MESSAGE BUBBLE */}
             <div 
                 className={cn(
                     "relative flex flex-col min-w-[100px] break-words rounded-xl p-1.5 cursor-pointer transition-all duration-300",
@@ -217,14 +207,12 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
                 )}
                 onClick={() => isSelectionMode && onSelect && onSelect()}
             >
-                {/* Nome em Grupos */}
                 {!isMe && !isSticker && message.contact?.push_name && (
                     <span className="text-[11px] font-bold text-orange-400 px-1 mb-0.5 truncate max-w-[200px] block opacity-90">
                         {message.contact.push_name}
                     </span>
                 )}
 
-                {/* Conteúdo Real */}
                 <div className={cn(!isSticker && "px-1 pb-1")}>
                     {(message as any).is_deleted ? (
                         <div className="flex items-center gap-2 text-sm py-1">
@@ -235,7 +223,6 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
                     )}
                 </div>
 
-                {/* Rodapé (Hora + Ticks) */}
                 <div className={cn("flex justify-end items-end gap-1 px-1 mt-auto select-none", !isSticker && "-mt-1", isSticker && "absolute bottom-1 right-2 bg-black/40 rounded-full px-1.5 py-0.5 backdrop-blur-sm")}>
                     <span className={cn("text-[10px] leading-none font-medium", isMe ? "text-emerald-100/70" : "text-zinc-300")}>
                         {formatTime(message.created_at)}
@@ -243,7 +230,6 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
                     {isMe && <div className="mb-[1px]">{renderStatusIcon()}</div>}
                 </div>
 
-                {/* Pontinha da Bolha */}
                 {!isSelectionMode && !isSticker && (
                     <div className={cn(
                         "absolute top-0 w-3 h-3 -z-10",
@@ -254,15 +240,13 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
                 )}
             </div>
 
-            {/* 4. REAÇÕES VISUAIS */}
+            {/* REACTIONS */}
             {reactionCounts && !(message as any).is_deleted && (
                 <div className={cn(
                     "absolute -bottom-2.5 z-20 flex gap-1 animate-in zoom-in duration-300",
                     isMe ? "right-1" : "left-1"
                 )}>
-                    <div 
-                        className="flex items-center bg-zinc-800/95 backdrop-blur-md border border-zinc-700/50 rounded-full px-1.5 py-0.5 shadow-[0_2px_8px_rgba(0,0,0,0.3)] hover:scale-110 transition-transform cursor-pointer gap-1 select-none ring-1 ring-black/20"
-                    >
+                    <div className="flex items-center bg-zinc-800/95 backdrop-blur-md border border-zinc-700/50 rounded-full px-1.5 py-0.5 shadow-[0_2px_8px_rgba(0,0,0,0.3)] hover:scale-110 transition-transform cursor-pointer gap-1 select-none ring-1 ring-black/20">
                         {reactionCounts.map(([emoji, count], i) => (
                             <span key={i} className="text-[11px] flex items-center text-white leading-none px-0.5">
                                 {emoji} {count > 1 && <span className="text-[9px] text-zinc-400 ml-0.5 font-bold font-mono">{count}</span>}
@@ -273,7 +257,7 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
             )}
         </div>
 
-        {/* MODAIS INTERNOS */}
+        {/* MODALS */}
         <MessageInfoModal 
             message={message} 
             isOpen={showInfo} 
@@ -287,7 +271,7 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
             maxWidth="sm"
         >
             <div className="space-y-4">
-                <p className="text-sm text-zinc-400">Você pode apagar mensagens apenas para você ou para todos os participantes.</p>
+                <p className="text-sm text-zinc-400">Esta ação é irreversível.</p>
                 <div className="flex flex-col gap-2 justify-end">
                     {isMe && (
                         <div className="flex flex-col gap-1 w-full">
@@ -302,7 +286,7 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
                             {!canRevoke() && (
                                 <span className="text-[10px] text-zinc-500 flex items-center gap-1 pl-1">
                                     <AlertTriangle className="w-3 h-3 text-yellow-500" /> 
-                                    Indisponível para mensagens antigas
+                                    Indisponível (tempo expirado)
                                 </span>
                             )}
                         </div>

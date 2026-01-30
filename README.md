@@ -303,24 +303,28 @@ O sistema implementa uma hierarquia de permissões estrita baseada na coluna `ro
 * **Database Constraints:** A chave estrangeira restrita (`FK`) entre mensagens e contatos foi removida intencionalmente para permitir que mensagens de LIDs (ou Status) sejam salvas mesmo antes da criação do contato, garantindo zero perda de dados.
 * **Frontend:** A interface trata o `remote_jid` como opaco. Se for LID, exibe normalmente; se for Phone, formata.
 
-### E. Smart Sync Strategy (Otimização de Histórico)
-Para evitar sobrecarga no banco e na rede durante o pareamento inicial:
-1.  **Janela Deslizante:** O sistema processa apenas as **10 mensagens mais recentes** de cada conversa do histórico. Mensagens muito antigas são ignoradas para manter o banco leve.
-2.  **Smart Fetch de Mídia:** Durante a importação, o sistema detecta ativamente contatos sem foto e força uma busca (`profilePictureUrl`) em tempo real, garantindo que o CRM não fique com avatares em branco.
+### E. Smart Sync Strategy (Política "Zero Dirt")
+Para garantir que o CRM inicie limpo e organizado, o sistema adota uma política restrita durante a importação inicial:
+1.  **Contatos & Mensagens:** O sistema baixa e salva todo o histórico necessário na tabela `contacts` e `messages`.
+2.  **Bloqueio de Leads:** O histórico **NÃO CRIA LEADS**. Isso impede que conversas antigas de 5 anos atrás poluam a coluna "Novos" do seu Kanban.
+3.  **Criação Just-in-Time:** Um Lead só é criado quando o contato envia uma **nova mensagem em tempo real** (Realtime). Isso garante que o Pipeline contenha apenas oportunidades ativas e vivas.
+4.  **Smart Fetch de Mídia:** O sistema detecta ativamente contatos sem foto e força uma busca em background, garantindo que a lista de chat fique visualmente rica sem travar o processamento.
 
-### F. Lead Guard (Regras Estritas de Criação)
-O sistema possui um **"Centralized Gatekeeper"** (`ensureLeadExists` em `sync.js`) que atua como autoridade única para a criação de Leads no CRM.
+### F. Regras Estritas de Lead (Lead Guard)
+O sistema possui um **"Centralized Gatekeeper"** (`ensureLeadExists` em `sync.js`) que atua como autoridade única e blindada para criação de Leads.
 
-*   **Trigger Universal:** Tanto o Histórico quanto Mensagens Novas passam por este funil.
+*   **Trigger:** Exclusivo para mensagens **Realtime** (Notify). Mensagens de histórico (Append) são ignoradas pelo guardião.
+*   **Blindagem de Identidade (LID Resolver):**
+    *   O sistema detecta IDs ocultos (`@lid`) e força a resolução para o número de telefone real antes de criar o lead.
+    *   Se o número não for um telefone válido (E.164), a criação é rejeitada.
 *   **Regras de Exclusão (Hard Block):**
-    *   🚫 Grupos (`@g.us`) não viram Leads.
-    *   🚫 Canais (`@newsletter`) não viram Leads.
-    *   🚫 O próprio número do usuário (Self) não vira Lead.
-    *   🚫 Contatos marcados como "Removido do CRM" (`is_ignored = true`) são bloqueados.
-*   **Estratégia de Nomes (Fallback v4.2):**
-    1.  Tenta o nome da Agenda.
-    2.  Tenta o nome do Perfil Público (PushName).
-    3.  **Fallback:** Se nenhum nome for encontrado, o Lead **É CRIADO** automaticamente usando o número formatado (ex: `+55 11 9...`) como nome. Isso garante que nenhuma oportunidade de venda seja perdida por falta de dados de perfil.
+    *   🚫 Grupos (`@g.us`) e Canais (`@newsletter`).
+    *   🚫 Broadcasts e Status.
+    *   🚫 O próprio número do usuário (Self).
+    *   🚫 Contatos marcados como "Removido do CRM" (`is_ignored = true`).
+*   **Sanitização de Nomes (Name Hunter v5):**
+    *   Nomes genéricos (apenas números ou iguais ao telefone) são rejeitados.
+    *   O sistema aguarda um nome válido (Agenda ou PushName) ou aplica um "Auto-Healing" assim que um nome real é detectado em uma nova mensagem.
 
 ---
 
