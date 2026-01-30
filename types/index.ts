@@ -19,9 +19,14 @@ export interface ChatContact {
   last_seen_at?: string;
   is_business?: boolean;
   
-  // Dados enriquecidos via Join/RPC
+  // Dados enriquecidos via Join/RPC (V5.0)
+  lead_id?: string | null;
   lead_status?: string | null;
   lead_created_at?: string | null;
+  lead_tags?: string[];
+  pipeline_stage_id?: string;
+  stage_name?: string;
+  stage_color?: string;
   
   // Campos legados para compatibilidade de UI
   last_message?: string; 
