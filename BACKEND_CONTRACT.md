@@ -63,6 +63,17 @@ O Backend atua como um **Gateway Inteligente** entre o WhatsApp (Meta) e o Banco
 Consulte o `DATABASE_SCHEMA.md` para a definição completa das tabelas.
 O Backend é responsável por escrever em: `instances`, `contacts`, `messages`, `baileys_auth_state`, `campaign_logs`.
 
+### 2.1. Protocolo de Leitura (Frontend Consumption)
+O Frontend não acessa as tabelas `messages` ou `contacts` diretamente para montar a lista de chats. Ele utiliza RPCs (Remote Procedure Calls) para garantir performance e agregação de dados.
+
+**RPC: `get_my_chat_list` (Inbox v5.0)**
+*   **Contrato:** O Frontend recebe um objeto plano ("flat") que combina dados de 4 tabelas (`contacts`, `leads`, `messages`, `pipeline_stages`).
+*   **Campos de Gestão (Novos):**
+    *   `lead_tags`: Array de strings. Usado para filtrar conversas por etiqueta no Frontend.
+    *   `stage_name` e `stage_color`: Permite visualizar em qual etapa do funil o cliente está direto na lista de chat.
+    *   `is_online`: Booleano atualizado em tempo real via trigger de presença.
+*   **Ordenação:** Sempre decrescente por `last_message_at`.
+
 ---
 
 ## 3. 🔌 API REST (Endpoints de Comando)
@@ -265,11 +276,15 @@ O processo de sincronização inicial (messaging-history.set) utiliza uma arquit
 4. Name Hunter V3: O sistema mapeia nomes da agenda (notify, verifiedName, short) em um mapa de memória (contactsMap) antes de salvar as mensagens. Se um nome for identificado como "genérico" (apenas números ou igual ao JID), o sistema tenta substituí-lo pelo pushName mais recente.
 5. Data Propagation: Ao descobrir um nome real via WhatsApp, o backend propaga essa atualização automaticamente para a tabela leads, garantindo que o Kanban e o Chat reflitam a identidade correta do contato.
 6. Optimistic Sync Delay: Um atraso de 300ms é aplicado antes do upsertMessage para garantir que o contato e o lead já tenham sido criados/atualizados, evitando erros de chave estrangeira.
-7.  **Realtime Refresh (`refreshContactInfo`):** A cada mensagem recebida (`messages.upsert`), o sistema verifica:
-    *   O contato tem foto de perfil? (Cache de 24h)
-    *   É uma conta Business? (Verifica `getBusinessProfile` se > 48h)
-    *   O nome mudou?
-    *   **Ação:** Se faltar dado, o backend busca na API do Baileys e atualiza o banco (Contacts e Leads) instantaneamente, inclusive baixando fotos faltantes.
+7.  **Smart Fetcher (Refresh Contact Info):** A cada mensagem recebida (`messages.upsert`), o sistema executa uma validação agressiva:
+    *   **Nome:** Se o `pushName` da mensagem for diferente do banco, atualiza imediatamente.
+    *   **Foto:** Se a foto for antiga (> 24h) ou inexistente, força um download via socket.
+    *   **Business:** Verifica se é conta comercial se o dado for antigo (> 48h).
+    *   **Auto-Healing:** Se o Lead existe mas estava sem nome (NULL), o sistema aplica o novo nome descoberto.
+8.  **Gestão de Presença (Presence Update):**
+    *   O Backend escuta eventos `presence.update` do Baileys.
+    *   Atualiza as colunas `is_online` e `last_seen_at` na tabela `contacts` em tempo real.
+    *   O Frontend assina estas mudanças para mostrar a "bolinha verde" na lista de chats.
 
 ### 4.1.1. Regra de Higiene de Nomes (Database Enforced)
 Um *Trigger* (`sanitize_contact_data`) no banco de dados garante que números de telefone nunca sejam salvos na coluna `name`.

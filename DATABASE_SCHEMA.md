@@ -284,17 +284,17 @@ Logs de disparos de eventos para sistemas externos (n8n, Typebot).
 
 Estas funções são vitais para a performance e lógica do sistema.
 
-### `get_my_chat_list` (Inbox Core)
-A query mais pesada do sistema. Retorna a lista de conversas com dados agregados de Leads, Mensagens e Contatos.
+### `get_my_chat_list` (Inbox Core v5.0)
+A query mais pesada do sistema. Retorna a lista de conversas com dados agregados de Leads, Mensagens, Contatos e Kanban.
 *   **Parâmetro:** `p_company_id` (uuid)
-*   **Retorno:** Tabela contendo `unread_count`, `last_message_content`, `last_message_type`, `lead_status`, `is_muted`, etc.
-**Regra de Ouro:** Apenas contatos **Com Mensagens** devem aparecer (Inbox Limpa).
-*   **Lógica:** Executa um `INNER JOIN` entre `contacts` e `messages`. Contatos sincronizados que nunca trocaram mensagem são excluídos da visualização.
-*   **Hierarquia de Exibição de Nome:**
-    1. `contacts.name` (Agenda)
-    2. `contacts.verified_name` (Business)
-    3. `contacts.push_name` (Perfil)
-    4. `contacts.phone` (Formatado pelo Frontend se os anteriores forem NULL)
+*   **Retorno:** Tabela expandida contendo:
+    *   Dados do Contato: `unread_count`, `profile_pic_url`, `name`, `push_name`, `is_muted`, `is_group`.
+    *   **[NOVO]** Presença: `is_online`, `last_seen_at`.
+    *   **[NOVO]** Dados do Lead: `lead_id`, `lead_status`, `lead_tags` (Array de etiquetas).
+    *   **[NOVO]** Dados do Kanban: `pipeline_stage_id`, `stage_name` (Nome da Fase), `stage_color`.
+    *   Mensagem: `last_message_content`, `last_message_type`, `last_message_at`.
+*   **Regra de Ouro:** Apenas contatos **Com Mensagens** aparecem. Contatos ocultos (`is_ignored = true`) são filtrados.
+*   **Hierarquia de Nome:** Agenda > Business > PushName > Telefone Formatado.
 
 ### `get_gamification_ranking`
 Calcula o ranking de vendas e XP da equipe em um período.
