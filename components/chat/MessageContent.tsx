@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect } from 'react';
@@ -6,7 +7,8 @@ import { FileText, MapPin, Download, PlayCircle, Image as ImageIcon, Film, User,
 import { Message } from "@/types";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/useToast";
-import { PollBubble } from './PollBubble'; // Import do novo componente
+import { useAuthStore } from '@/store/useAuthStore';
+import { PollBubble } from './PollBubble'; 
 
 interface MessageContentProps {
   message: Message;
@@ -14,6 +16,7 @@ interface MessageContentProps {
 
 export function MessageContent({ message }: MessageContentProps) {
   const { addToast } = useToast();
+  const { user } = useAuthStore();
   const [imgError, setImgError] = useState(false);
   const [isZoomed, setIsZoomed] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -32,14 +35,13 @@ export function MessageContent({ message }: MessageContentProps) {
       addToast({ type: 'success', title: 'Copiado!', message: 'Chave Pix copiada.' });
   };
 
-  // Helper para Mapa
   const getMapEmbedUrl = (lat: number, lng: number) => {
       const bboxDelta = 0.002; 
       const bbox = `${lng - bboxDelta},${lat - bboxDelta},${lng + bboxDelta},${lat + bboxDelta}`;
       return `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${lat},${lng}`;
   };
 
-  // --- 9. ENQUETE (POLL) - NOVO ---
+  // --- 9. ENQUETE (POLL) ---
   if (type === 'poll') {
       return <PollBubble message={message} isMe={isMe} />;
   }
@@ -107,23 +109,41 @@ export function MessageContent({ message }: MessageContentProps) {
     );
   }
 
-  // --- 2. ÁUDIO (PTT ou Audio) ---
+  // --- 2. ÁUDIO (Com Avatar) ---
   if (type === 'audio' || type === 'ptt' || type === 'voice') {
+    // Determina o avatar a exibir no player
+    const avatarUrl = isMe 
+        ? user?.avatar_url 
+        : message.contact?.profile_pic_url;
+
     return (
       <div className={cn(
           "flex items-center gap-3 min-w-[260px] mt-1 p-2 rounded-lg border transition-all",
           isMe ? "bg-primary/20 border-primary/30" : "bg-zinc-800/80 border-zinc-700"
       )}>
-        <div className={cn(
-            "w-10 h-10 rounded-full flex items-center justify-center shrink-0",
-            isMe ? "bg-primary text-primary-foreground" : "bg-zinc-700 text-zinc-400"
-        )}>
-            {mediaUrl ? <PlayCircle className="w-6 h-6" /> : <AlertTriangle className="w-5 h-5 text-red-500" />}
+        <div className="relative shrink-0">
+            <div className={cn(
+                "w-12 h-12 rounded-full flex items-center justify-center border-2 overflow-hidden",
+                isMe ? "border-primary/50 bg-primary/20" : "border-zinc-600 bg-zinc-700"
+            )}>
+                {avatarUrl ? (
+                    <img src={avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+                ) : (
+                    <User className={cn("w-6 h-6", isMe ? "text-primary" : "text-zinc-400")} />
+                )}
+            </div>
+            {/* Ícone de Play sobreposto (opcional, ou mantido separado se preferir) */}
+            <div className="absolute -bottom-1 -right-1 bg-zinc-900 rounded-full border border-zinc-700 p-0.5">
+               {mediaUrl ? <PlayCircle className="w-4 h-4 text-green-500" /> : <AlertTriangle className="w-4 h-4 text-red-500" />}
+            </div>
         </div>
+        
         <div className="flex-1 flex flex-col justify-center overflow-hidden">
             {mediaUrl ? (
-                <audio controls className="h-8 w-full max-w-[220px] opacity-90 scale-95 origin-left" controlsList="nodownload">
-                    <source src={mediaUrl} />
+                <audio controls className="h-8 w-full max-w-[200px] opacity-90 scale-95 origin-left" controlsList="nodownload">
+                    <source src={mediaUrl} type="audio/ogg" />
+                    <source src={mediaUrl} type="audio/mp4" />
+                    <source src={mediaUrl} type="audio/mpeg" />
                 </audio>
             ) : (
                 <div className="flex items-center gap-1 text-xs text-zinc-500">
@@ -187,7 +207,7 @@ export function MessageContent({ message }: MessageContentProps) {
     );
   }
 
-  // --- 5. STICKER (FIGURINHA) ---
+  // --- 5. STICKER ---
   if (type === 'sticker') {
       return (
           <div className="relative mt-1 overflow-hidden w-32 h-32 flex items-center justify-center p-1">
@@ -237,7 +257,6 @@ export function MessageContent({ message }: MessageContentProps) {
     return (
       <div className="mt-1">
           <a href={mapsUrl} target="_blank" rel="noopener noreferrer" className="block relative overflow-hidden rounded-xl border border-zinc-800/50 group w-[260px] hover:border-primary/50 transition-colors shadow-sm bg-zinc-900">
-            {/* Map Preview Area */}
             <div className="h-36 w-full relative overflow-hidden bg-[#e5e7eb]">
                 {lat && long ? (
                     <>

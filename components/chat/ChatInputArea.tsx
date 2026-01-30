@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
@@ -186,17 +187,26 @@ export function ChatInputArea() {
       try {
           const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
           
-          // Detecta melhor formato (Chrome usa WebM/Opus, Safari MP4)
-          let mimeType = 'audio/webm;codecs=opus';
-          if (!MediaRecorder.isTypeSupported(mimeType)) {
-              mimeType = 'audio/mp4'; // Fallback iOS
-              if (!MediaRecorder.isTypeSupported(mimeType)) {
-                  mimeType = ''; // Default browser
-              }
+          // DETECÇÃO DE CODEC OTIMIZADO PARA WHATSAPP
+          // Tenta usar codecs=opus para garantir compatibilidade e evitar corrupção
+          const mimeOptions = [
+            'audio/webm;codecs=opus', 
+            'audio/webm', 
+            'audio/mp4', // Safari
+            'audio/ogg'
+          ];
+          
+          let selectedMime = '';
+          for (const mime of mimeOptions) {
+            if (MediaRecorder.isTypeSupported(mime)) {
+                selectedMime = mime;
+                break;
+            }
           }
-          setRecorderMimeType(mimeType);
+          
+          setRecorderMimeType(selectedMime);
 
-          const mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+          const mediaRecorder = new MediaRecorder(stream, selectedMime ? { mimeType: selectedMime } : undefined);
           mediaRecorderRef.current = mediaRecorder;
           audioChunksRef.current = [];
           
@@ -215,14 +225,18 @@ export function ChatInputArea() {
               const mime = recorderMimeType || 'audio/webm';
               const audioBlob = new Blob(audioChunksRef.current, { type: mime });
               
-              // Define extensão correta
-              const ext = mime.includes('mp4') ? 'mp4' : 'webm';
+              // Define extensão correta com base no mime escolhido
+              let ext = 'webm';
+              if (mime.includes('mp4')) ext = 'mp4';
+              else if (mime.includes('ogg')) ext = 'ogg';
+
               const audioFile = new File([audioBlob], `voice_${Date.now()}.${ext}`, { type: mime });
               
               if (audioFile.size > 0 && user?.company_id) {
                   try {
                       const { publicUrl } = await uploadChatMedia(audioFile, user.company_id);
-                      // Envia mimetype real para backend processar
+                      // Envia mimetype real para backend processar corretamente
+                      // PTT = true é crucial para aparecer como onda sonora
                       await dispatchMessage({ 
                           type: 'audio', 
                           url: publicUrl, 

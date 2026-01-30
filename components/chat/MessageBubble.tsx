@@ -123,14 +123,31 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
       return entries.sort((a,b) => b[1] - a[1]);
   }, [reactions]);
 
+  const isDeleted = (message as any).is_deleted;
+  
+  // Se for deletada, renderiza um bloco simples de aviso (Visual Limpo)
+  // FIX: Remover z-index alto para ficar abaixo do menu
+  if (isDeleted) {
+      return (
+          <div className={cn(
+            "flex w-full mb-1 z-0 relative", // z-0 para ficar abaixo
+            isMe ? "justify-end" : "justify-start"
+          )}>
+              <div className="flex items-center gap-2 text-xs py-1.5 px-3 rounded-lg bg-zinc-900/40 border border-zinc-800/50 text-zinc-600 italic select-none">
+                  <Ban className="w-3.5 h-3.5" /> <span>Mensagem apagada</span>
+              </div>
+          </div>
+      );
+  }
+
   return (
     <div 
         className={cn(
             "flex items-start gap-2 w-full group/message relative", 
             isMe ? "justify-end" : "justify-start", 
             reactionCounts ? "mb-5" : "mb-1",
-            // IMPORTANTE: z-index base para que a bolha fique atrás do menu
-            "z-10" 
+            // FIX Z-INDEX: Quando menu aberto, eleva para 50, senão 10.
+            showMenu ? "z-50" : "z-10" 
         )}
     >
         {isSelectionMode && (
@@ -146,8 +163,8 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
         {/* BUBBLE WRAPPER (Contém a mensagem e o botão de menu) */}
         <div className="relative max-w-[85%] md:max-w-[70%] flex flex-col">
             
-            {/* BUTTON MENU FIX (Posicionado Absolutamente fora da bolha, mas dentro do wrapper) */}
-            {!isSelectionMode && !(message as any).is_deleted && (
+            {/* BUTTON MENU (Posicionado Absolutamente fora da bolha) */}
+            {!isSelectionMode && (
                 <div 
                     ref={menuRef}
                     className={cn(
@@ -157,8 +174,11 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
                 >
                     <div className="relative">
                         <button 
-                            onClick={() => setShowMenu(!showMenu)} 
-                            className="w-7 h-7 rounded-full bg-zinc-800 border border-zinc-700 hover:bg-zinc-700 flex items-center justify-center text-zinc-400 shadow-xl"
+                            onClick={(e) => { e.stopPropagation(); setShowMenu(!showMenu); }} 
+                            className={cn(
+                                "w-7 h-7 rounded-full border flex items-center justify-center shadow-xl transition-colors",
+                                showMenu ? "bg-zinc-700 border-zinc-500 text-white" : "bg-zinc-800 border-zinc-700 text-zinc-400 hover:bg-zinc-700 hover:text-white"
+                            )}
                         >
                             <ChevronDown className="w-4 h-4" />
                         </button>
@@ -169,7 +189,7 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
                                 <div className="fixed inset-0 z-[60]" onClick={() => setShowMenu(false)} />
                                 
                                 <div className={cn(
-                                    "absolute top-8 bg-zinc-900 border border-zinc-800 rounded-xl shadow-[0_0_20px_rgba(0,0,0,0.6)] p-1 min-w-[200px] animate-in zoom-in-95 origin-top z-[70] ring-1 ring-white/10",
+                                    "absolute top-8 bg-zinc-900 border border-zinc-800 rounded-xl shadow-[0_0_30px_rgba(0,0,0,0.8)] p-1 min-w-[220px] animate-in zoom-in-95 origin-top z-[70] ring-1 ring-white/10",
                                     isMe ? "right-0" : "left-0"
                                 )}>
                                     <div className="flex gap-1 p-2 bg-zinc-950/50 rounded-lg mb-1 justify-between">
@@ -202,8 +222,7 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
                     isSticker ? "bg-transparent shadow-none border-none p-0" : "border",
                     !isSticker && isMe ? "bg-[#005c4b] text-white rounded-tr-none border-[#005c4b] shadow-[0_4px_15px_-3px_rgba(34,197,94,0.3)]" : "",
                     !isSticker && !isMe ? "bg-zinc-800 text-zinc-100 rounded-tl-none border-zinc-700 shadow-[0_4px_15px_-3px_rgba(59,130,246,0.2)]" : "",
-                    isSelectionMode && isSelected ? "ring-2 ring-primary ring-offset-2 ring-offset-zinc-950 opacity-90" : "",
-                    (message as any).is_deleted && "bg-zinc-900/50 border-zinc-800 text-zinc-500 italic shadow-none"
+                    isSelectionMode && isSelected ? "ring-2 ring-primary ring-offset-2 ring-offset-zinc-950 opacity-90" : ""
                 )}
                 onClick={() => isSelectionMode && onSelect && onSelect()}
             >
@@ -214,13 +233,7 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
                 )}
 
                 <div className={cn(!isSticker && "px-1 pb-1")}>
-                    {(message as any).is_deleted ? (
-                        <div className="flex items-center gap-2 text-sm py-1">
-                            <Ban className="w-4 h-4" /> <span>⊘ Mensagem apagada</span>
-                        </div>
-                    ) : (
-                        <MessageContent message={message} />
-                    )}
+                    <MessageContent message={message} />
                 </div>
 
                 <div className={cn("flex justify-end items-end gap-1 px-1 mt-auto select-none", !isSticker && "-mt-1", isSticker && "absolute bottom-1 right-2 bg-black/40 rounded-full px-1.5 py-0.5 backdrop-blur-sm")}>
@@ -241,7 +254,7 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
             </div>
 
             {/* REACTIONS */}
-            {reactionCounts && !(message as any).is_deleted && (
+            {reactionCounts && (
                 <div className={cn(
                     "absolute -bottom-2.5 z-20 flex gap-1 animate-in zoom-in duration-300",
                     isMe ? "right-1" : "left-1"
@@ -271,35 +284,30 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
             maxWidth="sm"
         >
             <div className="space-y-4">
-                <p className="text-sm text-zinc-400">Esta ação é irreversível.</p>
+                <p className="text-sm text-zinc-400">Escolha como deseja apagar:</p>
                 <div className="flex flex-col gap-2 justify-end">
-                    {isMe && (
-                        <div className="flex flex-col gap-1 w-full">
-                            <Button 
-                                variant="destructive" 
-                                onClick={() => handleDelete(true)} 
-                                disabled={isDeleting || !canRevoke()}
-                                className="justify-start bg-zinc-800 border-zinc-700 text-red-400 hover:bg-red-500/10 w-full"
-                            >
-                                Apagar para todos (Revoke)
-                            </Button>
-                            {!canRevoke() && (
-                                <span className="text-[10px] text-zinc-500 flex items-center gap-1 pl-1">
-                                    <AlertTriangle className="w-3 h-3 text-yellow-500" /> 
-                                    Indisponível (tempo expirado)
-                                </span>
-                            )}
-                        </div>
+                    {/* Opção Para Todos apenas se for minha msg e estiver no prazo */}
+                    {isMe && canRevoke() && (
+                        <Button 
+                            variant="destructive" 
+                            onClick={() => handleDelete(true)} 
+                            disabled={isDeleting}
+                            className="justify-start bg-zinc-800 border-zinc-700 text-red-400 hover:bg-red-500/10 w-full"
+                        >
+                            <Trash2 className="w-4 h-4 mr-2" /> Apagar para todos
+                        </Button>
                     )}
+                    
                     <Button 
                         variant="outline" 
                         onClick={() => handleDelete(false)} 
                         disabled={isDeleting}
-                        className="justify-start border-zinc-700 w-full"
+                        className="justify-start border-zinc-700 w-full hover:bg-zinc-800 text-zinc-300"
                     >
-                        Apagar para mim
+                        <Ban className="w-4 h-4 mr-2" /> Apagar para mim
                     </Button>
-                    <Button variant="ghost" onClick={() => setShowDeleteModal(false)} className="mt-2 w-full">Cancelar</Button>
+                    
+                    <Button variant="ghost" onClick={() => setShowDeleteModal(false)} className="mt-2 w-full text-zinc-500">Cancelar</Button>
                 </div>
             </div>
         </Modal>
