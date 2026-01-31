@@ -10,7 +10,7 @@ import { ArrowDown, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useSound } from '@/hooks/useSound';
-import { api } from '@/services/api'; // Import da API
+import { api } from '@/services/api'; 
 
 const MESSAGES_PER_PAGE = 30;
 
@@ -40,20 +40,18 @@ export function ChatWindow() {
           if (!lastMsg.from_me) {
               play('message');
               
-              // Se o chat está aberto e focado, marca como lido imediatamente
               if (activeContact && selectedInstance && lastMsg.remote_jid === activeContact.remote_jid) {
                    api.post('/message/read', {
                        sessionId: selectedInstance.session_id,
                        companyId: user?.company_id,
                        remoteJid: activeContact.remote_jid
-                   }).catch(() => {}); // Silent catch
+                   }).catch(() => {});
               }
           }
       }
       prevMessagesLength.current = messages.length;
   }, [messages, play, activeContact, selectedInstance, user?.company_id]);
 
-  // PERFORMANCE: Use useLayoutEffect para scrollar ANTES do browser pintar a tela
   useLayoutEffect(() => {
       if (messagesEndRef.current && !fetchingMore && !loadingMessages) {
           const container = scrollContainerRef.current;
@@ -84,16 +82,16 @@ export function ChatWindow() {
       return (data || []).reverse(); 
   };
 
-  // Carga Inicial e Trigger de Leitura/Presença
   useEffect(() => {
       if (!activeContact || !selectedInstance) return;
 
       const initChat = async () => {
+          setLoadingMessages(true);
           setHasMoreMessages(true);
           const initialMsgs = await loadMessages(0);
           setMessages(initialMsgs);
+          setLoadingMessages(false);
           
-          // MISSION 4: Trigger Read Receipt & Presence
           if (user?.company_id) {
               api.post('/message/read', {
                   sessionId: selectedInstance.session_id,
@@ -106,9 +104,8 @@ export function ChatWindow() {
       };
 
       initChat();
-  }, [activeContact?.id, selectedInstance?.session_id]); // Recarrega se mudar chat ou instância
+  }, [activeContact?.id, selectedInstance?.session_id]); 
 
-  // Scroll Handler (Pagination + FAB Visibility)
   const handleScroll = async (e: React.UIEvent<HTMLDivElement>) => {
       const container = e.currentTarget;
       const now = Date.now();
@@ -150,8 +147,9 @@ export function ChatWindow() {
   };
 
   return (
-    <div className="flex-1 relative flex flex-col overflow-hidden bg-[#0b0b0d]">
-        <div className="absolute inset-0 opacity-[0.03] pointer-events-none" 
+    <div className="flex-1 relative flex flex-col overflow-hidden bg-[#0b0b0d] z-0">
+        {/* Background Pattern */}
+        <div className="absolute inset-0 opacity-[0.03] pointer-events-none z-0" 
              style={{ 
                  backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='1'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")` 
              }} 
@@ -160,7 +158,7 @@ export function ChatWindow() {
         <div 
             ref={scrollContainerRef}
             onScroll={handleScroll}
-            className="flex-1 overflow-y-auto p-4 md:p-6 space-y-2 relative custom-scrollbar z-10" 
+            className="flex-1 overflow-y-auto p-4 md:p-6 space-y-2 relative custom-scrollbar z-10 w-full" 
         >
             {fetchingMore && (
                 <div className="flex justify-center py-2">
@@ -170,15 +168,16 @@ export function ChatWindow() {
 
             {!hasMoreMessages && messages.length > 0 && (
                 <div className="text-center py-6">
-                    <span className="text-xs text-zinc-600 bg-zinc-900/50 px-3 py-1 rounded-full border border-zinc-800">
+                    <span className="text-xs text-zinc-600 bg-zinc-900/50 px-3 py-1 rounded-full border border-zinc-800 select-none">
                         Início da conversa
                     </span>
                 </div>
             )}
 
             {messages.map((msg, idx) => {
-                // CORREÇÃO ITEM 5: Filtra mensagens vazias ou com texto 'EMPTY' (bug backend)
-                if ((!msg.content && !msg.media_url) || (msg.message_type === 'text' && msg.content === 'EMPTY')) return null;
+                // FIXED: Lógica mais permissiva para evitar que mensagens válidas fiquem invisíveis
+                // Se tiver media_url, exibe. Se tiver content, exibe. Se não tiver nada, só aí ignora.
+                if (!msg.content && !msg.media_url && !msg.message_type) return null;
 
                 return (
                     <div key={msg.id || idx} className={`flex w-full mb-1`}>
@@ -192,7 +191,7 @@ export function ChatWindow() {
                 );
             })}
             
-            <div ref={messagesEndRef} />
+            <div ref={messagesEndRef} className="h-1" />
         </div>
 
         <div className={cn(

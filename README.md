@@ -354,11 +354,31 @@ REDIS_URL="redis://..." # Obrigatório para filas de campanha
 WEB_CONCURRENCY=1 # Opcional, para Render/Heroku
 NODE_VERSION=20.20.0```
 
-## 6. Deploy e Infraestrutura (Render)
-O serviço Backend é configurado para rodar como um Web Service no Render (ou similar).
-Docker/Node: Roda sobre Node.js 20.
-Healthcheck: O Render deve monitorar a rota /health.
-Redis: Um serviço Redis externo é necessário para gerenciar a fila de campanhas (bullmq).
+## 6. Deploy e Infraestrutura (Docker & Security)
+O serviço Backend foi modernizado para rodar em containers (Docker), eliminando a dependência de gerenciadores de processo como PM2 em favor de uma arquitetura Cloud-Native.
+
+### Containerização (Dockerfile)
+O projeto inclui um `Dockerfile` otimizado baseado em `node:20-slim`.
+*   **Dependências de Sistema:** Instala automaticamente `ffmpeg`, `libvips` e dependências do Chromium para garantir funcionamento do Baileys e manipulação de mídia.
+*   **Segurança:** Roda como usuário não-root onde possível e utiliza `helmet` para proteção de headers HTTP.
+*   **Limites:** Configurado para `max-old-space-size=4096` (4GB) para suportar alta carga de sessões em memória.
+
+### Rate Limiting (Proteção DDoS)
+Middleware de segurança (`middleware/limiter.js`) ativo em todas as rotas.
+*   **Backend:** `rate-limiter-flexible` com fallback:
+    *   **Produção (Redis):** Implementa punição exponencial (Ban de 1min -> 10min -> 1h -> 24h) baseada em reincidência.
+    *   **Dev (Memória):** Limite simples sem persistência.
+*   **Limite Padrão:** 200 requisições/minuto por IP ou Token de Usuário.
+
+### Comandos de Deploy
+```bash
+# Build e Run Local (Docker)
+docker build -t wancora-backend ./backend
+docker run -p 3001:3001 --env-file backend/.env wancora-backend
+
+# Deploy (Render/Railway)
+# Apenas aponte para o repositório. O Dockerfile na pasta /backend será detectado automaticamente.
+# Configure o Root Directory como "backend".```
 
 ## 7. Diretrizes para Desenvolvimento com IA (Google AI Studio)
 Ao gerar código para este projeto, você DEVE seguir estas regras estritas:

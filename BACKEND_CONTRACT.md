@@ -9,32 +9,61 @@
 
 Este documento é a **Bíblia Técnica** do Backend. Ele descreve a comunicação entre Frontend e Backend.
 
+Repositsório original: https://github.com/DestravaVendas/wancora-backend.git
+
 📂 Estrutura Global do Projeto Validado e Existente (Project Blueprint)
 wancora-backend/
 ├── 📁 auth/
-│   └── 📄 supabaseAuth.js       # Gerenciamento de estado e persistência Baileys no Supabase
+│   └── 📄 supabaseAuth.js        # Gerenciamento de estado e persistência Baileys no Supabase
 ├── 📁 controllers/
-│   ├── 📄 campaignController.js  # Orquestração de criação e disparo de campanhas
-│   └── 📄 whatsappController.js  # Facade para controle de sessões, mensagens e enquetes
+│   ├── 📄 appointmentController.js # [NOVO] Lógica de agendamentos e confirmações
+│   ├── 📄 campaignController.js    # Orquestração de criação e disparo de campanhas
+│   └── 📄 whatsappController.js    # Facade para controle de sessões, mensagens e enquetes
+├── 📁 lib/
+│   └── 📄 schemas.js             # Schemas de validação Zod para payloads
+├── 📁 middleware/
+│   ├── 📄 auth.js                # Validação JWT e Multi-Tenant
+│   ├── 📄 limiter.js             # Rate Limiting e Proteção DDoS
+│   └── 📄 validator.js           # Validação de dados de entrada
+├── 📁 routes/
+│   ├── 📄 automation.routes.js   # Rotas de automação (campanhas, agenda)
+│   ├── 📄 management.routes.js   # Rotas de gestão (grupos, canais)
+│   ├── 📄 message.routes.js      # Rotas de mensageria (envio, voto, reação)
+│   └── 📄 session.routes.js      # Rotas de sessão (QR, status, logout)
 ├── 📁 services/
 │   ├── 📁 baileys/
-│   │   ├── 📄 connection.js      # Core: Gestão de sockets, QR Code e auto-reconnect
-│   │   ├── 📄 listener.js        # Eventos: Sincronização de histórico, mensagens e contatos
-│   │   └── 📄 sender.js          # Protocolo: Envio humanizado, mídias e PIX nativo
+│   │   ├── 📁 handlers/
+│   │   │   ├── 📄 contactHandler.js  # Lógica de presença e upsert de contatos
+│   │   │   ├── 📄 historyHandler.js  # Processamento de histórico inicial
+│   │   │   ├── 📄 mediaHandler.js    # Download e upload de mídia
+│   │   │   └── 📄 messageHandler.js  # Processamento central de mensagens
+│   │   ├── 📄 community.js       # Gestão de Grupos e Canais
+│   │   ├── 📄 connection.js      # Core: Gestão de sockets e reconexão
+│   │   ├── 📄 listener.js        # Configuração de eventos do socket
+│   │   ├── 📄 messageQueue.js    # Fila de processamento de mensagens recebidas
+│   │   └── 📄 sender.js          # Protocolo de envio (Texto, Mídia, Enquetes)
 │   ├── 📁 crm/
-│   │   └── 📄 sync.js            # Integração: Upsert de contatos, leads e mensagens no DB
-│   └── 📄 redisClient.js         # Infra: Conexão Singleton com Redis para BullMQ
+│   │   └── 📄 sync.js            # Integração com banco de dados (Leads/Contacts)
+│   ├── 📁 integrations/
+│   │   └── 📄 webhook.js         # Disparo de webhooks externos
+│   ├── 📁 scheduler/
+│   │   └── 📄 sentinel.js        # Agente de IA (Gemini) e automação de resposta
+│   └── 📄 redisClient.js         # Infra: Conexão Singleton com Redis
 ├── 📁 utils/
-│   └── 📄 wppParsers.js          # Helpers: Normalização de payloads e extração de conteúdo
+│   ├── 📄 audioConverter.js      # Conversão de áudio para PTT (FFmpeg)
+│   └── 📄 wppParsers.js          # Helpers de normalização de dados do WhatsApp
 ├── 📁 workers/
-│   ├── 📄 campaignQueue.js       # Fila: Definição e enfileiramento de jobs (BullMQ)
-│   └── 📄 campaignWorker.js      # Processador: Execução serial de disparos com Anti-Ban
-├── 📄 app.js                     # Placeholder (Lógica centralizada no server.js)
-├── 📄 package.json               # Manifesto: Dependências, scripts e metadados do Node.js
-├── 📄 package-lock.json          # Lockfile: Versões exatas das dependências instaladas
-├── 📄 routes.js                  # Roteamento: Definição de todos os endpoints da API REST
-├── 📄 server.js                  # Entry Point: Inicialização do Express, Worker e Boot
-└── 📄 .env                       # Config: Variáveis de ambiente (URL/Keys do Supabase e Redis)
+│   ├── 📄 agendaWorker.js        # [NOVO] Cron job para lembretes de agendamento
+│   ├── 📄 campaignQueue.js       # Definição da fila BullMQ
+│   └── 📄 campaignWorker.js      # Processador de disparo em massa
+├── 📄 .gitignore
+├── 📄 .slugignore
+├── 📄 Dockerfile                 # Infraestrutura de Container
+├── 📄 ecosystem.config.cjs       # Configuração PM2 (opcional/local)
+├── 📄 instrument.js              # Monitoramento Sentry
+├── 📄 package-lock.json
+├── 📄 package.json
+└── 📄 server.js                  # Entry Point da aplicação
 
 ---
 

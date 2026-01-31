@@ -4,7 +4,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Message } from '@/types';
 import { MessageContent } from './MessageContent';
-import { Check, CheckCheck, Clock, Ban, ChevronDown, Trash2, Info, AlertTriangle, SmilePlus } from 'lucide-react';
+import { Check, CheckCheck, Clock, Ban, ChevronDown, Trash2, Info, SmilePlus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Checkbox } from '@/components/ui/checkbox';
 import { api } from '@/services/api';
@@ -36,8 +36,8 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
   
   const menuRef = useRef<HTMLDivElement>(null);
 
-  if (!message.content && !message.media_url && !message.message_type) return null;
-  if (message.content === 'EMPTY' && message.message_type === 'text') return null;
+  // FIXED: Removemos a validação 'EMPTY' hardcoded que poderia esconder mensagens válidas do backend antigo
+  if (!message) return null;
 
   const isSticker = message.message_type === 'sticker';
 
@@ -125,12 +125,10 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
 
   const isDeleted = (message as any).is_deleted;
   
-  // Se for deletada, renderiza um bloco simples de aviso (Visual Limpo)
-  // FIX: Remover z-index alto para ficar abaixo do menu
   if (isDeleted) {
       return (
           <div className={cn(
-            "flex w-full mb-1 z-0 relative", // z-0 para ficar abaixo
+            "flex w-full mb-1 relative z-0",
             isMe ? "justify-end" : "justify-start"
           )}>
               <div className="flex items-center gap-2 text-xs py-1.5 px-3 rounded-lg bg-zinc-900/40 border border-zinc-800/50 text-zinc-600 italic select-none">
@@ -146,8 +144,7 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
             "flex items-start gap-2 w-full group/message relative", 
             isMe ? "justify-end" : "justify-start", 
             reactionCounts ? "mb-5" : "mb-1",
-            // FIX Z-INDEX: Quando menu aberto, eleva para 50, senão 10.
-            showMenu ? "z-50" : "z-10" 
+            showMenu ? "z-50" : "z-auto" // Z-Index fix para menu
         )}
     >
         {isSelectionMode && (
@@ -160,10 +157,8 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
             </div>
         )}
 
-        {/* BUBBLE WRAPPER (Contém a mensagem e o botão de menu) */}
         <div className="relative max-w-[85%] md:max-w-[70%] flex flex-col">
             
-            {/* BUTTON MENU (Posicionado Absolutamente fora da bolha) */}
             {!isSelectionMode && (
                 <div 
                     ref={menuRef}
@@ -185,7 +180,6 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
 
                         {showMenu && (
                             <>
-                                {/* BACKDROP CLICK OUTSIDE */}
                                 <div className="fixed inset-0 z-[60]" onClick={() => setShowMenu(false)} />
                                 
                                 <div className={cn(
@@ -215,7 +209,6 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
                 </div>
             )}
 
-            {/* MESSAGE BUBBLE */}
             <div 
                 className={cn(
                     "relative flex flex-col min-w-[100px] break-words rounded-xl p-1.5 cursor-pointer transition-all duration-300",
@@ -253,7 +246,6 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
                 )}
             </div>
 
-            {/* REACTIONS */}
             {reactionCounts && (
                 <div className={cn(
                     "absolute -bottom-2.5 z-20 flex gap-1 animate-in zoom-in duration-300",
@@ -270,43 +262,20 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
             )}
         </div>
 
-        {/* MODALS */}
-        <MessageInfoModal 
-            message={message} 
-            isOpen={showInfo} 
-            onClose={() => setShowInfo(false)} 
-        />
+        <MessageInfoModal message={message} isOpen={showInfo} onClose={() => setShowInfo(false)} />
 
-        <Modal 
-            isOpen={showDeleteModal} 
-            onClose={() => setShowDeleteModal(false)} 
-            title="Apagar mensagem?"
-            maxWidth="sm"
-        >
+        <Modal isOpen={showDeleteModal} onClose={() => setShowDeleteModal(false)} title="Apagar mensagem?" maxWidth="sm">
             <div className="space-y-4">
                 <p className="text-sm text-zinc-400">Escolha como deseja apagar:</p>
                 <div className="flex flex-col gap-2 justify-end">
-                    {/* Opção Para Todos apenas se for minha msg e estiver no prazo */}
                     {isMe && canRevoke() && (
-                        <Button 
-                            variant="destructive" 
-                            onClick={() => handleDelete(true)} 
-                            disabled={isDeleting}
-                            className="justify-start bg-zinc-800 border-zinc-700 text-red-400 hover:bg-red-500/10 w-full"
-                        >
+                        <Button variant="destructive" onClick={() => handleDelete(true)} disabled={isDeleting} className="justify-start bg-zinc-800 border-zinc-700 text-red-400 hover:bg-red-500/10 w-full">
                             <Trash2 className="w-4 h-4 mr-2" /> Apagar para todos
                         </Button>
                     )}
-                    
-                    <Button 
-                        variant="outline" 
-                        onClick={() => handleDelete(false)} 
-                        disabled={isDeleting}
-                        className="justify-start border-zinc-700 w-full hover:bg-zinc-800 text-zinc-300"
-                    >
+                    <Button variant="outline" onClick={() => handleDelete(false)} disabled={isDeleting} className="justify-start border-zinc-700 w-full hover:bg-zinc-800 text-zinc-300">
                         <Ban className="w-4 h-4 mr-2" /> Apagar para mim
                     </Button>
-                    
                     <Button variant="ghost" onClick={() => setShowDeleteModal(false)} className="mt-2 w-full text-zinc-500">Cancelar</Button>
                 </div>
             </div>
