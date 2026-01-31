@@ -1,4 +1,4 @@
-# 🗄️ WANCORA CRM - Database Schema Definitions v4.3
+# 🗄️ WANCORA CRM - Database Schema Definitions v5.0
 
 Este documento define a estrutura oficial do Banco de Dados Supabase (PostgreSQL).
 **Regra:** Qualquer SQL gerado deve ser validado contra este arquivo.
@@ -52,6 +52,9 @@ Contatos brutos sincronizados do celular.
 * `phone`: text (Telefone limpo para vínculo com Leads e Buscas)
 * `unread_count`: integer (Default: 0) - **[NOVO]** Contador atômico atualizado via Trigger.
 * `is_newsletter`: boolean (Virtual/Derivado) - Identifica Canais de Transmissão.
+* **[NOVO]** `parent_jid`: text (Para vincular Grupos a Comunidades)
+* **[NOVO]** `is_community`: boolean
+* **[NOVO]** `metadata`: jsonb (Ex: `{ role: 'admin', subscribers: 1000 }` para canais)
 
 ### `leads` (CRM)
 A entidade de negócio principal.
@@ -123,6 +126,18 @@ Histórico de mensagens.
 * ... (colunas existentes) ...
 * `reactions`: jsonb (Default: '[]') - Array de reações `{ text: "👍", actor: "jid", ts: 123 }`.
 * `poll_votes`: jsonb (Default: '[]') - Array de votos `{ voterJid: "...", selectedOptions: [...] }`.
+
+### `products` (Catálogo) [NOVO]
+Cache dos produtos sincronizados do WhatsApp Business.
+* `id`: uuid (PK)
+* `company_id`: uuid (FK)
+* `product_id`: text (ID original do WA)
+* `name`: text
+* `description`: text
+* `price`: numeric
+* `currency`: text
+* `image_url`: text
+* `is_hidden`: boolean
 
 ### `pipelines` & `pipeline_stages`
 Estrutura do Kanban.
@@ -383,3 +398,17 @@ O sistema utiliza o Supabase Storage para armazenar arquivos pesados, mantendo o
 * **Uso no Código:** O backend e frontend salvam o arquivo aqui e gravam apenas a URL pública na coluna `messages.media_url`.
 
 ---
+
+## NOTAS DE IMPLEMENTAÇÃO:
+
+### Comunidades
+Comunidades são tratadas como Contatos especiais (`is_community = true`). Grupos pertencentes a uma comunidade terão o campo `parent_jid` preenchido com o JID da comunidade.
+
+### Canais
+Canais são identificados pelo sufixo `@newsletter` no JID. Metadados específicos como número de seguidores ou função do usuário (admin/subscriber) são armazenados no campo JSONB `metadata`.
+
+### Catálogo
+A tabela `products` serve como um cache de leitura. Não editamos produtos pelo CRM para evitar violações de política do WhatsApp. A sincronização deve ser feita periodicamente ou sob demanda via botão no frontend.
+
+---
+

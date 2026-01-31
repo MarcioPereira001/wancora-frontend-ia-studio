@@ -230,7 +230,7 @@ Inicia um worker de disparo em massa para leads filtrados por tags.
 Verifica se o servidor está online.
 * **Response:** `{ "status": "online", "timestamp": "..." }`
 
-### 3.5. Gerenciamento de Comunidades (`Management Service`)
+### 3.5. Gestão Total (Grupos, Canais, Comunidades e Perfil)
 
 #### `POST /management/group/create`
 Cria um novo grupo com participantes iniciais.
@@ -249,13 +249,56 @@ Gerencia configurações e metadados.
     }
     ```
 
+#### `POST /management/community/create`
+Cria uma Comunidade (Grupo Pai) para aninhamento de subgrupos.
+* **Body:** `{ "sessionId": "string", "companyId": "uuid", "subject": "Nome da Comunidade", "description": "Descrição" }`
+
+#### `POST /management/group/create`
+Cria um grupo padrão.
+* **Body:** `{ "sessionId": "string", "companyId": "uuid", "subject": "Nome", "participants": ["5511999999999"] }`
+
 #### `POST /management/channel/create`
-Cria um novo Canal.
+Cria um novo Canal de Transmissão (Newsletter).
 * **Body:** `{ "sessionId": "string", "companyId": "uuid", "name": "Nome", "description": "Desc" }`
 
-#### `POST /management/channel/delete`
-Remove um Canal (Unfollow/Delete).
-* **Body:** `{ "sessionId": "string", "channelId": "123@newsletter" }`
+#### `POST /management/channel/search`
+Busca canais públicos no diretório do WhatsApp.
+* **Body:** `{ "sessionId": "string", "query": "Termo de busca" }`
+
+#### `POST /management/channel/follow`
+Segue um canal existente (necessário para receber updates).
+* **Body:** `{ "sessionId": "string", "companyId": "uuid", "channelJid": "123...@newsletter" }`
+
+#### `POST /management/status/post`
+Posta um Status (Story) visível para os contatos salvos.
+* **Body (Texto):** 
+  ```json
+  { 
+    "sessionId": "string", 
+    "type": "text", 
+    "content": "Olá mundo!", 
+    "options": { "color": "#FF0000", "font": 1 } 
+  }
+  { 
+  "sessionId": "string", 
+  "type": "image", // ou 'video'
+  "content": "https://url-da-midia.com/foto.jpg", 
+  "options": { "caption": "Legenda" } 
+}```
+
+#### POST /management/profile/update
+Atualiza dados da própria instância.
+```json
+{ 
+  "sessionId": "string", 
+  "action": "name", // 'name', 'status' ou 'picture'
+  "value": "Novo Nome ou URL da Imagem" 
+}```
+
+#### POST /management/catalog/sync
+Força a sincronização dos produtos do WhatsApp Business para o banco de dados (Tabela products).
+**Body:** { "sessionId": "string", "companyId": "uuid" }
+
 
 ### 3.6. Tratamento de Canais (Newsletters)
 - O sistema identifica automaticamente JIDs com sufixo `@newsletter`.
