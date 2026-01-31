@@ -32,16 +32,19 @@ export function useChatList() {
 
           if (rpcError) throw rpcError;
 
+          // Mapeamento Defensivo (Blindagem contra Nulls)
           const formatted: ChatContact[] = (data || []).map((row: any) => ({
               ...row,
               id: row.jid, // Usa JID como ID único
+              remote_jid: row.jid, // FIX CRÍTICO: RPC retorna 'jid', a interface espera 'remote_jid'
               last_message_time: row.last_message_at,
-              phone_number: row.phone_number || row.remote_jid?.split('@')[0],
+              phone_number: row.phone_number || (row.jid ? row.jid.split('@')[0] : ''),
               name: row.name || null,
-              is_community: row.is_community || false // Mapeamento Explícito
+              is_community: row.is_community || false,
+              lead_tags: row.lead_tags || []
           }));
 
-          setContacts(formatted); // Já vem ordenado do SQL, mas o React pode precisar reordenar nos updates
+          setContacts(formatted); 
           setError(null);
       } catch (e: any) {
           console.error("ChatList Error:", e.message);
@@ -71,11 +74,9 @@ export function useChatList() {
           if (payload.eventType === 'UPDATE') {
               const updatedRow = payload.new;
               setContacts(prev => {
-                  // Encontra o item existente para preservar dados que não vieram no payload
                   const existingIndex = prev.findIndex(c => c.jid === updatedRow.jid);
                   const existing = existingIndex >= 0 ? prev[existingIndex] : null;
 
-                  // Se o contato foi "ignorado" (removido do CRM), remove da lista
                   if (updatedRow.is_ignored) {
                       return prev.filter(c => c.jid !== updatedRow.jid);
                   }
@@ -84,31 +85,28 @@ export function useChatList() {
                       ...(existing || {}),
                       id: updatedRow.jid,
                       jid: updatedRow.jid,
+                      remote_jid: updatedRow.jid, // FIX CRÍTICO
                       company_id: updatedRow.company_id,
-                      remote_jid: updatedRow.jid,
-                      // Lógica de fallback visual
                       name: updatedRow.name || updatedRow.verified_name || updatedRow.push_name || existing?.name,
                       push_name: updatedRow.push_name,
                       unread_count: updatedRow.unread_count,
-                      last_message_at: updatedRow.last_message_at, // O Trigger do banco atualiza isso
+                      last_message_at: updatedRow.last_message_at,
                       last_message_time: updatedRow.last_message_at,
                       profile_pic_url: updatedRow.profile_pic_url,
                       is_muted: updatedRow.is_muted,
                       is_online: updatedRow.is_online,
-                      phone_number: updatedRow.phone || existing?.phone_number || '',
+                      phone_number: updatedRow.phone || existing?.phone_number || updatedRow.jid.split('@')[0],
                       is_group: updatedRow.jid.includes('@g.us'),
                       is_newsletter: updatedRow.jid.includes('@newsletter'),
                       is_community: updatedRow.is_community || false,
                       is_business: updatedRow.is_business
                   };
 
-                  // Remove versão antiga e adiciona nova
                   const filtered = prev.filter(c => c.jid !== updatedRow.jid);
-                  // Reordena tudo
                   return sortContacts([newItem, ...filtered]);
               });
           } else if (payload.eventType === 'INSERT') {
-              refreshList(); // Novo contato requer dados do Lead (Join), melhor recarregar
+              refreshList(); 
           }
       })
       .subscribe();
@@ -126,7 +124,7 @@ export function useChatList() {
               const targetJid = newMsg.remote_jid;
               const existingIndex = prev.findIndex(c => c.jid === targetJid);
               
-              if (existingIndex === -1) return prev; // Se não está na lista (ex: novo contato), o Insert do contacts vai lidar
+              if (existingIndex === -1) return prev; 
 
               const contact = { ...prev[existingIndex] };
               
@@ -140,7 +138,6 @@ export function useChatList() {
                   contact.unread_count = (contact.unread_count || 0) + 1;
               }
 
-              // Remove e põe no topo
               const others = prev.filter(c => c.jid !== targetJid);
               return [contact, ...others];
           });

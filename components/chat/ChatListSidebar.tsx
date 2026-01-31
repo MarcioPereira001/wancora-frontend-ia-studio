@@ -100,8 +100,9 @@ export function ChatListSidebar() {
   const availableTags = useMemo(() => {
       const tags = new Set<string>();
       contacts.forEach(c => {
-          c.lead_tags?.forEach(t => tags.add(t));
-          if(c.stage_name) tags.add(`Fase: ${c.stage_name}`);
+          // Safe Access
+          if (Array.isArray(c.lead_tags)) c.lead_tags.forEach(t => tags.add(t));
+          if (c.stage_name) tags.add(`Fase: ${c.stage_name}`);
       });
       return Array.from(tags).sort();
   }, [contacts]);
@@ -134,6 +135,8 @@ export function ChatListSidebar() {
 
   const filteredContacts = useMemo(() => {
       let list = currentList.filter(contact => {
+          if (!contact) return false;
+          
           const displayName = getDisplayName(contact).toLowerCase();
           const phone = (contact.phone_number || '').toLowerCase();
           const search = searchTerm.toLowerCase();
@@ -142,10 +145,11 @@ export function ChatListSidebar() {
           if (!matchesSearch) return false;
 
           if (viewMode === 'active') {
-              if (filterType === 'communities' && !contact.is_community) return false; // Filtro Estrito para Comunidades
+              if (filterType === 'communities' && !contact.is_community) return false;
               if (filterType === 'channels' && !contact.is_newsletter) return false;
               if (filterType === 'unread' && contact.unread_count === 0) return false;
               if (filterType === 'status') return false;
+              // Oculta canais na lista 'all' para não poluir
               if ((filterType === 'all' || filterType === 'unread') && contact.is_newsletter) return false;
 
               if (tagFilter !== 'all') {
