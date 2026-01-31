@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { FileText, MapPin, Download, PlayCircle, Image as ImageIcon, Film, User, Copy, QrCode, DollarSign, CheckCircle2, AlertCircle, Sticker, AlertTriangle, ZoomIn, X } from "lucide-react";
+import { FileText, MapPin, Download, PlayCircle, Image as ImageIcon, Film, User, Copy, QrCode, DollarSign, CheckCircle2, AlertCircle, Sticker, AlertTriangle, ZoomIn, X, Captions } from "lucide-react";
 import { Message } from "@/types";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/useToast";
@@ -29,6 +29,9 @@ export function MessageContent({ message }: MessageContentProps) {
   let content = message.content || message.body || "";
   const type = (message.message_type || 'text') as string;
   const isMe = message.from_me;
+  
+  // Transcrição vinda do banco (coluna nova)
+  const transcription = (message as any).transcription;
 
   const handleCopy = (text: string) => {
       navigator.clipboard.writeText(text);
@@ -109,48 +112,57 @@ export function MessageContent({ message }: MessageContentProps) {
     );
   }
 
-  // --- 2. ÁUDIO (Com Avatar) ---
+  // --- 2. ÁUDIO (Com Avatar + Transcrição) ---
   if (type === 'audio' || type === 'ptt' || type === 'voice') {
-    // Determina o avatar a exibir no player
-    const avatarUrl = isMe 
-        ? user?.avatar_url 
-        : message.contact?.profile_pic_url;
+    const avatarUrl = isMe ? user?.avatar_url : message.contact?.profile_pic_url;
 
     return (
-      <div className={cn(
-          "flex items-center gap-3 min-w-[260px] mt-1 p-2 rounded-lg border transition-all",
-          isMe ? "bg-primary/20 border-primary/30" : "bg-zinc-800/80 border-zinc-700"
-      )}>
-        <div className="relative shrink-0">
-            <div className={cn(
-                "w-12 h-12 rounded-full flex items-center justify-center border-2 overflow-hidden",
-                isMe ? "border-primary/50 bg-primary/20" : "border-zinc-600 bg-zinc-700"
-            )}>
-                {avatarUrl ? (
-                    <img src={avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+      <div className="flex flex-col">
+        <div className={cn(
+            "flex items-center gap-3 min-w-[260px] mt-1 p-2 rounded-lg border transition-all",
+            isMe ? "bg-primary/20 border-primary/30" : "bg-zinc-800/80 border-zinc-700"
+        )}>
+            <div className="relative shrink-0">
+                <div className={cn(
+                    "w-12 h-12 rounded-full flex items-center justify-center border-2 overflow-hidden",
+                    isMe ? "border-primary/50 bg-primary/20" : "border-zinc-600 bg-zinc-700"
+                )}>
+                    {avatarUrl ? (
+                        <img src={avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+                    ) : (
+                        <User className={cn("w-6 h-6", isMe ? "text-primary" : "text-zinc-400")} />
+                    )}
+                </div>
+                <div className="absolute -bottom-1 -right-1 bg-zinc-900 rounded-full border border-zinc-700 p-0.5">
+                {mediaUrl ? <PlayCircle className="w-4 h-4 text-green-500" /> : <AlertTriangle className="w-4 h-4 text-red-500" />}
+                </div>
+            </div>
+            
+            <div className="flex-1 flex flex-col justify-center overflow-hidden">
+                {mediaUrl ? (
+                    <audio controls className="h-8 w-full max-w-[200px] opacity-90 scale-95 origin-left" controlsList="nodownload">
+                        <source src={mediaUrl} type="audio/ogg" />
+                        <source src={mediaUrl} type="audio/mp4" />
+                        <source src={mediaUrl} type="audio/mpeg" />
+                    </audio>
                 ) : (
-                    <User className={cn("w-6 h-6", isMe ? "text-primary" : "text-zinc-400")} />
+                    <div className="flex items-center gap-1 text-xs text-zinc-500">
+                        <span className="italic">Áudio não disponível</span>
+                    </div>
                 )}
             </div>
-            {/* Ícone de Play sobreposto (opcional, ou mantido separado se preferir) */}
-            <div className="absolute -bottom-1 -right-1 bg-zinc-900 rounded-full border border-zinc-700 p-0.5">
-               {mediaUrl ? <PlayCircle className="w-4 h-4 text-green-500" /> : <AlertTriangle className="w-4 h-4 text-red-500" />}
+        </div>
+
+        {/* TRANSCRIÇÃO */}
+        {transcription && (
+            <div className={cn(
+                "mt-1 p-2 rounded-md text-xs leading-relaxed border flex gap-2 max-w-[280px]",
+                isMe ? "bg-primary/5 border-primary/10 text-emerald-100" : "bg-zinc-800/50 border-zinc-700 text-zinc-300"
+            )}>
+                <Captions className="w-3 h-3 mt-0.5 opacity-50 shrink-0" />
+                <span className="italic">"{transcription}"</span>
             </div>
-        </div>
-        
-        <div className="flex-1 flex flex-col justify-center overflow-hidden">
-            {mediaUrl ? (
-                <audio controls className="h-8 w-full max-w-[200px] opacity-90 scale-95 origin-left" controlsList="nodownload">
-                    <source src={mediaUrl} type="audio/ogg" />
-                    <source src={mediaUrl} type="audio/mp4" />
-                    <source src={mediaUrl} type="audio/mpeg" />
-                </audio>
-            ) : (
-                <div className="flex items-center gap-1 text-xs text-zinc-500">
-                    <span className="italic">Áudio não disponível</span>
-                </div>
-            )}
-        </div>
+        )}
       </div>
     );
   }
