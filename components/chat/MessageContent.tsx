@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { FileText, MapPin, Download, PlayCircle, Image as ImageIcon, Film, User, Copy, QrCode, DollarSign, CheckCircle2, AlertCircle, Sticker, AlertTriangle, ZoomIn, X, Captions } from "lucide-react";
+import { FileText, MapPin, Download, PlayCircle, Image as ImageIcon, Film, User, Copy, ShoppingBag, CheckCircle2, AlertCircle, Sticker, AlertTriangle, ZoomIn, X, Captions } from "lucide-react";
 import { Message } from "@/types";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/useToast";
@@ -30,13 +30,7 @@ export function MessageContent({ message }: MessageContentProps) {
   const type = (message.message_type || 'text') as string;
   const isMe = message.from_me;
   
-  // Transcrição vinda do banco (coluna nova)
   const transcription = (message as any).transcription;
-
-  const handleCopy = (text: string) => {
-      navigator.clipboard.writeText(text);
-      addToast({ type: 'success', title: 'Copiado!', message: 'Chave Pix copiada.' });
-  };
 
   const getMapEmbedUrl = (lat: number, lng: number) => {
       const bboxDelta = 0.002; 
@@ -44,7 +38,6 @@ export function MessageContent({ message }: MessageContentProps) {
       return `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${lat},${lng}`;
   };
 
-  // --- 9. ENQUETE (POLL) ---
   if (type === 'poll') {
       return <PollBubble message={message} isMe={isMe} />;
   }
@@ -112,7 +105,7 @@ export function MessageContent({ message }: MessageContentProps) {
     );
   }
 
-  // --- 2. ÁUDIO (Com Avatar + Transcrição) ---
+  // --- 2. ÁUDIO ---
   if (type === 'audio' || type === 'ptt' || type === 'voice') {
     const avatarUrl = isMe ? user?.avatar_url : message.contact?.profile_pic_url;
 
@@ -152,8 +145,6 @@ export function MessageContent({ message }: MessageContentProps) {
                 )}
             </div>
         </div>
-
-        {/* TRANSCRIÇÃO */}
         {transcription && (
             <div className={cn(
                 "mt-1 p-2 rounded-md text-xs leading-relaxed border flex gap-2 max-w-[280px]",
@@ -251,17 +242,9 @@ export function MessageContent({ message }: MessageContentProps) {
   if (type === 'location') {
     let lat: number | null = null;
     let long: number | null = null;
-
     try {
         const parsed = typeof content === 'string' && content.startsWith('{') ? JSON.parse(content) : {};
-        if(parsed.latitude && parsed.longitude) {
-            lat = parsed.latitude;
-            long = parsed.longitude;
-        } else if (typeof content === 'string' && content.includes('Loc:')) {
-             const parts = content.replace('Loc:', '').split(',');
-             lat = parseFloat(parts[0]);
-             long = parseFloat(parts[1]);
-        }
+        if(parsed.latitude && parsed.longitude) { lat = parsed.latitude; long = parsed.longitude; }
     } catch(e) {}
 
     const mapsUrl = lat && long ? `https://www.google.com/maps?q=${lat},${long}` : '#';
@@ -271,37 +254,16 @@ export function MessageContent({ message }: MessageContentProps) {
           <a href={mapsUrl} target="_blank" rel="noopener noreferrer" className="block relative overflow-hidden rounded-xl border border-zinc-800/50 group w-[260px] hover:border-primary/50 transition-colors shadow-sm bg-zinc-900">
             <div className="h-36 w-full relative overflow-hidden bg-[#e5e7eb]">
                 {lat && long ? (
-                    <>
-                        <iframe 
-                            width="100%" 
-                            height="100%" 
-                            frameBorder="0" 
-                            scrolling="no" 
-                            marginHeight={0} 
-                            marginWidth={0} 
-                            src={getMapEmbedUrl(lat, long)}
-                            className="pointer-events-none opacity-90 scale-110"
-                        />
-                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none pb-4">
-                             <MapPin className="w-8 h-8 text-red-600 drop-shadow-md animate-bounce" fill="currentColor" />
-                        </div>
-                    </>
+                    <iframe width="100%" height="100%" frameBorder="0" scrolling="no" src={getMapEmbedUrl(lat, long)} className="pointer-events-none opacity-90 scale-110" />
                 ) : (
-                    <div className="absolute inset-0 flex items-center justify-center bg-zinc-800 text-zinc-500">
-                        <MapPin className="w-8 h-8 opacity-20" />
-                    </div>
+                    <div className="absolute inset-0 flex items-center justify-center bg-zinc-800 text-zinc-500"><MapPin className="w-8 h-8 opacity-20" /></div>
                 )}
             </div>
-            
             <div className={cn("p-3 flex items-center gap-3 bg-zinc-800/80 backdrop-blur-sm border-t border-white/5")}>
-                <div className="w-10 h-10 rounded-full bg-zinc-700/50 flex items-center justify-center shrink-0">
-                    <MapPin className="w-5 h-5 text-green-500" />
-                </div>
+                <div className="w-10 h-10 rounded-full bg-zinc-700/50 flex items-center justify-center shrink-0"><MapPin className="w-5 h-5 text-green-500" /></div>
                 <div className="flex flex-col min-w-0">
-                    <span className="font-bold text-sm text-zinc-100 truncate">Localização Atual</span>
-                    <span className="text-xs text-zinc-400 truncate font-mono">
-                        {lat ? `${lat.toFixed(6)}, ${long?.toFixed(6)}` : 'Processando...'}
-                    </span>
+                    <span className="font-bold text-sm text-zinc-100 truncate">Localização</span>
+                    <span className="text-xs text-zinc-400 truncate font-mono">{lat ? `${lat.toFixed(6)}, ${long?.toFixed(6)}` : '...'}</span>
                 </div>
             </div>
           </a>
@@ -315,82 +277,44 @@ export function MessageContent({ message }: MessageContentProps) {
       try {
           if(content.startsWith('{')) {
              const parsed = JSON.parse(content);
-             contactData.displayName = parsed.displayName || parsed.name || 'Contato';
+             contactData.displayName = parsed.displayName || 'Contato';
              contactData.vcard = parsed.vcard || '';
              contactData.phone = parsed.phone || '';
-          } else {
-             const parts = content.split('|');
-             contactData.displayName = parts[0] || 'Contato';
-             contactData.vcard = parts[1] || '';
           }
       } catch(e) {}
-
-      if (!contactData.phone && contactData.vcard) {
-          const match = contactData.vcard.match(/TEL.*:(.*)/);
-          if (match) contactData.phone = match[1];
-      }
 
       return (
           <div className={cn(
               "flex items-center gap-3 p-3 mt-1 rounded-lg border min-w-[240px]",
               isMe ? "bg-primary/10 border-primary/20" : "bg-zinc-800 border-zinc-700"
           )}>
-              <div className="w-10 h-10 rounded-full bg-zinc-500/20 flex items-center justify-center text-zinc-300">
-                  <User className="w-5 h-5" />
-              </div>
+              <div className="w-10 h-10 rounded-full bg-zinc-500/20 flex items-center justify-center text-zinc-300"><User className="w-5 h-5" /></div>
               <div className="flex-1 min-w-0">
                   <p className="font-bold text-sm truncate text-blue-400">{contactData.displayName}</p>
                   <p className="text-xs opacity-70 truncate">{contactData.phone || 'Ver detalhes'}</p>
               </div>
-              <button 
-                className="p-2 hover:bg-white/10 rounded-full transition-colors text-primary"
-                title="Salvar Contato"
-              >
-                  <span className="text-xs font-bold px-2 py-1 bg-primary/20 rounded border border-primary/30">Salvar</span>
-              </button>
           </div>
       );
   }
 
-  // --- 8. PIX ---
-  const isExplicitPix = type === 'pix';
-  const isTextPix = type === 'text' && typeof content === 'string' && (content.startsWith('Chave Pix:') || content.includes('PIX'));
-
-  if (isExplicitPix || isTextPix) {
-      const pixKey = content.replace(/Chave Pix:|PIX:/gi, '').trim();
-      
+  // --- 8. PRODUTO (NOVO) ---
+  if (type === 'product') {
+      let title = content || "Produto";
       return (
-          <div className="mt-1 min-w-[280px] bg-[#0f172a] rounded-xl overflow-hidden border border-emerald-500/30 shadow-[0_0_20px_rgba(16,185,129,0.15)] relative">
-              <div className="bg-emerald-600 px-4 py-3 flex items-center gap-2">
-                  <QrCode className="w-5 h-5 text-white" />
-                  <span className="font-bold text-white text-sm">Pix Copia e Cola</span>
-                  <div className="ml-auto bg-white/20 p-1 rounded">
-                      <DollarSign className="w-3 h-3 text-white" />
-                  </div>
+          <div className="mt-1 w-[260px] bg-zinc-900 border border-zinc-700 rounded-xl overflow-hidden relative group">
+              <div className="h-32 bg-zinc-800 relative">
+                  {mediaUrl ? (
+                      <img src={mediaUrl} className="w-full h-full object-cover" />
+                  ) : (
+                      <div className="w-full h-full flex items-center justify-center text-zinc-600"><ShoppingBag className="w-8 h-8" /></div>
+                  )}
               </div>
-              
-              <div className="p-4 space-y-3">
-                  <div className="space-y-1">
-                      <p className="text-[10px] text-zinc-400 uppercase tracking-wider font-bold">Chave de Pagamento</p>
-                      <div className="relative group">
-                          <div className="bg-black/30 border border-zinc-700 rounded-lg p-3 font-mono text-sm text-emerald-400 break-all select-all">
-                              {pixKey}
-                          </div>
-                      </div>
-                  </div>
-                  
-                  <button 
-                    onClick={() => handleCopy(pixKey)} 
-                    className="w-full flex items-center justify-center gap-2 bg-emerald-600/10 hover:bg-emerald-600/20 border border-emerald-600/50 text-emerald-500 font-bold py-2.5 rounded-lg transition-all active:scale-95 group"
-                  >
-                      <Copy className="w-4 h-4 group-hover:animate-pulse" />
-                      COPIAR CHAVE
-                  </button>
+              <div className="p-3">
+                  <h4 className="font-bold text-white text-sm truncate">{title}</h4>
+                  <p className="text-xs text-zinc-400 mt-1">Ver no WhatsApp</p>
               </div>
-              
-              <div className="bg-emerald-950/30 px-4 py-2 text-[10px] text-zinc-500 flex items-center justify-center gap-1 border-t border-emerald-900/30">
-                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                  Pagamento instantâneo e seguro
+              <div className="absolute top-2 right-2 bg-black/50 p-1 rounded text-white">
+                  <ShoppingBag className="w-4 h-4" />
               </div>
           </div>
       );

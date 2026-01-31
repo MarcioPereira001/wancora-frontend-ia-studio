@@ -37,7 +37,8 @@ export function useChatList() {
               id: row.jid, // Usa JID como ID único
               last_message_time: row.last_message_at,
               phone_number: row.phone_number || row.remote_jid?.split('@')[0],
-              name: row.name || null
+              name: row.name || null,
+              is_community: row.is_community || false // Mapeamento Explícito
           }));
 
           setContacts(formatted); // Já vem ordenado do SQL, mas o React pode precisar reordenar nos updates
@@ -97,6 +98,7 @@ export function useChatList() {
                       phone_number: updatedRow.phone || existing?.phone_number || '',
                       is_group: updatedRow.jid.includes('@g.us'),
                       is_newsletter: updatedRow.jid.includes('@newsletter'),
+                      is_community: updatedRow.is_community || false,
                       is_business: updatedRow.is_business
                   };
 

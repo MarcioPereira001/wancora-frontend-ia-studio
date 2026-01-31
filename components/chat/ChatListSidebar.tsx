@@ -31,14 +31,10 @@ export function ChatListSidebar() {
   
   const [searchTerm, setSearchTerm] = useState('');
   
-  // NOVAS ABAS DE FILTRO
   const [filterType, setFilterType] = useState<'all' | 'unread' | 'communities' | 'channels' | 'status'>('all');
-  
   const [tagFilter, setTagFilter] = useState<string>('all');
   const [showTagDropdown, setShowTagDropdown] = useState(false);
-  const [showScrollTop, setShowScrollTop] = useState(false);
   
-  // View Mode: 'active' | 'archived'
   const [viewMode, setViewMode] = useState<'active' | 'archived'>('active');
   const [archivedContacts, setArchivedContacts] = useState<ChatContact[]>([]);
   const [loadingArchived, setLoadingArchived] = useState(false);
@@ -59,7 +55,6 @@ export function ChatListSidebar() {
   const tagDropdownRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
-  // Click Outside
   useEffect(() => {
       const handleClickOutside = (event: MouseEvent) => {
           if (tagDropdownRef.current && !tagDropdownRef.current.contains(event.target as Node)) {
@@ -70,7 +65,6 @@ export function ChatListSidebar() {
       return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [showTagDropdown]);
 
-  // Carregar Arquivados
   const loadArchived = async () => {
       if(!user?.company_id) return;
       setLoadingArchived(true);
@@ -136,7 +130,6 @@ export function ChatListSidebar() {
       } catch (e) {}
   };
 
-  // Lógica de Filtro Principal
   const currentList = viewMode === 'active' ? contacts : archivedContacts;
 
   const filteredContacts = useMemo(() => {
@@ -149,12 +142,10 @@ export function ChatListSidebar() {
           if (!matchesSearch) return false;
 
           if (viewMode === 'active') {
-              if (filterType === 'communities' && !contact.is_group) return false; // Por enquanto, grupos e comunidades dividem lógica
+              if (filterType === 'communities' && !contact.is_community) return false; // Filtro Estrito para Comunidades
               if (filterType === 'channels' && !contact.is_newsletter) return false;
               if (filterType === 'unread' && contact.unread_count === 0) return false;
-              if (filterType === 'status') return false; // Status tem view própria
-              
-              // Se não for canal nem comunidade, esconde eles das abas normais (All/Unread)
+              if (filterType === 'status') return false;
               if ((filterType === 'all' || filterType === 'unread') && contact.is_newsletter) return false;
 
               if (tagFilter !== 'all') {
@@ -174,15 +165,10 @@ export function ChatListSidebar() {
   return (
     <div className="w-80 md:w-96 flex flex-col border-r border-zinc-800 bg-zinc-900/50 backdrop-blur-md h-full relative">
         
-        {/* HEADER: PERFIL & AÇÕES */}
+        {/* HEADER */}
         <div className="p-4 border-b border-zinc-800 shrink-0 space-y-3 bg-zinc-900/80 z-20">
             <div className="flex items-center justify-between">
-                
-                {/* MENU DE PERFIL (Novo Local) */}
-                <button 
-                    onClick={() => setIsProfileModalOpen(true)}
-                    className="flex items-center gap-3 hover:bg-zinc-800 p-2 -ml-2 rounded-lg transition-colors group"
-                >
+                <button onClick={() => setIsProfileModalOpen(true)} className="flex items-center gap-3 hover:bg-zinc-800 p-2 -ml-2 rounded-lg transition-colors group">
                     <div className="w-9 h-9 rounded-full bg-zinc-800 border border-zinc-700 overflow-hidden relative">
                         {selectedInstance?.profile_pic_url ? (
                             <img src={selectedInstance.profile_pic_url} className="w-full h-full object-cover" />
@@ -191,9 +177,6 @@ export function ChatListSidebar() {
                                 {selectedInstance?.name?.charAt(0) || 'E'}
                             </div>
                         )}
-                        <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                            <Users className="w-4 h-4 text-white" />
-                        </div>
                     </div>
                     <div className="flex flex-col items-start">
                         <span className="text-sm font-bold text-white leading-none">Perfil & Config</span>
@@ -201,38 +184,23 @@ export function ChatListSidebar() {
                     </div>
                 </button>
 
-                {/* BOTÕES DE AÇÃO */}
                 <div className="flex gap-1 relative">
                     <Button variant="ghost" size="icon" title="Atualizar Lista" onClick={handleManualRefresh} disabled={isRefreshing} className="text-zinc-400 hover:text-white">
                         <RefreshCw className={cn("w-4 h-4", isRefreshing && "animate-spin")} />
                     </Button>
-                    <Button 
-                        size="icon" 
-                        title="Criar Novo" 
-                        onClick={() => setShowCreateMenu(!showCreateMenu)}
-                        className={cn("bg-primary hover:bg-primary/90 text-white w-9 h-9 rounded-full shadow-lg shadow-green-500/20 transition-transform", showCreateMenu ? "rotate-45" : "")}
-                    >
+                    <Button size="icon" onClick={() => setShowCreateMenu(!showCreateMenu)} className="bg-primary hover:bg-primary/90 text-white w-9 h-9 rounded-full">
                         <Plus className="w-5 h-5" />
                     </Button>
                     
-                    {/* Create Menu Dropdown */}
                     {showCreateMenu && (
                         <>
                             <div className="fixed inset-0 z-40" onClick={() => setShowCreateMenu(false)} />
                             <div className="absolute right-0 top-12 z-50 bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl w-52 animate-in fade-in zoom-in-95 origin-top-right ring-1 ring-white/10">
                                 <div className="p-1">
-                                    <button onClick={() => { setIsNewChatModalOpen(true); setShowCreateMenu(false); }} className="w-full text-left px-3 py-2.5 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-white flex items-center gap-3 rounded-lg">
-                                        <div className="p-1.5 bg-blue-500/10 text-blue-400 rounded-md"><MessageSquare className="w-4 h-4" /></div> Nova Conversa
-                                    </button>
-                                    <button onClick={() => { setIsCommunityModalOpen(true); setShowCreateMenu(false); }} className="w-full text-left px-3 py-2.5 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-white flex items-center gap-3 rounded-lg">
-                                        <div className="p-1.5 bg-orange-500/10 text-orange-400 rounded-md"><Globe className="w-4 h-4" /></div> Criar Comunidade
-                                    </button>
-                                    <button onClick={() => { setIsGroupModalOpen(true); setShowCreateMenu(false); }} className="w-full text-left px-3 py-2.5 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-white flex items-center gap-3 rounded-lg">
-                                        <div className="p-1.5 bg-green-500/10 text-green-400 rounded-md"><Users className="w-4 h-4" /></div> Novo Grupo
-                                    </button>
-                                    <button onClick={() => { setIsChannelModalOpen(true); setShowCreateMenu(false); }} className="w-full text-left px-3 py-2.5 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-white flex items-center gap-3 rounded-lg">
-                                        <div className="p-1.5 bg-purple-500/10 text-purple-400 rounded-md"><Megaphone className="w-4 h-4" /></div> Novo Canal
-                                    </button>
+                                    <button onClick={() => { setIsNewChatModalOpen(true); setShowCreateMenu(false); }} className="w-full text-left px-3 py-2.5 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-white flex items-center gap-3 rounded-lg"><div className="p-1.5 bg-blue-500/10 text-blue-400 rounded-md"><MessageSquare className="w-4 h-4" /></div> Nova Conversa</button>
+                                    <button onClick={() => { setIsCommunityModalOpen(true); setShowCreateMenu(false); }} className="w-full text-left px-3 py-2.5 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-white flex items-center gap-3 rounded-lg"><div className="p-1.5 bg-orange-500/10 text-orange-400 rounded-md"><Globe className="w-4 h-4" /></div> Criar Comunidade</button>
+                                    <button onClick={() => { setIsGroupModalOpen(true); setShowCreateMenu(false); }} className="w-full text-left px-3 py-2.5 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-white flex items-center gap-3 rounded-lg"><div className="p-1.5 bg-green-500/10 text-green-400 rounded-md"><Users className="w-4 h-4" /></div> Novo Grupo</button>
+                                    <button onClick={() => { setIsChannelModalOpen(true); setShowCreateMenu(false); }} className="w-full text-left px-3 py-2.5 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-white flex items-center gap-3 rounded-lg"><div className="p-1.5 bg-purple-500/10 text-purple-400 rounded-md"><Megaphone className="w-4 h-4" /></div> Novo Canal</button>
                                 </div>
                             </div>
                         </>
@@ -240,84 +208,77 @@ export function ChatListSidebar() {
                 </div>
             </div>
             
-            {/* SEARCH */}
+            {/* SEARCH & TAG FILTER UNIFICADO */}
             {filterType !== 'status' && (
-                <div className="relative group">
-                    <Search className="absolute left-3 top-2.5 w-4 h-4 text-zinc-500 group-focus-within:text-primary transition-colors" />
-                    <Input 
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        placeholder="Buscar..."
-                        className="pl-9 bg-zinc-950 border-zinc-800 focus:border-primary/50 h-9 text-sm transition-all"
-                    />
+                <div className="flex gap-2">
+                    <div className="relative group flex-1">
+                        <Search className="absolute left-3 top-2.5 w-4 h-4 text-zinc-500 group-focus-within:text-primary transition-colors" />
+                        <Input 
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            placeholder="Buscar..."
+                            className="pl-9 bg-zinc-950 border-zinc-800 focus:border-primary/50 h-9 text-sm transition-all"
+                        />
+                    </div>
+
+                    <div className="relative shrink-0" ref={tagDropdownRef}>
+                        <button 
+                            onClick={() => setShowTagDropdown(!showTagDropdown)}
+                            className={cn(
+                                "h-9 w-9 rounded-lg border transition-colors flex items-center justify-center", 
+                                tagFilter !== 'all' ? "bg-primary/20 border-primary text-primary" : "bg-zinc-900 border-zinc-800 text-zinc-500 hover:text-white hover:bg-zinc-800"
+                            )}
+                            title="Filtrar por Etiqueta"
+                        >
+                            <Filter className="w-4 h-4" />
+                        </button>
+                        {showTagDropdown && (
+                            <div className="absolute right-0 top-10 z-50 w-56 bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl animate-in zoom-in-95 p-1 max-h-64 overflow-y-auto custom-scrollbar ring-1 ring-white/10">
+                                <div className="px-2 py-1.5 text-[10px] font-bold text-zinc-500 uppercase tracking-wider sticky top-0 bg-zinc-900 z-10">Etiquetas</div>
+                                <button onClick={() => { setTagFilter('all'); setShowTagDropdown(false); }} className={cn("w-full text-left px-3 py-2 text-xs rounded-md transition-colors", tagFilter === 'all' ? "bg-primary/10 text-primary" : "text-zinc-300 hover:bg-zinc-800")}>Todas</button>
+                                {availableTags.map(tag => (
+                                    <button key={tag} onClick={() => { setTagFilter(tag); setShowTagDropdown(false); }} className={cn("w-full text-left px-3 py-2 text-xs rounded-md transition-colors flex items-center gap-2", tagFilter === tag ? "bg-primary/10 text-primary" : "text-zinc-300 hover:bg-zinc-800")}>
+                                        <Tag className="w-3 h-3 opacity-50" /> <span className="truncate">{tag}</span>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
                 </div>
             )}
 
-            {/* FILTER TABS (ABAS) */}
+            {/* FILTER TABS (ABAS RESPONSIVAS) */}
             {viewMode === 'active' && (
-                <div className="flex items-center gap-2">
-                    <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide flex-1">
-                        {[
-                            { id: 'all', label: 'Todas' },
-                            { id: 'unread', label: 'Não Lidas' },
-                            { id: 'communities', label: 'Comunidades' },
-                            { id: 'channels', label: 'Canais' },
-                            { id: 'status', label: 'Status' }
-                        ].map(tab => (
-                            <button 
-                                key={tab.id}
-                                onClick={() => setFilterType(tab.id as any)} 
-                                className={cn(
-                                    "px-3 py-1 rounded-full text-[10px] font-bold border transition-colors whitespace-nowrap capitalize select-none", 
-                                    filterType === tab.id 
-                                        ? "bg-zinc-100 text-zinc-900 border-zinc-100" 
-                                        : "bg-zinc-900/50 text-zinc-400 border-zinc-800 hover:border-zinc-700 hover:text-white"
-                                )}
-                            >
-                                {tab.label}
-                            </button>
-                        ))}
-                    </div>
-                    
-                    {/* Tag Filter (Só aparece nas abas de chat) */}
-                    {filterType !== 'status' && (
-                        <div className="relative" ref={tagDropdownRef}>
-                            <button 
-                                onClick={() => setShowTagDropdown(!showTagDropdown)}
-                                className={cn(
-                                    "p-1.5 rounded-lg border transition-colors flex items-center justify-center gap-1 min-w-[32px]", 
-                                    tagFilter !== 'all' ? "bg-primary/20 border-primary text-primary" : "bg-zinc-900 border-zinc-800 text-zinc-500 hover:text-white"
-                                )}
-                                title="Filtrar por Etiqueta"
-                            >
-                                <Filter className="w-4 h-4" />
-                            </button>
-                            {showTagDropdown && (
-                                <div className="absolute right-0 top-9 z-50 w-56 bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl animate-in zoom-in-95 p-1 max-h-64 overflow-y-auto custom-scrollbar ring-1 ring-white/10">
-                                    <div className="px-2 py-1.5 text-[10px] font-bold text-zinc-500 uppercase tracking-wider sticky top-0 bg-zinc-900 z-10">Etiquetas</div>
-                                    <button onClick={() => { setTagFilter('all'); setShowTagDropdown(false); }} className={cn("w-full text-left px-3 py-2 text-xs rounded-md transition-colors", tagFilter === 'all' ? "bg-primary/10 text-primary" : "text-zinc-300 hover:bg-zinc-800")}>Todas</button>
-                                    {availableTags.map(tag => (
-                                        <button key={tag} onClick={() => { setTagFilter(tag); setShowTagDropdown(false); }} className={cn("w-full text-left px-3 py-2 text-xs rounded-md transition-colors flex items-center gap-2", tagFilter === tag ? "bg-primary/10 text-primary" : "text-zinc-300 hover:bg-zinc-800")}>
-                                            <Tag className="w-3 h-3 opacity-50" /> <span className="truncate">{tag}</span>
-                                        </button>
-                                    ))}
-                                </div>
+                <div className="flex flex-wrap gap-2">
+                    {[
+                        { id: 'all', label: 'Todas' },
+                        { id: 'unread', label: 'Não Lidas' },
+                        { id: 'communities', label: 'Comunidades' },
+                        { id: 'channels', label: 'Canais' },
+                        { id: 'status', label: 'Status' }
+                    ].map(tab => (
+                        <button 
+                            key={tab.id}
+                            onClick={() => setFilterType(tab.id as any)} 
+                            className={cn(
+                                "px-3 py-1 rounded-full text-[10px] font-bold border transition-colors whitespace-nowrap capitalize select-none flex-grow text-center", 
+                                filterType === tab.id 
+                                    ? "bg-zinc-100 text-zinc-900 border-zinc-100" 
+                                    : "bg-zinc-900/50 text-zinc-400 border-zinc-800 hover:border-zinc-700 hover:text-white"
                             )}
-                        </div>
-                    )}
+                        >
+                            {tab.label}
+                        </button>
+                    ))}
                 </div>
             )}
         </div>
 
         {/* LIST CONTENT */}
         <div ref={listRef} className="flex-1 overflow-y-auto custom-scrollbar relative">
-            
-            {/* VIEW: STATUS */}
             {filterType === 'status' ? (
                 <StatusTab />
             ) : 
-            
-            /* VIEW: CHAT LIST (All, Communities, Channels) */
             (loading || loadingArchived) ? (
                 <div className="flex flex-col items-center justify-center h-40 gap-3">
                     <Loader2 className="w-6 h-6 animate-spin text-primary" />
@@ -331,9 +292,6 @@ export function ChatListSidebar() {
                     <p className="text-zinc-500 text-sm">
                         {filterType === 'channels' ? 'Nenhum canal seguido.' : 'Nenhuma conversa encontrada.'}
                     </p>
-                    {filterType === 'channels' && (
-                        <Button variant="outline" onClick={() => setIsChannelModalOpen(true)} className="border-dashed border-zinc-700 text-zinc-400 hover:text-white">Criar Canal</Button>
-                    )}
                 </div>
             ) : (
                 filteredContacts.map(contact => (
@@ -344,7 +302,7 @@ export function ChatListSidebar() {
                             onClick={() => setActiveContact(contact)}
                             onTag={() => contact.lead_id ? handleOpenTagModal(contact.lead_id, contact.lead_tags || []) : null}
                             onHide={() => viewMode === 'active' ? handleHideChat(contact.jid) : handleRestoreChat(contact.jid)}
-                            onDelete={() => { /* Hard Delete Logic */ }}
+                            onDelete={() => {}}
                             isArchived={viewMode === 'archived'}
                         />
                     </React.Fragment>
@@ -352,7 +310,6 @@ export function ChatListSidebar() {
             )}
         </div>
 
-        {/* Footer (Archived) */}
         {filterType !== 'status' && (
             <div className="p-3 border-t border-zinc-800 bg-zinc-900/80 backdrop-blur z-20 shrink-0">
                 <Button 
@@ -372,7 +329,6 @@ export function ChatListSidebar() {
             </div>
         )}
 
-        {/* MODAIS */}
         <UserProfileModal isOpen={isProfileModalOpen} onClose={() => setIsProfileModalOpen(false)} sessionId={selectedInstance?.session_id || 'default'} />
         <CreateCommunityModal isOpen={isCommunityModalOpen} onClose={() => setIsCommunityModalOpen(false)} sessionId={selectedInstance?.session_id || 'default'} companyId={user?.company_id || ''} />
         <CreateGroupModal isOpen={isGroupModalOpen} onClose={() => setIsGroupModalOpen(false)} sessionId={selectedInstance?.session_id || 'default'} companyId={user?.company_id || ''} existingContacts={contacts} />

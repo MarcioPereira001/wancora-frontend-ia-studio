@@ -2,7 +2,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Paperclip, Mic, Send, Trash2, Image as IconImage, FileText, Music, MapPin, User, BarChart2, DollarSign, Ban, Smile, CheckSquare, Loader2 } from 'lucide-react';
+import { Paperclip, Mic, Send, Trash2, Image as IconImage, FileText, Music, MapPin, User, BarChart2, DollarSign, Ban, Smile, CheckSquare, Loader2, Sticker, ShoppingBag } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useChatStore } from '@/store/useChatStore';
 import { useAuthStore } from '@/store/useAuthStore';
@@ -14,8 +14,9 @@ import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/input';
 import { SendMessageSchema } from '@/lib/schemas'; 
 import EmojiPicker, { Theme } from 'emoji-picker-react';
+import { CatalogModal } from './CatalogModal';
 
-const REVOKE_WINDOW_MS = 24 * 60 * 60 * 1000; // 24h para Deletar para Todos
+const REVOKE_WINDOW_MS = 24 * 60 * 60 * 1000; 
 
 export function ChatInputArea() {
   const { user } = useAuthStore();
@@ -31,33 +32,27 @@ export function ChatInputArea() {
   const mediaMenuRef = useRef<HTMLDivElement>(null);
   const emojiRef = useRef<HTMLDivElement>(null);
   
-  // Gravador Simplificado e Robusto
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   
-  // Refs de Input
   const fileInputRef = useRef<HTMLInputElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
+  const stickerInputRef = useRef<HTMLInputElement>(null);
 
-  // Modais de Anexo e Delete
-  const [activeModal, setActiveModal] = useState<'poll'|'pix'|'contact'|'location'|'delete_confirm'|null>(null);
+  const [activeModal, setActiveModal] = useState<'poll'|'contact'|'location'|'delete_confirm'|'catalog'|null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   
-  // -- ESTADOS DOS MODAIS --
   const [pollQuestion, setPollQuestion] = useState("");
   const [pollOptions, setPollOptions] = useState(["Sim", "Não"]);
-  const [pixKey, setPixKey] = useState("");
-  const [pixType, setPixType] = useState("cpf");
   const [contactName, setContactName] = useState("");
   const [contactPhone, setContactPhone] = useState("");
   const [locLat, setLocLat] = useState<number | null>(null);
   const [locLng, setLocLng] = useState<number | null>(null);
   const [locLoading, setLocLoading] = useState(false);
 
-  // 0. RESET DE ESTADO AO TROCAR DE CONVERSA
   useEffect(() => {
       setMediaMenuOpen(false);
       setEmojiPickerOpen(false);
@@ -65,7 +60,6 @@ export function ChatInputArea() {
       if (isRecording) stopRecording(true);
   }, [activeContact?.id]);
 
-  // Fecha menus ao clicar fora
   useEffect(() => {
       function handleClickOutside(event: MouseEvent) {
           if (mediaMenuRef.current && !mediaMenuRef.current.contains(event.target as Node)) {
@@ -99,6 +93,7 @@ export function ChatInputArea() {
           poll: payload.type === 'poll' ? payload.content : undefined,
           location: payload.type === 'location' ? payload.content : undefined,
           contact: payload.type === 'contact' ? payload.content : undefined,
+          product: payload.type === 'product' ? payload.content : undefined,
           mimetype: payload.mimetype,
           fileName: payload.fileName,
           ptt: payload.ptt
@@ -113,11 +108,11 @@ export function ChatInputArea() {
       const tempId = `temp-${Date.now()}`;
       let contentDisplay = payload.text;
       
-      // Ajuste visual otimista
-      if (payload.type === 'pix') contentDisplay = `Chave Pix: ${payload.text}`;
       if (payload.type === 'poll') contentDisplay = JSON.stringify(payload.content);
       if (payload.type === 'location') contentDisplay = JSON.stringify(payload.content);
       if (payload.type === 'contact') contentDisplay = JSON.stringify(payload.content);
+      if (payload.type === 'product') contentDisplay = payload.content.title || 'Produto';
+      if (payload.type === 'sticker') contentDisplay = 'Figurinha';
       if (payload.caption) contentDisplay = payload.caption;
 
       const tempMsg: Message = {
@@ -146,21 +141,22 @@ export function ChatInputArea() {
 
   const handleSendText = () => { if(input.trim()) { dispatchMessage({ type: 'text', text: input }); setInput(""); setEmojiPickerOpen(false); }};
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, forceSticker = false) => {
       const file = e.target.files?.[0];
       if (!file || !user?.company_id) return;
       
       setMediaMenuOpen(false); 
-      addToast({ type: 'info', title: 'Upload', message: 'Enviando...' });
+      addToast({ type: 'info', title: 'Upload', message: 'Processando...' });
       
       try {
           const { publicUrl, fileName } = await uploadChatMedia(file, user.company_id);
           let type = 'document';
           let ptt = false;
-          if (file.type.startsWith('image/')) type = 'image';
+          
+          if (forceSticker) type = 'sticker';
+          else if (file.type.startsWith('image/')) type = 'image';
           else if (file.type.startsWith('video/')) type = 'video';
           else if (file.type.startsWith('audio/')) { type = 'audio'; ptt = false; }
-          else if (file.type === 'image/webp') type = 'sticker'; 
 
           await dispatchMessage({ type, url: publicUrl, caption: input, fileName: fileName, mimetype: file.type, ptt: ptt }); 
           setInput("");
@@ -168,20 +164,15 @@ export function ChatInputArea() {
       finally { 
           if (fileInputRef.current) fileInputRef.current.value = ''; 
           if (audioInputRef.current) audioInputRef.current.value = '';
+          if (stickerInputRef.current) stickerInputRef.current.value = '';
       }
   };
 
   const startRecording = async () => {
       try {
           const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          
-          // COMPATIBILIDADE UNIVERSAL
-          // Preferimos MP4 (AAC) pois toca em tudo (iOS/Android/Web) e o WhatsApp aceita bem.
-          // WebM é fallback para browsers antigos.
           let mimeType = 'audio/mp4';
-          if (!MediaRecorder.isTypeSupported(mimeType)) {
-              mimeType = 'audio/webm'; // Fallback Chrome/Firefox
-          }
+          if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = 'audio/webm';
 
           const mediaRecorder = new MediaRecorder(stream, { mimeType });
           mediaRecorderRef.current = mediaRecorder;
@@ -196,13 +187,7 @@ export function ChatInputArea() {
               if (audioFile.size > 0 && user?.company_id) {
                   try {
                       const { publicUrl } = await uploadChatMedia(audioFile, user.company_id);
-                      // Enviamos como PTT = true para o backend tratar a conversão se necessário
-                      await dispatchMessage({ 
-                          type: 'audio', 
-                          url: publicUrl, 
-                          mimetype: mimeType, 
-                          ptt: true 
-                      });
+                      await dispatchMessage({ type: 'audio', url: publicUrl, mimetype: mimeType, ptt: true });
                   } catch (e) {}
               }
               stream.getTracks().forEach(track => track.stop());
@@ -217,7 +202,6 @@ export function ChatInputArea() {
   const stopRecording = (cancel = false) => {
       if (mediaRecorderRef.current && isRecording) {
           if (cancel) {
-              // Hack para não disparar o onstop com envio
               mediaRecorderRef.current.ondataavailable = null;
               mediaRecorderRef.current.onstop = null;
           }
@@ -228,13 +212,9 @@ export function ChatInputArea() {
       setRecordingTime(0);
   };
 
-  // --- LÓGICA DE DELETE EM MASSA ---
-  
   const canDeleteForEveryone = () => {
       if (selectedMsgIds.size === 0) return false;
       const selected = messages.filter(m => selectedMsgIds.has(m.id));
-      
-      // Regra: Todas devem ser minhas e ter menos de 24h
       return selected.every(m => {
           if (!m.from_me) return false;
           const msgTime = new Date(m.created_at).getTime();
@@ -246,8 +226,6 @@ export function ChatInputArea() {
       setIsDeleting(true);
       const ids = Array.from(selectedMsgIds);
       let successCount = 0;
-
-      // Executa sequencialmente para não sobrecarregar
       for (const msgId of ids) {
           const msg = messages.find(m => m.id === msgId);
           if (msg) {
@@ -263,7 +241,6 @@ export function ChatInputArea() {
               } catch (e) {}
           }
       }
-      
       addToast({ type: 'success', title: 'Concluído', message: `${successCount} mensagens apagadas.` });
       setIsDeleting(false);
       setActiveModal(null);
@@ -276,14 +253,28 @@ export function ChatInputArea() {
       return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // ... (Handlers de Poll, Pix, Contact, Location mantidos igual) ...
+  // Handlers
   const handleCreatePoll = () => { if(!pollQuestion.trim()) return; const valid = pollOptions.filter(o => o.trim().length > 0); if(valid.length < 2) return; dispatchMessage({ type: 'poll', content: { name: pollQuestion, options: valid, selectableOptionsCount: 1 } }); setPollQuestion(""); setPollOptions(["Sim", "Não"]); setActiveModal(null); };
-  const handleSendPix = () => { if(!pixKey.trim()) return; dispatchMessage({ type: 'pix', text: pixKey }); setPixKey(""); setActiveModal(null); };
   const handleSendContact = () => { if(!contactName.trim() || !contactPhone.trim()) return; const vcard = `BEGIN:VCARD\nVERSION:3.0\nFN:${contactName}\nTEL;type=CELL:${contactPhone}\nEND:VCARD`; dispatchMessage({ type: 'contact', content: { displayName: contactName, vcard, phone: contactPhone } }); setContactName(""); setContactPhone(""); setActiveModal(null); };
   const getCurrentLocation = () => { if (!navigator.geolocation) return; setLocLoading(true); navigator.geolocation.getCurrentPosition((pos) => { setLocLat(pos.coords.latitude); setLocLng(pos.coords.longitude); setLocLoading(false); }, () => setLocLoading(false), { enableHighAccuracy: true }); };
   const handleSendLocation = () => { if (locLat && locLng) { dispatchMessage({ type: 'location', content: { latitude: Number(locLat), longitude: Number(locLng) } }); setActiveModal(null); setLocLat(null); setLocLng(null); } };
+  
+  const handleSendProduct = (product: any) => {
+      dispatchMessage({ 
+          type: 'product', 
+          content: {
+              productId: product.product_id,
+              title: product.name,
+              description: product.description,
+              currencyCode: product.currency,
+              priceAmount1000: (product.price || 0) * 1000,
+              productImageCount: product.image_url ? 1 : 0
+          },
+          url: product.image_url // Passa URL para o sender tentar baixar/usar
+      });
+      setActiveModal(null);
+  };
 
-  // --- RENDERIZAÇÃO DA BARRA DE SELEÇÃO ---
   if (isMsgSelectionMode) {
       const canEveryone = canDeleteForEveryone();
       return (
@@ -295,42 +286,21 @@ export function ChatInputArea() {
               </span>
               <div className="flex gap-3">
                   <Button variant="ghost" onClick={clearSelection}>Cancelar</Button>
-                  <Button 
-                    variant="destructive" 
-                    disabled={selectedMsgIds.size === 0}
-                    onClick={() => setActiveModal('delete_confirm')}
-                    className="bg-red-500/10 text-red-500 hover:bg-red-500/20 hover:text-red-400 border border-red-500/20"
-                  >
+                  <Button variant="destructive" disabled={selectedMsgIds.size === 0} onClick={() => setActiveModal('delete_confirm')} className="bg-red-500/10 text-red-500 hover:bg-red-500/20 hover:text-red-400 border border-red-500/20">
                       <Trash2 className="w-4 h-4 mr-2" /> Apagar
                   </Button>
               </div>
           </div>
-          
-          <Modal 
-              isOpen={activeModal === 'delete_confirm'} 
-              onClose={() => setActiveModal(null)} 
-              title={`Apagar ${selectedMsgIds.size} mensagens?`}
-              maxWidth="sm"
-          >
+          <Modal isOpen={activeModal === 'delete_confirm'} onClose={() => setActiveModal(null)} title={`Apagar ${selectedMsgIds.size} mensagens?`} maxWidth="sm">
               <div className="space-y-4">
                   <p className="text-sm text-zinc-400">Escolha como deseja apagar as mensagens selecionadas:</p>
                   <div className="flex flex-col gap-2">
                       {canEveryone && (
-                          <Button 
-                              variant="destructive" 
-                              onClick={() => handleBulkDelete(true)} 
-                              disabled={isDeleting}
-                              className="w-full justify-start bg-zinc-800 hover:bg-red-900/30 text-red-400 border-zinc-700"
-                          >
+                          <Button variant="destructive" onClick={() => handleBulkDelete(true)} disabled={isDeleting} className="w-full justify-start bg-zinc-800 hover:bg-red-900/30 text-red-400 border-zinc-700">
                               <Trash2 className="w-4 h-4 mr-2" /> Apagar para todos
                           </Button>
                       )}
-                      <Button 
-                          variant="outline" 
-                          onClick={() => handleBulkDelete(false)} 
-                          disabled={isDeleting}
-                          className="w-full justify-start border-zinc-700 hover:bg-zinc-800"
-                      >
+                      <Button variant="outline" onClick={() => handleBulkDelete(false)} disabled={isDeleting} className="w-full justify-start border-zinc-700 hover:bg-zinc-800">
                           <Ban className="w-4 h-4 mr-2" /> Apagar para mim
                       </Button>
                   </div>
@@ -340,13 +310,10 @@ export function ChatInputArea() {
       );
   }
 
-  // --- RENDERIZAÇÃO PADRÃO (INPUT) ---
   return (
     <>
     <div className="p-3 md:p-4 border-t border-zinc-800 bg-zinc-900/30 backdrop-blur relative shrink-0 z-[50]">
         <div className="flex items-end gap-2 bg-zinc-950/80 border border-zinc-800 rounded-xl p-2 focus-within:ring-1 focus-within:ring-primary/50 transition-all shadow-inner relative">
-            
-            {/* Botão de Emojis */}
             <div className="relative" ref={emojiRef}>
                 <Button variant="ghost" size="icon" className={`h-9 w-9 ${emojiPickerOpen ? 'text-yellow-400' : 'text-zinc-400'} hover:text-yellow-400`} onClick={() => { setEmojiPickerOpen(!emojiPickerOpen); setMediaMenuOpen(false); }}>
                     <Smile className="h-5 w-5" />
@@ -358,19 +325,25 @@ export function ChatInputArea() {
                 )}
             </div>
 
-            {/* Anexo Menu */}
             <div className="relative" ref={mediaMenuRef}>
                 <Button variant="ghost" size="icon" className="h-9 w-9 text-zinc-400 hover:text-zinc-100" onClick={() => { setMediaMenuOpen(!mediaMenuOpen); setEmojiPickerOpen(false); }}><Paperclip className="h-5 w-5" /></Button>
                 {mediaMenuOpen && (
                     <div className="absolute bottom-14 left-0 bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl p-2 w-64 z-[100] grid grid-cols-2 gap-2 animate-in slide-in-from-bottom-2 ring-1 ring-white/10">
                         <label className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
                             <IconImage className="w-5 h-5 text-purple-400" /> Galeria
-                            <input type="file" className="hidden" accept="image/*,video/*" onChange={handleFileUpload} />
+                            <input type="file" className="hidden" accept="image/*,video/*" onChange={(e) => handleFileUpload(e)} />
+                        </label>
+                        <label className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
+                            <Sticker className="w-5 h-5 text-emerald-400" /> Figurinha
+                            <input type="file" className="hidden" accept="image/*" onChange={(e) => handleFileUpload(e, true)} ref={stickerInputRef} />
                         </label>
                         <label className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
                             <FileText className="w-5 h-5 text-blue-400" /> Documento
-                            <input type="file" className="hidden" accept="*" onChange={handleFileUpload} ref={fileInputRef} />
+                            <input type="file" className="hidden" accept="*" onChange={(e) => handleFileUpload(e)} ref={fileInputRef} />
                         </label>
+                        <button onClick={() => { setMediaMenuOpen(false); setActiveModal('catalog'); }} className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
+                            <ShoppingBag className="w-5 h-5 text-pink-400" /> Produto
+                        </button>
                         <button onClick={() => { setMediaMenuOpen(false); setActiveModal('location'); }} className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
                             <MapPin className="w-5 h-5 text-red-400" /> Localização
                         </button>
@@ -380,14 +353,10 @@ export function ChatInputArea() {
                         <button onClick={() => { setMediaMenuOpen(false); setActiveModal('poll'); }} className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
                             <BarChart2 className="w-5 h-5 text-yellow-400" /> Enquete
                         </button>
-                        <button onClick={() => { setMediaMenuOpen(false); setActiveModal('pix'); }} className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
-                            <DollarSign className="w-5 h-5 text-green-400" /> Pix
-                        </button>
                     </div>
                 )}
             </div>
 
-            {/* Text Input / Audio Recorder UI */}
             {isRecording ? (
                 <div className="flex-1 flex items-center justify-between px-2">
                     <div className="flex items-center gap-2 text-red-500 animate-pulse">
@@ -431,25 +400,6 @@ export function ChatInputArea() {
           </div>
       </Modal>
 
-      <Modal isOpen={activeModal === 'pix'} onClose={() => setActiveModal(null)} title="Enviar Chave Pix">
-          <div className="space-y-4">
-              <div>
-                  <label className="text-xs text-zinc-500 font-bold uppercase mb-1 block">Tipo de Chave</label>
-                  <select value={pixType} onChange={e => setPixType(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-md p-2 text-sm text-white">
-                      <option value="cpf">CPF/CNPJ</option>
-                      <option value="email">Email</option>
-                      <option value="phone">Celular</option>
-                      <option value="random">Aleatória</option>
-                  </select>
-              </div>
-              <div>
-                  <label className="text-xs text-zinc-500 font-bold uppercase mb-1 block">Chave</label>
-                  <Input value={pixKey} onChange={e => setPixKey(e.target.value)} placeholder="Digite a chave..." />
-              </div>
-              <Button onClick={handleSendPix} className="w-full bg-green-600 hover:bg-green-500 text-white">Enviar Pix</Button>
-          </div>
-      </Modal>
-
       <Modal isOpen={activeModal === 'contact'} onClose={() => setActiveModal(null)} title="Enviar Contato">
           <div className="space-y-4">
               <Input value={contactName} onChange={e => setContactName(e.target.value)} placeholder="Nome do Contato" />
@@ -459,13 +409,18 @@ export function ChatInputArea() {
       </Modal>
 
       <Modal isOpen={activeModal === 'location'} onClose={() => { setActiveModal(null); setLocLat(null); }} title="Compartilhar Localização">
-          {/* Conteudo Location Mantido */}
           <div className="text-center p-4">
               {locLoading ? <Loader2 className="w-10 h-10 animate-spin mx-auto" /> : 
               locLat ? <Button onClick={handleSendLocation} className="w-full">Enviar Localização</Button> :
               <Button onClick={getCurrentLocation} className="w-full">Obter Localização</Button>}
           </div>
       </Modal>
+
+      <CatalogModal 
+          isOpen={activeModal === 'catalog'} 
+          onClose={() => setActiveModal(null)} 
+          onSendProduct={handleSendProduct}
+      />
     </>
   );
 }
