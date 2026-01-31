@@ -4,8 +4,9 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useChatList } from '@/hooks/useChatList';
 import { useChatStore } from '@/store/useChatStore';
+import { useRealtimeStore } from '@/store/useRealtimeStore';
 import { 
-    Search, Plus, MessageSquare, Loader2, RefreshCw, Users, Megaphone, Filter, Tag, Archive, ChevronDown, Reply
+    Search, Plus, MessageSquare, Loader2, RefreshCw, Users, Megaphone, Filter, Tag, Archive, Reply, ChevronDown, Smartphone, Zap
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -18,19 +19,23 @@ import { TagManageModal } from './TagManageModal';
 import { useAuthStore } from '@/store/useAuthStore';
 import { createClient } from '@/utils/supabase/client';
 import { ChatContact } from '@/types';
+import { useRouter } from 'next/navigation';
 
 export function ChatListSidebar() {
   const { contacts, loading, refreshList } = useChatList(); 
-  const { activeContact, setActiveContact, selectedInstance } = useChatStore();
-  const { user } = useAuthStore();
+  const { activeContact, setActiveContact, selectedInstance, setSelectedInstance } = useChatStore();
+  const { user, company } = useAuthStore();
+  const { instances } = useRealtimeStore();
   const supabase = createClient();
+  const router = useRouter();
   
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'groups' | 'unread' | 'channels'>('all');
   const [tagFilter, setTagFilter] = useState<string>('all');
   const [showTagDropdown, setShowTagDropdown] = useState(false);
+  const [showInstanceMenu, setShowInstanceMenu] = useState(false);
   
-  // View Mode: 'active' | 'archived' (Ocultas)
+  // View Mode: 'active' | 'archived'
   const [viewMode, setViewMode] = useState<'active' | 'archived'>('active');
   const [archivedContacts, setArchivedContacts] = useState<ChatContact[]>([]);
   const [loadingArchived, setLoadingArchived] = useState(false);
@@ -91,16 +96,12 @@ export function ChatListSidebar() {
       if (viewMode === 'archived') loadArchived();
   }, [viewMode]);
 
-  // Available Tags (Extracted from contacts)
   const availableTags = useMemo(() => {
       const tags = new Set<string>();
       const stages = new Set<{id: string, name: string}>();
-      
       contacts.forEach(c => {
           c.lead_tags?.forEach(t => tags.add(t));
-          if(c.stage_name) {
-              tags.add(`Fase: ${c.stage_name}`);
-          }
+          if(c.stage_name) tags.add(`Fase: ${c.stage_name}`);
       });
       return Array.from(tags).sort();
   }, [contacts]);
@@ -118,15 +119,12 @@ export function ChatListSidebar() {
 
   const handleHideChat = async (contactJid: string) => {
       if(!user?.company_id) return;
-      // Otimista
-      try {
-           await supabase.from('contacts').update({ is_ignored: true }).eq('jid', contactJid).eq('company_id', user.company_id);
-      } catch (e) {}
+      try { await supabase.from('contacts').update({ is_ignored: true }).eq('jid', contactJid).eq('company_id', user.company_id); } catch (e) {}
   };
 
   const handleRestoreChat = async (contactJid: string) => {
       if(!user?.company_id) return;
-      try {
+      try { 
            await supabase.from('contacts').update({ is_ignored: false }).eq('jid', contactJid).eq('company_id', user.company_id);
            setArchivedContacts(prev => prev.filter(c => c.jid !== contactJid));
       } catch (e) {}
@@ -143,13 +141,10 @@ export function ChatListSidebar() {
           const matchesSearch = displayName.includes(search) || phone.includes(search);
           if (!matchesSearch) return false;
 
-          // Filtros de Tipo (Só aplica no modo active)
           if (viewMode === 'active') {
               if (filterType === 'groups' && !contact.is_group) return false;
               if (filterType === 'channels' && !contact.is_newsletter) return false;
               if (filterType === 'unread' && contact.unread_count === 0) return false;
-              
-              // Filtro de Tags
               if (tagFilter !== 'all') {
                   if (tagFilter.startsWith('Fase: ')) {
                       const stageName = tagFilter.replace('Fase: ', '');
@@ -159,7 +154,6 @@ export function ChatListSidebar() {
                   }
               }
           }
-
           return true;
       });
       return list;
@@ -170,14 +164,75 @@ export function ChatListSidebar() {
         {/* Header */}
         <div className="p-4 border-b border-zinc-800 shrink-0 space-y-3">
             <div className="flex items-center justify-between">
-                <h2 className="font-bold text-xl text-white flex items-center gap-2">
-                    {viewMode === 'archived' && (
-                        <button onClick={() => setViewMode('active')} className="p-1 hover:bg-zinc-800 rounded-full mr-1 transition-colors">
-                            <Reply className="w-4 h-4 text-zinc-400" />
-                        </button>
+                
+                {/* INSTANCE SELECTOR */}
+                <div className="relative z-50">
+                    <button 
+                        onClick={() => setShowInstanceMenu(!showInstanceMenu)}
+                        className="flex items-center gap-2 hover:bg-zinc-800 rounded-lg p-1.5 -ml-2 transition-colors max-w-[200px]"
+                    >
+                         {viewMode === 'archived' ? (
+                             <div className="flex items-center gap-2 text-zinc-400 font-bold">
+                                 <Archive className="w-5 h-5" /> Arquivadas
+                             </div>
+                         ) : (
+                             <>
+                                <div className="w-8 h-8 bg-gradient-to-br from-zinc-800 to-zinc-900 rounded-md border border-zinc-700 flex items-center justify-center shadow-sm">
+                                    <Smartphone className="w-4 h-4 text-green-500" />
+                                </div>
+                                <div className="flex flex-col items-start min-w-0">
+                                    <span className="text-sm font-bold text-white truncate w-full text-left">
+                                        {selectedInstance?.name || "WhatsApp"}
+                                    </span>
+                                    <span className="text-[10px] text-zinc-500 font-mono flex items-center gap-1">
+                                        {selectedInstance?.session_id?.slice(0,8)} <ChevronDown className="w-3 h-3" />
+                                    </span>
+                                </div>
+                             </>
+                         )}
+                    </button>
+                    
+                    {showInstanceMenu && (
+                        <>
+                            <div className="fixed inset-0 z-40" onClick={() => setShowInstanceMenu(false)} />
+                            <div className="absolute left-0 top-12 w-64 bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl z-50 p-1 animate-in fade-in zoom-in-95 ring-1 ring-white/10">
+                                <p className="px-3 py-2 text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Trocar Conexão</p>
+                                {instances.map(inst => (
+                                    <button 
+                                        key={inst.id}
+                                        onClick={() => { setSelectedInstance(inst); setShowInstanceMenu(false); }}
+                                        className={cn(
+                                            "w-full text-left px-3 py-2 text-sm rounded-lg flex items-center justify-between group transition-colors",
+                                            selectedInstance?.id === inst.id ? "bg-zinc-800 text-white" : "text-zinc-400 hover:bg-zinc-800 hover:text-white"
+                                        )}
+                                    >
+                                        <span className="truncate">{inst.name}</span>
+                                        {inst.status === 'connected' && <div className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]" />}
+                                    </button>
+                                ))}
+                                <div className="h-px bg-zinc-800 my-1" />
+                                <button 
+                                    onClick={() => router.push('/connections')}
+                                    className="w-full text-left px-3 py-2 text-sm text-primary hover:bg-primary/10 rounded-lg flex items-center gap-2 transition-colors font-medium"
+                                >
+                                    <Plus className="w-4 h-4" /> Nova Instância
+                                </button>
+                                {viewMode === 'active' && (
+                                    <button onClick={() => { setViewMode('archived'); setShowInstanceMenu(false); }} className="w-full text-left px-3 py-2 text-sm text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg flex items-center gap-2 mt-1">
+                                        <Archive className="w-4 h-4" /> Ver Arquivadas
+                                    </button>
+                                )}
+                                {viewMode === 'archived' && (
+                                    <button onClick={() => { setViewMode('active'); setShowInstanceMenu(false); }} className="w-full text-left px-3 py-2 text-sm text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg flex items-center gap-2 mt-1">
+                                        <Reply className="w-4 h-4" /> Voltar para Conversas
+                                    </button>
+                                )}
+                            </div>
+                        </>
                     )}
-                    {viewMode === 'active' ? 'Conversas' : 'Arquivadas'}
-                </h2>
+                </div>
+
+                {/* Right Actions */}
                 <div className="flex gap-1 relative">
                     <Button variant="ghost" size="icon" title="Atualizar Lista" onClick={handleManualRefresh} disabled={isRefreshing}>
                         <RefreshCw className={cn("w-4 h-4 text-zinc-400", isRefreshing && "animate-spin")} />
@@ -309,26 +364,13 @@ export function ChatListSidebar() {
                             onClick={() => setActiveContact(contact)}
                             onTag={() => contact.lead_id ? handleOpenTagModal(contact.lead_id, contact.lead_tags || []) : null}
                             onHide={() => viewMode === 'active' ? handleHideChat(contact.jid) : handleRestoreChat(contact.jid)}
-                            onDelete={() => { /* Lógica de Hard Delete se necessário */ }}
+                            onDelete={() => { /* Hard Delete Logic */ }}
                             isArchived={viewMode === 'archived'}
                         />
                     </React.Fragment>
                 ))
             )}
         </div>
-
-        {/* Footer: Hidden Chats Toggle */}
-        {viewMode === 'active' && (
-            <div className="p-2 border-t border-zinc-800 shrink-0">
-                <button 
-                    onClick={() => setViewMode('archived')}
-                    className="w-full flex items-center justify-center gap-2 p-2 text-xs text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50 rounded-lg transition-colors"
-                >
-                    <Archive className="w-3.5 h-3.5" />
-                    Ver Conversas Ocultas
-                </button>
-            </div>
-        )}
 
         {/* MODAIS */}
         <NewChatModal isOpen={isNewChatModalOpen} onClose={() => setIsNewChatModalOpen(false)} />

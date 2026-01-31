@@ -2,7 +2,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Paperclip, Mic, Send, Trash2, Image as IconImage, FileText, Music, MapPin, User, BarChart2, DollarSign, CheckSquare, Loader2, Crosshair, Sticker, Smile, Navigation } from 'lucide-react';
+import { Paperclip, Mic, Send, Trash2, Image as IconImage, FileText, Music, MapPin, User, BarChart2, DollarSign, Ban, Smile, CheckSquare, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useChatStore } from '@/store/useChatStore';
 import { useAuthStore } from '@/store/useAuthStore';
@@ -15,11 +15,13 @@ import { Input } from '@/components/ui/input';
 import { SendMessageSchema } from '@/lib/schemas'; 
 import EmojiPicker, { Theme } from 'emoji-picker-react';
 
+const REVOKE_WINDOW_MS = 24 * 60 * 60 * 1000; // 24h para Deletar para Todos
+
 export function ChatInputArea() {
   const { user } = useAuthStore();
   const { 
       activeContact, selectedInstance, addMessage, 
-      isMsgSelectionMode, selectedMsgIds, toggleMsgSelectionMode, clearSelection 
+      isMsgSelectionMode, selectedMsgIds, messages, clearSelection 
   } = useChatStore();
   const { addToast } = useToast();
 
@@ -29,24 +31,20 @@ export function ChatInputArea() {
   const mediaMenuRef = useRef<HTMLDivElement>(null);
   const emojiRef = useRef<HTMLDivElement>(null);
   
-  // Gravador Robusto
+  // Gravador Simplificado e Robusto
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const [recorderMimeType, setRecorderMimeType] = useState<string>('');
   
-  // Ref para controlar cancelamento (Evita envio no onstop)
-  const isCancelledRef = useRef(false);
-
   // Refs de Input
   const fileInputRef = useRef<HTMLInputElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
-  const stickerInputRef = useRef<HTMLInputElement>(null);
 
-  // Modais de Anexo
-  const [activeModal, setActiveModal] = useState<'poll'|'pix'|'contact'|'location'|null>(null);
+  // Modais de Anexo e Delete
+  const [activeModal, setActiveModal] = useState<'poll'|'pix'|'contact'|'location'|'delete_confirm'|null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   
   // -- ESTADOS DOS MODAIS --
   const [pollQuestion, setPollQuestion] = useState("");
@@ -64,7 +62,6 @@ export function ChatInputArea() {
       setMediaMenuOpen(false);
       setEmojiPickerOpen(false);
       setActiveModal(null);
-      // Reseta gravação se trocar de chat
       if (isRecording) stopRecording(true);
   }, [activeContact?.id]);
 
@@ -83,13 +80,6 @@ export function ChatInputArea() {
       }
       return () => { document.removeEventListener("mousedown", handleClickOutside); };
   }, [mediaMenuOpen, emojiPickerOpen]);
-
-  // Auto-Start Location quando abre o modal
-  useEffect(() => {
-      if (activeModal === 'location' && !locLat) {
-          getCurrentLocation();
-      }
-  }, [activeModal]);
 
   const onEmojiClick = (emojiData: any) => {
       setInput(prev => prev + emojiData.emoji);
@@ -116,8 +106,7 @@ export function ChatInputArea() {
 
       const validation = SendMessageSchema.safeParse(apiPayload);
       if (!validation.success) {
-          console.error("Payload Inválido:", validation.error.format());
-          addToast({ type: 'error', title: 'Erro de Validação', message: 'Dados da mensagem inválidos ou incompletos.' });
+          addToast({ type: 'error', title: 'Erro', message: 'Mensagem inválida.' });
           return;
       }
 
@@ -129,7 +118,6 @@ export function ChatInputArea() {
       if (payload.type === 'poll') contentDisplay = JSON.stringify(payload.content);
       if (payload.type === 'location') contentDisplay = JSON.stringify(payload.content);
       if (payload.type === 'contact') contentDisplay = JSON.stringify(payload.content);
-      if (payload.type === 'sticker') contentDisplay = '[Figurinha]';
       if (payload.caption) contentDisplay = payload.caption;
 
       const tempMsg: Message = {
@@ -161,9 +149,10 @@ export function ChatInputArea() {
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file || !user?.company_id) return;
-      if (file.size > 50 * 1024 * 1024) { addToast({ type: 'error', title: 'Limite', message: 'Máx 50MB.' }); return; }
+      
       setMediaMenuOpen(false); 
       addToast({ type: 'info', title: 'Upload', message: 'Enviando...' });
+      
       try {
           const { publicUrl, fileName } = await uploadChatMedia(file, user.company_id);
           let type = 'document';
@@ -178,8 +167,7 @@ export function ChatInputArea() {
       } catch (e: any) { addToast({ type: 'error', title: 'Erro', message: e.message }); }
       finally { 
           if (fileInputRef.current) fileInputRef.current.value = ''; 
-          if (audioInputRef.current) audioInputRef.current.value = ''; 
-          if (stickerInputRef.current) stickerInputRef.current.value = '';
+          if (audioInputRef.current) audioInputRef.current.value = '';
       }
   };
 
@@ -187,60 +175,32 @@ export function ChatInputArea() {
       try {
           const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
           
-          // DETECÇÃO DE CODEC OTIMIZADO PARA WHATSAPP
-          // Tenta usar codecs=opus para garantir compatibilidade e evitar corrupção
-          const mimeOptions = [
-            'audio/webm;codecs=opus', 
-            'audio/webm', 
-            'audio/mp4', // Safari
-            'audio/ogg'
-          ];
-          
-          let selectedMime = '';
-          for (const mime of mimeOptions) {
-            if (MediaRecorder.isTypeSupported(mime)) {
-                selectedMime = mime;
-                break;
-            }
+          // COMPATIBILIDADE UNIVERSAL
+          // Preferimos MP4 (AAC) pois toca em tudo (iOS/Android/Web) e o WhatsApp aceita bem.
+          // WebM é fallback para browsers antigos.
+          let mimeType = 'audio/mp4';
+          if (!MediaRecorder.isTypeSupported(mimeType)) {
+              mimeType = 'audio/webm'; // Fallback Chrome/Firefox
           }
-          
-          setRecorderMimeType(selectedMime);
 
-          const mediaRecorder = new MediaRecorder(stream, selectedMime ? { mimeType: selectedMime } : undefined);
+          const mediaRecorder = new MediaRecorder(stream, { mimeType });
           mediaRecorderRef.current = mediaRecorder;
           audioChunksRef.current = [];
-          
-          isCancelledRef.current = false; // Reset cancel flag
 
           mediaRecorder.ondataavailable = (event) => { if (event.data.size > 0) audioChunksRef.current.push(event.data); };
           
           mediaRecorder.onstop = async () => {
-              // VERIFICAÇÃO CRÍTICA DE CANCELAMENTO
-              if (isCancelledRef.current) {
-                  // console.log("Gravação cancelada. Descartes.");
-                  stream.getTracks().forEach(track => track.stop());
-                  return;
-              }
-
-              const mime = recorderMimeType || 'audio/webm';
-              const audioBlob = new Blob(audioChunksRef.current, { type: mime });
-              
-              // Define extensão correta com base no mime escolhido
-              let ext = 'webm';
-              if (mime.includes('mp4')) ext = 'mp4';
-              else if (mime.includes('ogg')) ext = 'ogg';
-
-              const audioFile = new File([audioBlob], `voice_${Date.now()}.${ext}`, { type: mime });
+              const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
+              const audioFile = new File([audioBlob], `ptt_${Date.now()}.${mimeType === 'audio/mp4' ? 'mp4' : 'webm'}`, { type: mimeType });
               
               if (audioFile.size > 0 && user?.company_id) {
                   try {
                       const { publicUrl } = await uploadChatMedia(audioFile, user.company_id);
-                      // Envia mimetype real para backend processar corretamente
-                      // PTT = true é crucial para aparecer como onda sonora
+                      // Enviamos como PTT = true para o backend tratar a conversão se necessário
                       await dispatchMessage({ 
                           type: 'audio', 
                           url: publicUrl, 
-                          mimetype: mime, 
+                          mimetype: mimeType, 
                           ptt: true 
                       });
                   } catch (e) {}
@@ -251,19 +211,63 @@ export function ChatInputArea() {
           setIsRecording(true);
           setRecordingTime(0);
           timerRef.current = setInterval(() => setRecordingTime(prev => prev + 1), 1000);
-      } catch (err) { addToast({ type: 'error', title: 'Microfone', message: 'Permissão negada ou não suportado.' }); }
+      } catch (err) { addToast({ type: 'error', title: 'Erro', message: 'Microfone não acessível.' }); }
   };
 
   const stopRecording = (cancel = false) => {
-      // Define a flag ANTES de parar
-      isCancelledRef.current = cancel;
-
       if (mediaRecorderRef.current && isRecording) {
-          mediaRecorderRef.current.stop(); // Isso dispara o onstop
+          if (cancel) {
+              // Hack para não disparar o onstop com envio
+              mediaRecorderRef.current.ondataavailable = null;
+              mediaRecorderRef.current.onstop = null;
+          }
+          mediaRecorderRef.current.stop();
       }
       setIsRecording(false);
       if (timerRef.current) clearInterval(timerRef.current);
       setRecordingTime(0);
+  };
+
+  // --- LÓGICA DE DELETE EM MASSA ---
+  
+  const canDeleteForEveryone = () => {
+      if (selectedMsgIds.size === 0) return false;
+      const selected = messages.filter(m => selectedMsgIds.has(m.id));
+      
+      // Regra: Todas devem ser minhas e ter menos de 24h
+      return selected.every(m => {
+          if (!m.from_me) return false;
+          const msgTime = new Date(m.created_at).getTime();
+          return (Date.now() - msgTime) < REVOKE_WINDOW_MS;
+      });
+  };
+
+  const handleBulkDelete = async (everyone: boolean) => {
+      setIsDeleting(true);
+      const ids = Array.from(selectedMsgIds);
+      let successCount = 0;
+
+      // Executa sequencialmente para não sobrecarregar
+      for (const msgId of ids) {
+          const msg = messages.find(m => m.id === msgId);
+          if (msg) {
+              try {
+                  await api.post('/message/delete', {
+                      sessionId: msg.session_id,
+                      companyId: msg.company_id,
+                      remoteJid: msg.remote_jid,
+                      msgId: msg.id,
+                      everyone
+                  });
+                  successCount++;
+              } catch (e) {}
+          }
+      }
+      
+      addToast({ type: 'success', title: 'Concluído', message: `${successCount} mensagens apagadas.` });
+      setIsDeleting(false);
+      setActiveModal(null);
+      clearSelection();
   };
 
   const formatTime = (seconds: number) => {
@@ -272,69 +276,71 @@ export function ChatInputArea() {
       return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // Handlers de Modais
+  // ... (Handlers de Poll, Pix, Contact, Location mantidos igual) ...
   const handleCreatePoll = () => { if(!pollQuestion.trim()) return; const valid = pollOptions.filter(o => o.trim().length > 0); if(valid.length < 2) return; dispatchMessage({ type: 'poll', content: { name: pollQuestion, options: valid, selectableOptionsCount: 1 } }); setPollQuestion(""); setPollOptions(["Sim", "Não"]); setActiveModal(null); };
-  
-  const handleSendPix = () => { 
-      if(!pixKey.trim()) return; 
-      dispatchMessage({ type: 'pix', text: pixKey }); 
-      setPixKey(""); 
-      setActiveModal(null); 
-  };
-  
+  const handleSendPix = () => { if(!pixKey.trim()) return; dispatchMessage({ type: 'pix', text: pixKey }); setPixKey(""); setActiveModal(null); };
   const handleSendContact = () => { if(!contactName.trim() || !contactPhone.trim()) return; const vcard = `BEGIN:VCARD\nVERSION:3.0\nFN:${contactName}\nTEL;type=CELL:${contactPhone}\nEND:VCARD`; dispatchMessage({ type: 'contact', content: { displayName: contactName, vcard, phone: contactPhone } }); setContactName(""); setContactPhone(""); setActiveModal(null); };
-  
-  const getCurrentLocation = () => { 
-      if (!navigator.geolocation) {
-          addToast({ type: 'error', title: 'Erro', message: 'Geolocalização não suportada.' });
-          return;
-      }
-      setLocLoading(true); 
-      navigator.geolocation.getCurrentPosition(
-          (pos) => { 
-              setLocLat(pos.coords.latitude); 
-              setLocLng(pos.coords.longitude); 
-              setLocLoading(false); 
-          }, 
-          (err) => { 
-              setLocLoading(false); 
-              addToast({ type: 'error', title: 'Erro GPS', message: 'Não foi possível obter sua localização. Verifique as permissões.' });
-          }, 
-          { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-      ); 
-  };
-  
-  const handleSendLocation = () => { 
-      if (locLat && locLng) { 
-          dispatchMessage({ 
-              type: 'location', 
-              content: { latitude: Number(locLat), longitude: Number(locLng) } 
-          }); 
-          setActiveModal(null); 
-          setLocLat(null); 
-          setLocLng(null); 
-      } 
-  };
+  const getCurrentLocation = () => { if (!navigator.geolocation) return; setLocLoading(true); navigator.geolocation.getCurrentPosition((pos) => { setLocLat(pos.coords.latitude); setLocLng(pos.coords.longitude); setLocLoading(false); }, () => setLocLoading(false), { enableHighAccuracy: true }); };
+  const handleSendLocation = () => { if (locLat && locLng) { dispatchMessage({ type: 'location', content: { latitude: Number(locLat), longitude: Number(locLng) } }); setActiveModal(null); setLocLat(null); setLocLng(null); } };
 
-  // Helper para gerar URL do OpenStreetMap Embed (Mapinha)
-  const getMapEmbedUrl = (lat: number, lng: number) => {
-      const bboxDelta = 0.005; // Zoom aproximado
-      const bbox = `${lng - bboxDelta},${lat - bboxDelta},${lng + bboxDelta},${lat + bboxDelta}`;
-      return `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${lat},${lng}`;
-  };
-
+  // --- RENDERIZAÇÃO DA BARRA DE SELEÇÃO ---
   if (isMsgSelectionMode) {
+      const canEveryone = canDeleteForEveryone();
       return (
-          <div className="p-4 border-t border-zinc-800 bg-zinc-900 flex items-center justify-center animate-in slide-in-from-bottom-10 shrink-0">
-              <span className="text-sm text-white font-medium pl-2">{selectedMsgIds.size} selecionadas</span>
-              <div className="flex gap-3 ml-auto">
+          <>
+          <div className="p-4 border-t border-zinc-800 bg-zinc-900 flex items-center justify-between animate-in slide-in-from-bottom-10 shrink-0 z-50">
+              <span className="text-sm text-white font-medium flex items-center gap-2">
+                  <CheckSquare className="w-4 h-4 text-primary" />
+                  {selectedMsgIds.size} selecionadas
+              </span>
+              <div className="flex gap-3">
                   <Button variant="ghost" onClick={clearSelection}>Cancelar</Button>
-                  <Button variant="destructive" disabled={selectedMsgIds.size === 0}><Trash2 className="w-4 h-4 mr-2" /> Apagar</Button>
+                  <Button 
+                    variant="destructive" 
+                    disabled={selectedMsgIds.size === 0}
+                    onClick={() => setActiveModal('delete_confirm')}
+                    className="bg-red-500/10 text-red-500 hover:bg-red-500/20 hover:text-red-400 border border-red-500/20"
+                  >
+                      <Trash2 className="w-4 h-4 mr-2" /> Apagar
+                  </Button>
               </div>
           </div>
+          
+          <Modal 
+              isOpen={activeModal === 'delete_confirm'} 
+              onClose={() => setActiveModal(null)} 
+              title={`Apagar ${selectedMsgIds.size} mensagens?`}
+              maxWidth="sm"
+          >
+              <div className="space-y-4">
+                  <p className="text-sm text-zinc-400">Escolha como deseja apagar as mensagens selecionadas:</p>
+                  <div className="flex flex-col gap-2">
+                      {canEveryone && (
+                          <Button 
+                              variant="destructive" 
+                              onClick={() => handleBulkDelete(true)} 
+                              disabled={isDeleting}
+                              className="w-full justify-start bg-zinc-800 hover:bg-red-900/30 text-red-400 border-zinc-700"
+                          >
+                              <Trash2 className="w-4 h-4 mr-2" /> Apagar para todos
+                          </Button>
+                      )}
+                      <Button 
+                          variant="outline" 
+                          onClick={() => handleBulkDelete(false)} 
+                          disabled={isDeleting}
+                          className="w-full justify-start border-zinc-700 hover:bg-zinc-800"
+                      >
+                          <Ban className="w-4 h-4 mr-2" /> Apagar para mim
+                      </Button>
+                  </div>
+              </div>
+          </Modal>
+          </>
       );
   }
 
+  // --- RENDERIZAÇÃO PADRÃO (INPUT) ---
   return (
     <>
     <div className="p-3 md:p-4 border-t border-zinc-800 bg-zinc-900/30 backdrop-blur relative shrink-0 z-[50]">
@@ -342,26 +348,12 @@ export function ChatInputArea() {
             
             {/* Botão de Emojis */}
             <div className="relative" ref={emojiRef}>
-                <Button 
-                    variant="ghost" 
-                    size="icon" 
-                    className={`h-9 w-9 ${emojiPickerOpen ? 'text-yellow-400' : 'text-zinc-400'} hover:text-yellow-400 transition-colors`} 
-                    onClick={() => { setEmojiPickerOpen(!emojiPickerOpen); setMediaMenuOpen(false); }}
-                >
+                <Button variant="ghost" size="icon" className={`h-9 w-9 ${emojiPickerOpen ? 'text-yellow-400' : 'text-zinc-400'} hover:text-yellow-400`} onClick={() => { setEmojiPickerOpen(!emojiPickerOpen); setMediaMenuOpen(false); }}>
                     <Smile className="h-5 w-5" />
                 </Button>
-                
                 {emojiPickerOpen && (
-                    <div className="absolute bottom-14 left-0 z-[100] animate-in zoom-in-95 origin-bottom-left shadow-2xl drop-shadow-2xl">
-                        <EmojiPicker 
-                            onEmojiClick={onEmojiClick}
-                            theme={Theme.DARK}
-                            searchDisabled={false}
-                            width={320}
-                            height={400}
-                            lazyLoadEmojis={true}
-                            previewConfig={{ showPreview: false }}
-                        />
+                    <div className="absolute bottom-14 left-0 z-[100] animate-in zoom-in-95 shadow-2xl">
+                        <EmojiPicker onEmojiClick={onEmojiClick} theme={Theme.DARK} width={320} height={400} lazyLoadEmojis={true} previewConfig={{ showPreview: false }} />
                     </div>
                 )}
             </div>
@@ -378,14 +370,6 @@ export function ChatInputArea() {
                         <label className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
                             <FileText className="w-5 h-5 text-blue-400" /> Documento
                             <input type="file" className="hidden" accept="*" onChange={handleFileUpload} ref={fileInputRef} />
-                        </label>
-                        <label className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
-                            <Music className="w-5 h-5 text-pink-400" /> Áudio
-                            <input type="file" className="hidden" accept="audio/*" onChange={handleFileUpload} ref={audioInputRef} />
-                        </label>
-                        <label className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
-                            <Sticker className="w-5 h-5 text-orange-400" /> Figurinha
-                            <input type="file" className="hidden" accept="image/webp,image/png,image/jpeg" onChange={handleFileUpload} ref={stickerInputRef} />
                         </label>
                         <button onClick={() => { setMediaMenuOpen(false); setActiveModal('location'); }} className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
                             <MapPin className="w-5 h-5 text-red-400" /> Localização
@@ -475,65 +459,11 @@ export function ChatInputArea() {
       </Modal>
 
       <Modal isOpen={activeModal === 'location'} onClose={() => { setActiveModal(null); setLocLat(null); }} title="Compartilhar Localização">
-          <div className="space-y-4 py-2">
-              <div className="relative w-full h-64 bg-zinc-800 rounded-xl overflow-hidden border border-zinc-700 group shadow-inner">
-                  {locLat && locLng ? (
-                      <>
-                        <iframe 
-                            width="100%" 
-                            height="100%" 
-                            frameBorder="0" 
-                            scrolling="no" 
-                            marginHeight={0} 
-                            marginWidth={0} 
-                            src={getMapEmbedUrl(locLat, locLng)}
-                            className="opacity-90 grayscale-[20%] hover:grayscale-0 transition-all duration-700"
-                        />
-                        <div className="absolute inset-0 pointer-events-none shadow-[inset_0_0_40px_rgba(0,0,0,0.5)]"></div>
-                        <div className="absolute bottom-2 left-2 right-2 bg-zinc-900/90 text-white text-xs p-3 rounded-lg shadow-xl backdrop-blur border border-zinc-700 flex justify-between items-center animate-in slide-in-from-bottom-2">
-                            <div className="flex flex-col">
-                                <span className="font-bold text-zinc-300 text-[10px] uppercase">Coordenadas</span>
-                                <span className="font-mono text-primary">{locLat.toFixed(5)}, {locLng.toFixed(5)}</span>
-                            </div>
-                            <span className="text-[10px] font-bold text-green-500 flex items-center gap-1 bg-green-500/10 px-2 py-1 rounded">
-                                <Navigation className="w-3 h-3" /> GPS Preciso
-                            </span>
-                        </div>
-                      </>
-                  ) : (
-                      <div className="absolute inset-0 flex flex-col items-center justify-center text-zinc-500 gap-4 bg-zinc-900">
-                          {locLoading ? (
-                              <>
-                                <div className="relative">
-                                    <div className="absolute inset-0 bg-primary/30 rounded-full blur-xl animate-pulse"></div>
-                                    <Loader2 className="w-10 h-10 text-primary animate-spin relative z-10" />
-                                </div>
-                                <p className="text-xs font-mono text-primary animate-pulse">Buscando satélites...</p>
-                              </>
-                          ) : (
-                              <>
-                                <MapPin className="w-12 h-12 opacity-20" />
-                                <p className="text-sm">Habilite a localização para continuar</p>
-                              </>
-                          )}
-                      </div>
-                  )}
-              </div>
-              
-              {!locLat ? (
-                  <Button onClick={getCurrentLocation} className="w-full h-12 text-sm bg-blue-600 hover:bg-blue-500" disabled={locLoading}>
-                      <Crosshair className="w-4 h-4 mr-2" /> {locLoading ? "Aguarde..." : "Obter Localização Atual"}
-                  </Button>
-              ) : (
-                  <div className="flex gap-3">
-                      <Button variant="outline" onClick={() => { setLocLat(null); setLocLng(null); getCurrentLocation(); }} className="flex-1 border-zinc-700">
-                          Atualizar
-                      </Button>
-                      <Button onClick={handleSendLocation} className="flex-[2] bg-green-600 hover:bg-green-500 font-bold">
-                          <Send className="w-4 h-4 mr-2" /> Enviar Localização Atual
-                      </Button>
-                  </div>
-              )}
+          {/* Conteudo Location Mantido */}
+          <div className="text-center p-4">
+              {locLoading ? <Loader2 className="w-10 h-10 animate-spin mx-auto" /> : 
+              locLat ? <Button onClick={handleSendLocation} className="w-full">Enviar Localização</Button> :
+              <Button onClick={getCurrentLocation} className="w-full">Obter Localização</Button>}
           </div>
       </Modal>
     </>

@@ -1,7 +1,7 @@
 
 'use client';
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useChatStore } from '@/store/useChatStore';
@@ -28,6 +28,9 @@ export default function ChatPage() {
       addMessage, setMessages, setActiveLead,
       setSelectedInstance
   } = useChatStore();
+
+  // NOVO: Controle de Visibilidade da Sidebar Direita
+  const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(true);
 
   // --- AUTO-SELECT INSTANCE ---
   useEffect(() => {
@@ -80,17 +83,13 @@ export default function ChatPage() {
             }
 
             if (activeContact && (newMessage.remote_jid === activeContact.remote_jid || newMessage.remote_jid.includes('@lid'))) {
-                // CORREÇÃO ITEM 4: Deduplicação Otimista
-                // Removemos qualquer mensagem pendente (temp-*) que tenha o mesmo conteúdo e seja 'sending'
                 setMessages(prev => {
                     const filtered = prev.filter(m => {
                         const isTemp = m.id.startsWith('temp-') && m.status === 'sending';
-                        // Compara conteúdo ou media_url para identificar duplicata visual
                         const sameContent = (m.content === newMessage.content) || (m.media_url && m.media_url === newMessage.media_url);
                         return !(isTemp && sameContent);
                     });
                     
-                    // Adiciona a nova mensagem real se não existir
                     if (!filtered.find(m => m.id === newMessage.id)) {
                         return [...filtered, newMessage];
                     }
@@ -120,7 +119,6 @@ export default function ChatPage() {
       setActiveLead(lead);
   };
 
-  // MOBILE FIX: Use h-dvh e pb-safe para lidar com barras de navegação do iPhone
   return (
     <div className="flex h-[calc(100vh-6rem)] md:h-[calc(100vh-4rem)] h-dvh md:h-[calc(100dvh-4rem)] rounded-xl border border-zinc-800 bg-zinc-950/50 overflow-hidden shadow-2xl animate-in fade-in duration-300 relative">
       
@@ -128,16 +126,14 @@ export default function ChatPage() {
       <ChatListSidebar />
 
       {/* 2. ÁREA PRINCIPAL (Chat ou Empty State) */}
-      <div className={cn("flex-1 flex-col bg-[#09090b] relative pb-safe", activeContact ? "flex" : "hidden md:flex")}>
+      <div className={cn("flex-1 flex-col bg-[#09090b] relative pb-safe transition-all duration-300", activeContact ? "flex" : "hidden md:flex")}>
         {activeContact && selectedInstance ? (
-            // MODO CHAT ATIVO: Renderização Direta e Limpa
             <>
-                <ChatHeader />
+                <ChatHeader onOpenDetails={() => setIsRightSidebarOpen(true)} />
                 <ChatWindow />
                 <ChatInputArea />
             </>
         ) : (
-            // MODO EMPTY STATE
             <div className="flex h-full items-center justify-center flex-col text-zinc-500 bg-zinc-950/20 p-4 text-center select-none">
                 {selectedInstance ? (
                     <>
@@ -160,8 +156,24 @@ export default function ChatPage() {
       </div>
 
       {/* 3. SIDEBAR DIREITA (Dados do Lead) */}
-      {activeContact && selectedInstance && (
-          <ChatSidebar contact={activeContact} lead={activeLead} refreshLead={refreshLeadData} />
+      {activeContact && selectedInstance && isRightSidebarOpen && (
+          <ChatSidebar 
+            contact={activeContact} 
+            lead={activeLead} 
+            refreshLead={refreshLeadData} 
+            onClose={() => setIsRightSidebarOpen(false)}
+          />
+      )}
+      
+      {/* Botão Flutuante de Reabrir Sidebar (Caso fechada) */}
+      {activeContact && selectedInstance && !isRightSidebarOpen && (
+          <button 
+              onClick={() => setIsRightSidebarOpen(true)}
+              className="absolute right-0 top-16 bg-zinc-800 p-2 rounded-l-lg border border-r-0 border-zinc-700 shadow-xl text-zinc-400 hover:text-white hover:bg-zinc-700 transition-all z-40 animate-in slide-in-from-right-4"
+              title="Ver Detalhes"
+          >
+              <span className="writing-vertical text-xs font-bold uppercase tracking-widest">Detalhes</span>
+          </button>
       )}
 
     </div>

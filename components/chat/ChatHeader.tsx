@@ -2,36 +2,44 @@
 'use client';
 
 import React, { useEffect, useState, useRef } from 'react';
-import { ArrowLeft, User, Users, MoreVertical, CheckSquare, Trash2, Megaphone } from 'lucide-react';
+import { ArrowLeft, User, Users, MoreVertical, CheckSquare, Trash2, Megaphone, Info } from 'lucide-react';
 import { useChatStore } from '@/store/useChatStore';
 import { Button } from '@/components/ui/button';
-import { cleanJid } from '@/lib/utils';
 import { createClient } from '@/utils/supabase/client';
 import { useAuthStore } from '@/store/useAuthStore';
 import { GroupInfoModal } from './GroupInfoModal';
 import { ChannelInfoModal } from './ChannelInfoModal';
+import { Modal } from '@/components/ui/Modal';
+import { api } from '@/services/api';
+import { useToast } from '@/hooks/useToast';
 
-export function ChatHeader() {
+interface ChatHeaderProps {
+    onOpenDetails: () => void;
+}
+
+export function ChatHeader({ onOpenDetails }: ChatHeaderProps) {
   const { user } = useAuthStore();
   const supabase = createClient();
   const { activeContact, setActiveContact, toggleMsgSelectionMode, isTyping, setTyping, selectedInstance } = useChatStore();
+  const { addToast } = useToast();
+  
   const [showOptionsMenu, setShowOptionsMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   
-  // Modais de Gestão
+  // Modais
   const [isGroupInfoOpen, setIsGroupInfoOpen] = useState(false);
   const [isChannelInfoOpen, setIsChannelInfoOpen] = useState(false);
+  const [isClearChatModalOpen, setIsClearChatModalOpen] = useState(false);
+  const [isClearing, setIsClearing] = useState(false);
 
-  // Status Local State
+  // Status Local
   const [lastSeen, setLastSeen] = useState<string | null>(null);
   const [isOnline, setIsOnline] = useState(false);
 
-  // 1. Fecha menu ao trocar de conversa
   useEffect(() => {
       setShowOptionsMenu(false);
   }, [activeContact?.id]);
 
-  // 2. Click Outside para fechar o menu
   useEffect(() => {
       function handleClickOutside(event: MouseEvent) {
           if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
@@ -44,7 +52,6 @@ export function ChatHeader() {
       return () => { document.removeEventListener("mousedown", handleClickOutside); };
   }, [showOptionsMenu]);
 
-  // Efeito para buscar e ouvir Last Seen em tempo real
   useEffect(() => {
       if (!activeContact || !user?.company_id) return;
       
@@ -59,9 +66,6 @@ export function ChatHeader() {
           if (data) {
               setIsOnline(data.is_online || false);
               setLastSeen(data.last_seen_at);
-          } else {
-              setIsOnline(false);
-              setLastSeen(null);
           }
       };
       fetchStatus();
@@ -76,7 +80,6 @@ export function ChatHeader() {
               if (payload.new) {
                   setIsOnline(payload.new.is_online);
                   setLastSeen(payload.new.last_seen_at);
-                  
                   if (payload.new.is_online && !isOnline) {
                       setTyping(true);
                       setTimeout(() => setTyping(false), 3000);
@@ -88,53 +91,60 @@ export function ChatHeader() {
       return () => { supabase.removeChannel(channel); };
   }, [activeContact?.remote_jid, user?.company_id]);
 
+  const handleClearChat = async () => {
+      if (!selectedInstance || !activeContact || !user?.company_id) return;
+      setIsClearing(true);
+      try {
+          // Aqui fazemos um DELETE no banco para todas as mensagens deste chat
+          // Como o supabase-js não tem "delete where not id", usamos filtro por jid
+          const { error } = await supabase
+              .from('messages')
+              .delete()
+              .eq('company_id', user.company_id)
+              .eq('remote_jid', activeContact.remote_jid);
+
+          if (error) throw error;
+
+          addToast({ type: 'success', title: 'Limpo', message: 'Histórico da conversa apagado.' });
+          setIsClearChatModalOpen(false);
+          // O Realtime ou state local deve limpar a tela
+          // Em um app real, podemos forçar reload das mensagens na store
+      } catch (error: any) {
+          addToast({ type: 'error', title: 'Erro', message: error.message });
+      } finally {
+          setIsClearing(false);
+      }
+  };
+
   if (!activeContact) return null;
 
   const displayName = activeContact.name || activeContact.push_name || activeContact.phone_number || "Desconhecido";
 
   const handleHeaderClick = () => {
-      if (activeContact.is_newsletter) {
-          setIsChannelInfoOpen(true);
-      } else if (activeContact.is_group || activeContact.remote_jid.includes('@g.us')) {
-          setIsGroupInfoOpen(true);
-      }
+      onOpenDetails(); // Abre a sidebar
   };
 
   const renderSubtitle = () => {
-    if (activeContact.is_newsletter) {
-        return <p className="text-xs text-blue-400 font-medium">Canal de Transmissão</p>;
-    }
-    if (activeContact.is_group || activeContact.remote_jid.includes('@g.us')) {
-        return <p className="text-xs text-zinc-400 font-mono truncate group-hover:text-zinc-300 transition-colors">Toque para dados do grupo</p>;
-    }
-    if (isTyping) {
-        return <span className="text-green-400 font-bold text-[11px] tracking-wide animate-pulse">digitando...</span>;
-    }
-    if (isOnline) {
-        return <span className="text-green-400 font-bold text-[11px] tracking-wide animate-in fade-in">Online</span>;
-    }
+    if (activeContact.is_newsletter) return <p className="text-xs text-blue-400 font-medium">Canal de Transmissão</p>;
+    if (activeContact.is_group) return <p className="text-xs text-zinc-400 truncate">Clique para dados do grupo</p>;
+    if (isTyping) return <span className="text-green-400 font-bold text-[11px] animate-pulse">digitando...</span>;
+    if (isOnline) return <span className="text-green-400 font-bold text-[11px]">Online</span>;
     
-    // CORREÇÃO ITEM 3: Removido o fallback que mostrava o número. Agora mostra Last Seen ou nada.
     if (lastSeen) {
         const date = new Date(lastSeen);
         const now = new Date();
         const diff = now.getTime() - date.getTime();
-        
-        // Se visto há menos de 24h, mostra hora. Senão, data.
         const timeStr = diff < 86400000 
             ? date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
             : date.toLocaleDateString([], { day: '2-digit', month: '2-digit' });
-            
         return <span className="text-zinc-500 text-[11px]">Visto: {timeStr}</span>;
     }
-
-    return <span className="text-zinc-600 text-[11px] opacity-0 group-hover:opacity-100 transition-opacity">Ver detalhes</span>;
+    return <span className="text-zinc-600 text-[11px]">Ver detalhes</span>;
   };
 
   return (
     <>
         <div className="h-16 border-b border-zinc-800 flex items-center justify-between px-4 md:px-6 bg-zinc-900/50 backdrop-blur-md z-20 shrink-0 relative transition-all duration-300">
-            
             {isOnline && !activeContact.is_group && (
                 <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-green-500/50 to-transparent pointer-events-none animate-in fade-in" />
             )}
@@ -144,22 +154,15 @@ export function ChatHeader() {
                     <ArrowLeft className="h-5 w-5" />
                 </Button>
                 
-                <div 
-                    onClick={handleHeaderClick}
-                    className="flex items-center gap-3 cursor-pointer group"
-                >
+                <div onClick={handleHeaderClick} className="flex items-center gap-3 cursor-pointer group">
                     <div className="h-10 w-10 rounded-full bg-zinc-800 flex items-center justify-center border border-zinc-700 overflow-hidden relative shadow-sm shrink-0 group-hover:border-primary/50 transition-colors">
                             {activeContact.profile_pic_url ? (
                                 <img src={activeContact.profile_pic_url} className="w-full h-full object-cover" />
                             ) : (
                                 activeContact.is_newsletter ? <Megaphone className="w-5 h-5 text-blue-400" /> :
-                                (activeContact.is_group || activeContact.remote_jid.includes('@g.us')) ? <Users className="w-5 h-5 text-zinc-500" /> : <User className="w-5 h-5 text-zinc-500" />
-                            )}
-                            {isOnline && !activeContact.is_group && (
-                                <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-zinc-900 animate-in zoom-in duration-300 shadow-[0_0_8px_rgba(34,197,94,0.6)]"></div>
+                                (activeContact.is_group) ? <Users className="w-5 h-5 text-zinc-500" /> : <User className="w-5 h-5 text-zinc-500" />
                             )}
                     </div>
-                    
                     <div className="flex-1 min-w-0 flex flex-col justify-center">
                         <h3 className="font-bold text-zinc-100 text-sm truncate leading-tight group-hover:text-primary transition-colors">
                             {displayName}
@@ -176,24 +179,24 @@ export function ChatHeader() {
                     <MoreVertical className="w-5 h-5" />
                 </Button>
                 {showOptionsMenu && (
-                    // CORREÇÃO ITEM 2: Z-Index 100 para sobrepor tudo
                     <div className="absolute right-0 top-12 bg-zinc-900 border border-zinc-800 rounded-lg shadow-2xl py-2 w-52 z-[100] animate-in fade-in slide-in-from-top-2 ring-1 ring-white/10">
+                         <button 
+                            onClick={() => { onOpenDetails(); setShowOptionsMenu(false); }} 
+                            className="w-full text-left px-4 py-2.5 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-white flex items-center gap-2 transition-colors"
+                        >
+                            <Info className="w-4 h-4 text-zinc-500" /> Dados do Contato
+                        </button>
                         <button 
                             onClick={() => { toggleMsgSelectionMode(); setShowOptionsMenu(false); }} 
                             className="w-full text-left px-4 py-2.5 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-white flex items-center gap-2 transition-colors"
                         >
                             <CheckSquare className="w-4 h-4 text-zinc-500" /> Selecionar Mensagens
                         </button>
-                        {(activeContact.is_group || activeContact.is_newsletter) && (
-                            <button 
-                                onClick={() => { handleHeaderClick(); setShowOptionsMenu(false); }}
-                                className="w-full text-left px-4 py-2.5 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-white flex items-center gap-2 transition-colors"
-                            >
-                                <Users className="w-4 h-4 text-zinc-500" /> Dados do Grupo
-                            </button>
-                        )}
                         <div className="h-px bg-zinc-800 my-1 mx-2" />
-                        <button className="w-full text-left px-4 py-2.5 text-sm text-red-400 hover:bg-red-500/10 hover:text-red-300 flex items-center gap-2 transition-colors">
+                        <button 
+                            onClick={() => { setIsClearChatModalOpen(true); setShowOptionsMenu(false); }}
+                            className="w-full text-left px-4 py-2.5 text-sm text-red-400 hover:bg-red-500/10 hover:text-red-300 flex items-center gap-2 transition-colors"
+                        >
                             <Trash2 className="w-4 h-4" /> Limpar Conversa
                         </button>
                     </div>
@@ -201,20 +204,30 @@ export function ChatHeader() {
             </div>
         </div>
 
-        {/* MODAIS DE GESTÃO */}
-        <GroupInfoModal 
-            isOpen={isGroupInfoOpen} 
-            onClose={() => setIsGroupInfoOpen(false)}
-            contact={activeContact}
-            sessionId={selectedInstance?.session_id || 'default'}
-        />
-        
-        <ChannelInfoModal
-            isOpen={isChannelInfoOpen}
-            onClose={() => setIsChannelInfoOpen(false)}
-            contact={activeContact}
-            sessionId={selectedInstance?.session_id || 'default'}
-        />
+        {/* MODAL LIMPAR CONVERSA */}
+        <Modal 
+            isOpen={isClearChatModalOpen} 
+            onClose={() => setIsClearChatModalOpen(false)}
+            title="Limpar Conversa?"
+            maxWidth="sm"
+        >
+            <div className="space-y-4">
+                <p className="text-sm text-zinc-400">
+                    Tem certeza que deseja apagar todas as mensagens desta conversa? <br/>
+                    <span className="text-red-400 text-xs">Esta ação apagará apenas o histórico no CRM (Para mim).</span>
+                </p>
+                <div className="flex justify-end gap-2 pt-2">
+                    <Button variant="ghost" onClick={() => setIsClearChatModalOpen(false)}>Cancelar</Button>
+                    <Button variant="destructive" onClick={handleClearChat} disabled={isClearing}>
+                        {isClearing ? "Limpando..." : "Sim, Limpar"}
+                    </Button>
+                </div>
+            </div>
+        </Modal>
+
+        {/* Modais de Gestão (Legado) */}
+        <GroupInfoModal isOpen={isGroupInfoOpen} onClose={() => setIsGroupInfoOpen(false)} contact={activeContact} sessionId={selectedInstance?.session_id || 'default'} />
+        <ChannelInfoModal isOpen={isChannelInfoOpen} onClose={() => setIsChannelInfoOpen(false)} contact={activeContact} sessionId={selectedInstance?.session_id || 'default'} />
     </>
   );
 }

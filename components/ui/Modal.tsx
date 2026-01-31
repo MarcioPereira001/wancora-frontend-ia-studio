@@ -1,4 +1,6 @@
+
 import React, { useEffect } from 'react';
+import { createPortal } from 'react-dom'; // Importante para garantir sobreposição total
 import { X } from 'lucide-react';
 
 interface ModalProps {
@@ -36,11 +38,13 @@ export const Modal: React.FC<ModalProps> = ({
     '2xl': 'max-w-2xl',
   }[maxWidth];
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+  // Renderiza via Portal para sair do contexto de empilhamento (stacking context) do pai
+  // Garante que fique acima de tudo, inclusive menus z-50
+  const content = (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
       {/* Backdrop */}
       <div 
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
+        className="absolute inset-0 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200"
         onClick={onClose}
       />
 
@@ -48,10 +52,10 @@ export const Modal: React.FC<ModalProps> = ({
       <div className={`
         relative bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl w-full ${maxWidthClass}
         animate-in zoom-in-95 slide-in-from-bottom-4 duration-200
-        flex flex-col max-h-[90vh]
+        flex flex-col max-h-[90vh] z-[10000]
       `}>
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-zinc-800">
+        <div className="flex items-center justify-between p-4 border-b border-zinc-800 shrink-0">
           <h3 className="text-lg font-semibold text-white">{title}</h3>
           <button 
             onClick={onClose}
@@ -68,11 +72,17 @@ export const Modal: React.FC<ModalProps> = ({
 
         {/* Footer */}
         {footer && (
-          <div className="p-4 border-t border-zinc-800 bg-zinc-900/50 rounded-b-xl flex justify-end gap-3">
+          <div className="p-4 border-t border-zinc-800 bg-zinc-900/50 rounded-b-xl flex justify-end gap-3 shrink-0">
             {footer}
           </div>
         )}
       </div>
     </div>
   );
+
+  // Verifica se está no navegador antes de usar Portal
+  if (typeof document !== 'undefined') {
+      return createPortal(content, document.body);
+  }
+  return null;
 };
