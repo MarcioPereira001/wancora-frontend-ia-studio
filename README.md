@@ -156,12 +156,19 @@ O Backend Node.js **não** gerencia mais contadores de mensagens ou ordenação 
 ### 💬 Módulo 1: Chat Avançado (Inbox 2.0 & Lead Command Center)
 O Chat é o centro de comando unificado.
 
+**Header da Lista (Instance Switcher):**
+*  **Seletor de Instância:** Dropdown no topo da lista de conversas permite alternar instantaneamente entre diferentes números conectados (ex: "Comercial 1", "Suporte").
+*  **Status Visual:** Indica qual conexão está ativa no momento.
+*  **Navegação Rápida:** Atalhos para "Nova Instância" e "Arquivados".
+
 **Inbox (Sidebar Esquerda):**
-* **Busca em Tempo Real:** Filtro instantâneo por Nome, Telefone ou Push Name.
-* **Identificação de Grupos:** Exibe nome do grupo corretamente (identifica `@g.us`).
-* **Indicadores Visuais:**
-    * **Bolinha Verde:** Contador de não lidas (some ao clicar).
-    * **Badge "Novo":** Rótulo temporário (24h) para leads recém-criados.
+*  **Busca em Tempo Real:** Filtro instantâneo por Nome, Telefone ou Push Name.
+*  **Identificação de Grupos:** Exibe nome do grupo corretamente (identifica `@g.us`).
+*  **Indicadores Visuais:**
+    *   **Bolinha Verde:** Contador de não lidas (some ao clicar).
+    *   **Badge "Novo":** Rótulo temporário (24h) para leads recém-criados.
+*  **Filtros Inteligentes:** Tags para filtrar por Fase do Funil ou Etiquetas.
+
 * **Gestão de Conversas:**
     * **Seleção Múltipla:** Checkboxes para selecionar vários chats.
     * **Ações em Massa:** Silenciar, Apagar (com opção de apagar Lead em cascata).
@@ -172,6 +179,13 @@ O Chat é o centro de comando unificado.
     * Cinza (1): Enviado ao Servidor.
     * Cinza (2): Entregue ao Destinatário.
     * **Azul (2):** Lido/Visualizado.
+* **Header Funcional:**
+    *   Menu de Opções: "Limpar Conversa" (Delete All for Me) e Seleção Múltipla.
+    *   Status de Presença: Exibe "Digitando...", "Online" ou "Visto por último".
+* **Input Avançado:**
+    *   **Gravador PTT Universal:** Gravação de áudio compatível com iOS/Android (MP4/AAC) com conversão automática no backend para OGG/Opus (Onda Sonora).
+    *   **Emoji Picker:** Integrado e otimizado.
+
 * **Gestão de Histórico (Selection Mode):**
     * Permite selecionar mensagens individuais para **Apagar** (Delete) ou **Encaminhar**.
     * Opção "Limpar Conversa" (Clear Chat) no menu superior para resetar o histórico.
@@ -200,7 +214,9 @@ O sistema suporta protocolos complexos além de texto. (`MessageContent.tsx`):
 8.  **📷 Galeria/Câmera:** Envio de imagens e vídeos com legenda.
 
 **Sidebar Direita (Lead Command Center - Atualizado):**
-Agora possui navegação por **Abas** para organizar a densidade de informações:
+Agora possui navegação por **Abas** e controle de visibilidade:
+* **Modo Retrátil:** Botão de recolher/expandir para focar na conversa. Abertura automática ao clicar no nome do contato.
+
 1.  **Aba Dados:**
     * **Botões de Ação:** "Adicionar ao CRM" (Verde) / "Remover do CRM" (Vermelho).
     * **Status Visual:** Se removido, campos ficam bloqueados (Ícone Cadeado).

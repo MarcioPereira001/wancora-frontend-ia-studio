@@ -135,13 +135,15 @@ Envia mensagens com **Protocolo de Humanização** (Digitando... -> Pausa -> Env
     }
     ```
 
-###3.2.1. Protocolo de Humanização (Deep Dive)
+### 3.2.1. Protocolo de Humanização (Deep Dive)
 O envio não é apenas um disparo de socket, mas um fluxo que simula o comportamento humano para evasão de algoritmos de detecção de spam:
-**Reaction Delay:** Pausa aleatória inicial entre 500ms e 1500ms.
-**Presence Simulation:** Ativação do status composing (digitando) ou recording (gravando áudio).
-**Production Time:** Cálculo dinâmico de tempo de digitação baseado no comprimento do texto (100ms por caractere, limitado a 10 segundos).
-**Final Pause:** Transição para o status paused antes do disparo efetivo do payload.
 
+1.  **Reaction Delay:** Pausa aleatória inicial entre 500ms e 1000ms.
+2.  **Presence Simulation:**
+    *   **Texto:** Ativa `composing`. Tempo calculado: `min(caracteres * 50ms, 5000ms)`.
+    *   **Áudio:** Ativa `recording`. Tempo calculado: `random(3000ms, 6000ms)`.
+3.  **Final Pause:** Transição para o status `paused` antes do disparo efetivo do payload.
+4.  **PTT Nativo:** Áudios enviados com `ptt: true` forçam o mimetype `audio/ogg; codecs=opus` para garantir a renderização da onda sonora (waveform) no cliente final.
 3.  **PIX**
     * Envie `type: 'pix'` e a chave no campo `text`. O backend converte para Botão Nativo de Cópia.
 
