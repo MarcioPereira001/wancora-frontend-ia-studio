@@ -4,7 +4,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { ChatContact } from '@/types';
 import { 
-    Users, Megaphone, MoreVertical, Archive, Tag, Trash2, 
+    Users, MoreVertical, Archive, Tag, Trash2, 
     Camera, Mic, Video, FileText, MapPin, BarChart2, DollarSign, Sticker, RotateCcw
 } from 'lucide-react';
 import { cn, getDisplayName } from '@/lib/utils';
@@ -17,7 +17,7 @@ interface ChatListItemProps {
     onTag: () => void;
     onHide: () => void;
     onDelete: () => void;
-    isArchived?: boolean; // Novo prop
+    isArchived?: boolean; 
 }
 
 export function ChatListItem({ contact, isActive, onClick, onTag, onHide, onDelete, isArchived }: ChatListItemProps) {
@@ -95,12 +95,11 @@ export function ChatListItem({ contact, isActive, onClick, onTag, onHide, onDele
                         />
                     ) : (
                         (contact.is_group) ? <Users className="w-5 h-5 text-zinc-500" /> :
-                        (contact.is_newsletter) ? <Megaphone className="w-5 h-5 text-zinc-500" /> :
                         displayName.charAt(0).toUpperCase()
                     )}
                 </div>
                 
-                {contact.is_online && !contact.is_group && !contact.is_newsletter && (
+                {contact.is_online && !contact.is_group && (
                     <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 border-2 border-zinc-900 rounded-full animate-in zoom-in duration-300"></div>
                 )}
             </div>
@@ -132,7 +131,6 @@ export function ChatListItem({ contact, isActive, onClick, onTag, onHide, onDele
                     </div>
                 </div>
 
-                {/* VISUALIZAÇÃO DE TAGS E ETAPAS - CORRIGIDO */}
                 {(contact.stage_name || (contact.lead_tags && contact.lead_tags.length > 0)) && (
                     <div className="flex items-center gap-1 mt-1 overflow-hidden h-4">
                         {contact.stage_name && (
@@ -143,7 +141,6 @@ export function ChatListItem({ contact, isActive, onClick, onTag, onHide, onDele
                                 {contact.stage_name}
                             </span>
                         )}
-                        {/* Iteração Segura de Tags */}
                         {contact.lead_tags?.slice(0, 2).map((tag, idx) => (
                             <span key={`${contact.id}-tag-${idx}`} className="text-[9px] bg-zinc-800 text-zinc-400 border border-zinc-700 px-1.5 rounded-sm truncate max-w-[60px]">
                                 {tag}

@@ -14,8 +14,8 @@ export interface ChatContact {
   phone_number: string;
   is_muted?: boolean;
   is_group?: boolean;
-  is_newsletter?: boolean;
-  is_community?: boolean; // Novo campo
+  // is_newsletter removido
+  is_community?: boolean; 
   is_online?: boolean;
   last_seen_at?: string;
   is_business?: boolean;

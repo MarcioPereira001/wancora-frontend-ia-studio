@@ -2,15 +2,13 @@
 'use client';
 
 import React, { useEffect, useState, useRef } from 'react';
-import { ArrowLeft, User, Users, MoreVertical, CheckSquare, Trash2, Megaphone, Info } from 'lucide-react';
+import { ArrowLeft, User, Users, MoreVertical, CheckSquare, Trash2, Info } from 'lucide-react';
 import { useChatStore } from '@/store/useChatStore';
 import { Button } from '@/components/ui/button';
 import { createClient } from '@/utils/supabase/client';
 import { useAuthStore } from '@/store/useAuthStore';
 import { GroupInfoModal } from './GroupInfoModal';
-import { ChannelInfoModal } from './ChannelInfoModal';
 import { Modal } from '@/components/ui/Modal';
-import { api } from '@/services/api';
 import { useToast } from '@/hooks/useToast';
 
 interface ChatHeaderProps {
@@ -26,9 +24,8 @@ export function ChatHeader({ onOpenDetails }: ChatHeaderProps) {
   const [showOptionsMenu, setShowOptionsMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   
-  // Modais
+  // Modais (Channel Removido)
   const [isGroupInfoOpen, setIsGroupInfoOpen] = useState(false);
-  const [isChannelInfoOpen, setIsChannelInfoOpen] = useState(false);
   const [isClearChatModalOpen, setIsClearChatModalOpen] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
 
@@ -95,8 +92,6 @@ export function ChatHeader({ onOpenDetails }: ChatHeaderProps) {
       if (!selectedInstance || !activeContact || !user?.company_id) return;
       setIsClearing(true);
       try {
-          // Aqui fazemos um DELETE no banco para todas as mensagens deste chat
-          // Como o supabase-js não tem "delete where not id", usamos filtro por jid
           const { error } = await supabase
               .from('messages')
               .delete()
@@ -107,8 +102,6 @@ export function ChatHeader({ onOpenDetails }: ChatHeaderProps) {
 
           addToast({ type: 'success', title: 'Limpo', message: 'Histórico da conversa apagado.' });
           setIsClearChatModalOpen(false);
-          // O Realtime ou state local deve limpar a tela
-          // Em um app real, podemos forçar reload das mensagens na store
       } catch (error: any) {
           addToast({ type: 'error', title: 'Erro', message: error.message });
       } finally {
@@ -121,11 +114,11 @@ export function ChatHeader({ onOpenDetails }: ChatHeaderProps) {
   const displayName = activeContact.name || activeContact.push_name || activeContact.phone_number || "Desconhecido";
 
   const handleHeaderClick = () => {
-      onOpenDetails(); // Abre a sidebar
+      if(activeContact.is_group) setIsGroupInfoOpen(true);
+      else onOpenDetails(); 
   };
 
   const renderSubtitle = () => {
-    if (activeContact.is_newsletter) return <p className="text-xs text-blue-400 font-medium">Canal de Transmissão</p>;
     if (activeContact.is_group) return <p className="text-xs text-zinc-400 truncate">Clique para dados do grupo</p>;
     if (isTyping) return <span className="text-green-400 font-bold text-[11px] animate-pulse">digitando...</span>;
     if (isOnline) return <span className="text-green-400 font-bold text-[11px]">Online</span>;
@@ -159,7 +152,6 @@ export function ChatHeader({ onOpenDetails }: ChatHeaderProps) {
                             {activeContact.profile_pic_url ? (
                                 <img src={activeContact.profile_pic_url} className="w-full h-full object-cover" />
                             ) : (
-                                activeContact.is_newsletter ? <Megaphone className="w-5 h-5 text-blue-400" /> :
                                 (activeContact.is_group) ? <Users className="w-5 h-5 text-zinc-500" /> : <User className="w-5 h-5 text-zinc-500" />
                             )}
                     </div>
@@ -225,9 +217,8 @@ export function ChatHeader({ onOpenDetails }: ChatHeaderProps) {
             </div>
         </Modal>
 
-        {/* Modais de Gestão (Legado) */}
+        {/* Modais de Gestão (Canais removido) */}
         <GroupInfoModal isOpen={isGroupInfoOpen} onClose={() => setIsGroupInfoOpen(false)} contact={activeContact} sessionId={selectedInstance?.session_id || 'default'} />
-        <ChannelInfoModal isOpen={isChannelInfoOpen} onClose={() => setIsChannelInfoOpen(false)} contact={activeContact} sessionId={selectedInstance?.session_id || 'default'} />
     </>
   );
 }

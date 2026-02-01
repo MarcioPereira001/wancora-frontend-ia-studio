@@ -35,8 +35,8 @@ export function useChatList() {
           // Mapeamento Defensivo (Blindagem contra Nulls)
           const formatted: ChatContact[] = (data || []).map((row: any) => ({
               ...row,
-              id: row.jid, // Usa JID como ID único
-              remote_jid: row.jid, // FIX CRÍTICO: RPC retorna 'jid', a interface espera 'remote_jid'
+              id: row.jid, 
+              remote_jid: row.jid, 
               last_message_time: row.last_message_at,
               phone_number: row.phone_number || (row.jid ? row.jid.split('@')[0] : ''),
               name: row.name || null,
@@ -97,7 +97,6 @@ export function useChatList() {
                       is_online: updatedRow.is_online,
                       phone_number: updatedRow.phone || existing?.phone_number || updatedRow.jid.split('@')[0],
                       is_group: updatedRow.jid.includes('@g.us'),
-                      is_newsletter: updatedRow.jid.includes('@newsletter'),
                       is_community: updatedRow.is_community || false,
                       is_business: updatedRow.is_business
                   };
