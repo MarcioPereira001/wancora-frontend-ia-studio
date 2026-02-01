@@ -2,7 +2,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Smartphone, RefreshCw, Power, Trash2, Wifi, Terminal, MessageCircle, CheckCircle2, Loader2, Plus, RotateCcw, Webhook, Save } from 'lucide-react';
+import { Smartphone, RefreshCw, Power, Trash2, Wifi, Terminal, MessageCircle, CheckCircle2, Loader2, Plus, RotateCcw, Webhook, Save, Briefcase, ShieldCheck, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { whatsappService } from '@/services/whatsappService';
 import { Instance } from '@/types';
@@ -30,7 +30,8 @@ export default function ConnectionsPage() {
   const supabase = createClient();
   
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [step, setStep] = useState<'input' | 'initializing' | 'qr_scan' | 'success'>('input');
+  // Adicionado 'business_check' como primeiro passo
+  const [step, setStep] = useState<'business_check' | 'input' | 'initializing' | 'qr_scan' | 'success'>('business_check');
   const [newSessionName, setNewSessionName] = useState('');
   const [currentInstance, setCurrentInstance] = useState<Instance | null>(null);
 
@@ -96,7 +97,7 @@ export default function ConnectionsPage() {
   }, [isModalOpen, currentInstance?.session_id, triggerSyncAnimation]);
 
   const resetModal = () => {
-      setStep('input');
+      setStep('business_check'); // Começa pela verificação
       setNewSessionName('');
       setCurrentInstance(null);
   }
@@ -220,14 +221,61 @@ export default function ConnectionsPage() {
         ))}
       </div>
 
-      {/* MODAL DE CONEXÃO (QR CODE) */}
+      {/* MODAL DE CONEXÃO */}
       <Modal 
         isOpen={isModalOpen} 
         onClose={() => setIsModalOpen(false)} 
-        title={step === 'input' ? "Nova Conexão" : step === 'success' ? "Conexão Estabelecida" : step === 'qr_scan' ? "Escaneie o QR Code" : `Conectando: ${newSessionName}`}
+        title={
+            step === 'business_check' ? "Recomendação de Segurança" :
+            step === 'input' ? "Nova Conexão" : 
+            step === 'success' ? "Conexão Estabelecida" : 
+            step === 'qr_scan' ? "Escaneie o QR Code" : 
+            `Conectando: ${newSessionName}`
+        }
         maxWidth="md"
       >
           <div className="min-h-[350px] flex flex-col justify-center">
+              
+              {/* PASSO 0: BUSINESS CHECK */}
+              {step === 'business_check' && (
+                  <div className="space-y-6 animate-in slide-in-from-right-4 px-2">
+                      <div className="flex flex-col items-center text-center mb-6">
+                          <div className="w-20 h-20 bg-blue-500/10 rounded-full flex items-center justify-center border-2 border-blue-500/30 mb-4">
+                              <Briefcase className="w-10 h-10 text-blue-500" />
+                          </div>
+                          <h3 className="text-xl font-bold text-white">É uma conta Business?</h3>
+                          <p className="text-zinc-400 text-sm mt-2 max-w-sm mx-auto">
+                              Para garantir estabilidade máxima e acesso a recursos como Catálogo, Etiquetas e menor risco de banimento.
+                          </p>
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-3 bg-zinc-900/50 p-4 rounded-xl border border-zinc-800">
+                          <div className="flex items-center gap-3">
+                              <ShieldCheck className="w-5 h-5 text-green-500 shrink-0" />
+                              <span className="text-sm text-zinc-300">Menor risco de bloqueio pelo WhatsApp.</span>
+                          </div>
+                          <div className="flex items-center gap-3">
+                              <CheckCircle2 className="w-5 h-5 text-green-500 shrink-0" />
+                              <span className="text-sm text-zinc-300">Sincronização de Produtos e Catálogo.</span>
+                          </div>
+                          <div className="flex items-center gap-3">
+                              <AlertTriangle className="w-5 h-5 text-yellow-500 shrink-0" />
+                              <span className="text-sm text-zinc-300">Contas pessoais tem limites de envio menores.</span>
+                          </div>
+                      </div>
+
+                      <div className="flex gap-3 pt-2">
+                          <Button variant="ghost" onClick={() => setIsModalOpen(false)} className="flex-1 text-zinc-400">
+                              Cancelar
+                          </Button>
+                          <Button onClick={() => setStep('input')} className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold">
+                              Sim, Continuar
+                          </Button>
+                      </div>
+                  </div>
+              )}
+
+              {/* PASSO 1: INPUT NOME */}
               {step === 'input' && (
                   <div className="space-y-6 animate-in slide-in-from-right-4">
                       <div className="bg-zinc-950/50 p-4 rounded-lg border border-zinc-800 flex gap-3">
@@ -247,9 +295,10 @@ export default function ConnectionsPage() {
                             autoFocus
                           />
                       </div>
-                      <div className="flex justify-end pt-4">
-                          <Button onClick={() => handleStartProtocol()} disabled={!newSessionName.trim()} className="w-full">
-                              Iniciar Protocolo de Conexão
+                      <div className="flex justify-end pt-4 gap-2">
+                          <Button variant="ghost" onClick={() => setStep('business_check')}>Voltar</Button>
+                          <Button onClick={() => handleStartProtocol()} disabled={!newSessionName.trim()} className="flex-1">
+                              Iniciar Protocolo
                           </Button>
                       </div>
                   </div>
