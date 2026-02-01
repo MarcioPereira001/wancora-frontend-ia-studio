@@ -1,0 +1,25 @@
+
+/* Custom Scrollbar for Editor */
+.ql-container {
+    font-size: 16px;
+    font-family: 'Times New Roman', serif;
+    height: calc(100% - 42px) !important; /* Toolbar height adjust */
+}
+
+.ql-editor {
+    height: 100%;
+    overflow-y: auto;
+    padding: 40px;
+    background-color: white;
+    color: black;
+}
+
+/* Toolbar Dark Mode Fix if needed, but we used white editor */
+.ql-toolbar {
+    background-color: #f4f4f5;
+    border-color: #e4e4e7 !important;
+}
+
+.ql-container.ql-snow {
+    border-color: #e4e4e7 !important;
+}
