@@ -1,4 +1,3 @@
-
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
@@ -11,17 +10,21 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+  
+  // --- BLOCO DE SEGURANÇA DE DEPLOY (MVP) ---
   typescript: {
-    // Ignora erros de tipagem durante o build para garantir o deploy
+    // Ignora erros de tipagem (TS) para não travar o build
     ignoreBuildErrors: true,
   },
-  // CORREÇÃO 1: Adicionando objeto turbopack vazio para silenciar o erro de conflito
-  // já que estamos usando uma config customizada de webpack abaixo.
-  // @ts-ignore - Propriedade nova do Next 16 pode não estar nos tipos ainda
+  eslint: {
+    // Ignora erros de estilo (Lint) para não travar o build
+    // Isso substitui a flag --no-lint que foi removida
+    ignoreDuringBuilds: true,
+  },
+  // -------------------------------------------
+
+  // @ts-ignore - Silencia erro de tipagem se a propriedade for muito nova
   turbopack: {},
-  
-  // CORREÇÃO 2: A chave 'eslint' foi removida daqui pois foi depreciada.
-  // O ignore de lint agora é feito no package.json via flag --no-lint
 
   async rewrites() {
     return [
@@ -33,7 +36,7 @@ const nextConfig: NextConfig = {
       },
     ];
   },
-  // Mantemos o Webpack para ignorar módulos de servidor no cliente (fs, etc)
+  
   webpack: (config, { isServer }) => {
     if (!isServer) {
       config.resolve.fallback = {
