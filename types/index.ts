@@ -72,6 +72,7 @@ export interface Instance {
   sync_status?: string;
   sync_percent?: number;
   updated_at?: string;
+  is_business_account?: boolean; // NOVO: Flag de tipo de conta
 }
 
 export interface GamificationProfile {

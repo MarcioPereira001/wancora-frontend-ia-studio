@@ -248,7 +248,6 @@ Gerencia configurações e metadados.
       "participants": ["jid1"] // Apenas para ações de membros
     }
     ```
-
 #### `POST /management/community/create`
 Cria uma Comunidade (Grupo Pai) para aninhamento de subgrupos.
 * **Body:** `{ "sessionId": "string", "companyId": "uuid", "subject": "Nome da Comunidade", "description": "Descrição" }`
@@ -257,55 +256,11 @@ Cria uma Comunidade (Grupo Pai) para aninhamento de subgrupos.
 Cria um grupo padrão.
 * **Body:** `{ "sessionId": "string", "companyId": "uuid", "subject": "Nome", "participants": ["5511999999999"] }`
 
-#### `POST /management/channel/create`
-Cria um novo Canal de Transmissão (Newsletter).
-* **Body:** `{ "sessionId": "string", "companyId": "uuid", "name": "Nome", "description": "Desc" }`
-
-#### `POST /management/channel/search`
-Busca canais públicos no diretório do WhatsApp.
-* **Body:** `{ "sessionId": "string", "query": "Termo de busca" }`
-
-#### `POST /management/channel/follow`
-Segue um canal existente (necessário para receber updates).
-* **Body:** `{ "sessionId": "string", "companyId": "uuid", "channelJid": "123...@newsletter" }`
-
-#### `POST /management/status/post`
-Posta um Status (Story) visível para os contatos salvos.
-* **Body (Texto):** 
-  ```json
-  { 
-    "sessionId": "string", 
-    "type": "text", 
-    "content": "Olá mundo!", 
-    "options": { "color": "#FF0000", "font": 1 } 
-  }
-  { 
-  "sessionId": "string", 
-  "type": "image", // ou 'video'
-  "content": "https://url-da-midia.com/foto.jpg", 
-  "options": { "caption": "Legenda" } 
-}```
-
-#### POST /management/profile/update
-Atualiza dados da própria instância.
-```json
-{ 
-  "sessionId": "string", 
-  "action": "name", // 'name', 'status' ou 'picture'
-  "value": "Novo Nome ou URL da Imagem" 
-}```
-
 #### POST /management/catalog/sync
 Força a sincronização dos produtos do WhatsApp Business para o banco de dados (Tabela products).
 **Body:** { "sessionId": "string", "companyId": "uuid" }
 
-
-### 3.6. Tratamento de Canais (Newsletters)
-- O sistema identifica automaticamente JIDs com sufixo `@newsletter`.
-- A RPC `get_my_chat_list` retorna a flag `is_newsletter` = true.
-- A tabela `contacts` armazena o nome do canal em `name` e ignora a validação de número de telefone para estes casos.
-
-### 3.7. Webhooks de Saída (Outgoing Events)
+### 3.6. Webhooks de Saída (Outgoing Events)
 Se configurado na instância, o Wancora envia POST requests para a URL definida.
 
 **Evento: `message.upsert` (Nova Mensagem)**
@@ -328,7 +283,7 @@ Payload enviado para o seu n8n/Typebot:
   }
 }```
 
-### 3.8. Automação de Agenda (Automation Service)
+### 3.7. Automação de Agenda (Automation Service)
 POST /appointments/confirm
 Dispara notificações imediatas (WhatsApp) de confirmação de agendamento para o Admin e para o Lead, baseado nas regras configuradas.
 Body:
@@ -338,6 +293,7 @@ Body:
   "companyId": "uuid",
   "sessionId": "string" // Opcional (O backend resolve a sessão ativa se omitido)
 }```
+
 ---
 
 ## 4. ⚙️ Lógica Interna & Workers (Black Box)
@@ -422,15 +378,11 @@ O sistema possui um **"Centralized Gatekeeper"** (`ensureLeadExists` em `sync.js
 
 *   **Trigger Universal:** Tanto o Histórico (`historyHandler` com flag `createLead: true`) quanto Mensagens Novas (`messageHandler`) chamam esta função.
 *   **Regras de Exclusão (Hard Block):**
-    *   Grupos (`@g.us`) -> Bloqueado.
-    *   Canais (`@newsletter`) -> Bloqueado.
-    *   Broadcasts (`status@broadcast`) -> Bloqueado.
+    *   Grupos (`@g.us`) -> Bloqueado (Grupos não viram leads de funil, apenas chats).
+    *   Canais (`@newsletter`) -> **BLOQUEIO TOTAL** (Ignorado pelo sistema).
+    *   Broadcasts (`status@broadcast`) -> **BLOQUEIO TOTAL** (Stories ignorados).
     *   Self (`meu próprio número`) -> Bloqueado.
     *   **Ignorados:** Se `contacts.is_ignored = true`, o lead é bloqueado (Feature "Remover do CRM").
-*   **Estratégia de Nomes (Null Safe Policy):**
-    *   O sistema tenta obter nomes na ordem: Agenda > Business > PushName.
-    *   **Alteração v5.2:** Se o nome for genérico (apenas números) ou inexistente, o sistema força a gravação de `NULL` no banco. Isso permite que a constraint `NOT NULL` seja removida da tabela `leads`, delegando a formatação visual ao Frontend.
-
 ---
 
 ## 5. 📡 Realtime & WebSocket Events (Webhook Specs)

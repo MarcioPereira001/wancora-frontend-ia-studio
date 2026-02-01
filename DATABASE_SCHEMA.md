@@ -50,11 +50,9 @@ Contatos brutos sincronizados do celular.
 * `last_seen_at`: timestamptz
 * `is_online`: boolean
 * `phone`: text (Telefone limpo para vínculo com Leads e Buscas)
-* `unread_count`: integer (Default: 0) - **[NOVO]** Contador atômico atualizado via Trigger.
-* `is_newsletter`: boolean (Virtual/Derivado) - Identifica Canais de Transmissão.
-* **[NOVO]** `parent_jid`: text (Para vincular Grupos a Comunidades)
-* **[NOVO]** `is_community`: boolean
-* **[NOVO]** `metadata`: jsonb (Ex: `{ role: 'admin', subscribers: 1000 }` para canais)
+* `unread_count`: integer (Default: 0) - Contador atômico atualizado via Trigger.
+* `parent_jid`: text (Para vincular Grupos a Comunidades)
+* `is_community`: boolean
 
 ### `leads` (CRM)
 A entidade de negócio principal.

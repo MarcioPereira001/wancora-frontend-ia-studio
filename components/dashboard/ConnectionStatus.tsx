@@ -1,8 +1,9 @@
+
 'use client';
 
 import React, { useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { Smartphone, Loader2, Battery, Power, Trash2, RefreshCw, CheckCircle2 } from 'lucide-react';
+import { Smartphone, Loader2, Battery, Power, Trash2, RefreshCw, CheckCircle2, Briefcase } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { whatsappService } from '@/services/whatsappService';
 import { useToast } from '@/hooks/useToast';
@@ -15,13 +16,11 @@ export function ConnectionStatus() {
   const [isSyncingManual, setIsSyncingManual] = useState(false);
 
   // Pega a instância mais recente ou a primeira disponível
-  // Lógica: Prioriza conectada, senão a mais recente
   const instance = instances.find(i => i.status === 'connected') || instances[0];
 
   const handleConnect = async () => {
     setLoadingAction(true);
     try {
-        // Se já existe uma instância desconectada, tenta reconectar ela
         const sessionId = instance?.session_id || 'default';
         await whatsappService.connectInstance(sessionId, instance?.name);
         addToast({ type: 'info', title: 'Iniciando', message: 'Solicitando QR Code ao servidor...' });
@@ -38,7 +37,6 @@ export function ConnectionStatus() {
     setLoadingAction(true);
     try {
         await whatsappService.logoutInstance(instance.session_id);
-        // O RealtimeStore atualizará a UI automaticamente quando o banco mudar
     } catch (e: any) {
         addToast({ type: 'error', title: 'Erro', message: e.message });
     } finally {
@@ -84,8 +82,15 @@ export function ConnectionStatus() {
                 <Battery className={cn("w-4 h-4", (instance?.battery_level || 0) < 20 ? "text-red-500" : "text-green-400")} />
               </div>
            </div>
-           <div className="text-center">
-              <p className="text-white font-bold text-lg">{instance?.name || 'WhatsApp'}</p>
+           <div className="text-center space-y-1">
+              <p className="text-white font-bold text-lg flex items-center justify-center gap-2">
+                  {instance?.name || 'WhatsApp'}
+                  {instance.is_business_account && (
+                      <span className="text-[10px] bg-blue-500/20 text-blue-400 border border-blue-500/30 px-1.5 py-0.5 rounded flex items-center gap-1" title="WhatsApp Business">
+                          <Briefcase className="w-3 h-3" /> BIZ
+                      </span>
+                  )}
+              </p>
               <div className="flex items-center gap-2 justify-center text-zinc-400 text-sm mt-1">
                 <CheckCircle2 className="w-4 h-4 text-green-500" />
                 <span className="text-green-500 font-medium">Online e Operante</span>
@@ -95,7 +100,7 @@ export function ConnectionStatus() {
       );
     }
 
-    // 3. QR Code (Estado 'qrcode' ou 'qr_ready')
+    // 3. QR Code
     if ((status === 'qr_ready' || status === 'qrcode') && instance?.qrcode_url) {
       return (
         <div className="text-center space-y-4 animate-in fade-in zoom-in">
@@ -118,7 +123,7 @@ export function ConnectionStatus() {
       );
     }
 
-    // 4. Desconectado (Estado inicial ou 'disconnected')
+    // 4. Desconectado
     return (
       <div className="text-center space-y-4 animate-in fade-in zoom-in">
         <div className="w-20 h-20 bg-zinc-800/50 rounded-full flex items-center justify-center mx-auto mb-2 border border-zinc-700 shadow-inner">
