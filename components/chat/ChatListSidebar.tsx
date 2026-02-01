@@ -7,7 +7,7 @@ import { useChatStore } from '@/store/useChatStore';
 import { useRealtimeStore } from '@/store/useRealtimeStore';
 import { 
     Search, Plus, MessageSquare, Loader2, RefreshCw, Users, Filter, Tag, Archive, Reply, Globe,
-    ChevronDown, Wifi, AlertCircle, ArrowUp, Power
+    ChevronDown, Wifi, ArrowUp
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -176,7 +176,7 @@ export function ChatListSidebar() {
 
           if (viewMode === 'active') {
               if (filterType === 'communities' && !contact.is_community) return false;
-              if (filterType === 'groups' && !contact.is_group) return false;
+              if (filterType === 'groups' && !contact.is_group && !contact.is_community) return false; // Grupos normais não devem incluir comunidades se houver aba separada
               if (filterType === 'unread' && contact.unread_count === 0) return false;
               
               if (tagFilter !== 'all') {
@@ -332,7 +332,7 @@ export function ChatListSidebar() {
                 </div>
             </div>
 
-            {/* FILTER TABS (Atualizadas) */}
+            {/* FILTER TABS */}
             {viewMode === 'active' && (
                 <div className="flex flex-wrap gap-2">
                     {[
@@ -360,6 +360,19 @@ export function ChatListSidebar() {
 
         {/* LIST CONTENT */}
         <div ref={listRef} className="flex-1 overflow-y-auto custom-scrollbar relative">
+            
+            {/* Scroll To Top Button (Reposicionado para o TOPO da lista com estilo Verde) */}
+            {showScrollTop && (
+                <div className="sticky top-2 w-full flex justify-center z-30 pointer-events-none">
+                     <button 
+                        onClick={scrollToTop}
+                        className="bg-green-600 hover:bg-green-500 border border-green-500 text-white p-2 rounded-full shadow-lg shadow-green-500/20 transition-all pointer-events-auto animate-in slide-in-from-top-2 scale-90 hover:scale-100"
+                    >
+                        <ArrowUp className="w-4 h-4" />
+                    </button>
+                </div>
+            )}
+
             {(loading || loadingArchived) ? (
                 <div className="flex flex-col items-center justify-center h-40 gap-3">
                     <Loader2 className="w-6 h-6 animate-spin text-primary" />
@@ -388,18 +401,6 @@ export function ChatListSidebar() {
                         />
                     </React.Fragment>
                 ))
-            )}
-
-            {/* Scroll To Top Button */}
-            {showScrollTop && (
-                <div className="sticky bottom-4 w-full flex justify-center pointer-events-none">
-                     <button 
-                        onClick={scrollToTop}
-                        className="bg-zinc-800/80 backdrop-blur border border-zinc-700 text-zinc-300 p-2 rounded-full shadow-xl hover:bg-zinc-700 hover:text-white transition-all pointer-events-auto animate-in slide-in-from-bottom-2"
-                    >
-                        <ArrowUp className="w-4 h-4" />
-                    </button>
-                </div>
             )}
         </div>
 

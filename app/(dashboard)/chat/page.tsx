@@ -8,8 +8,7 @@ import { useChatStore } from '@/store/useChatStore';
 import { useRealtimeStore } from '@/store/useRealtimeStore';
 import { Message } from '@/types';
 import { cn } from '@/lib/utils';
-import { Smartphone, Wifi, AlertCircle, ChevronDown, Plus } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { Smartphone } from 'lucide-react';
 
 // Atomic Components
 import { ChatListSidebar } from '@/components/chat/ChatListSidebar';
@@ -21,7 +20,6 @@ import { ChatSidebar } from '@/components/chat/ChatSidebar';
 export default function ChatPage() {
   const { user } = useAuthStore();
   const supabase = createClient();
-  const router = useRouter();
   
   const { instances } = useRealtimeStore();
   const { 
@@ -32,7 +30,6 @@ export default function ChatPage() {
   } = useChatStore();
 
   const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(true);
-  const [showInstanceMenu, setShowInstanceMenu] = useState(false);
 
   // --- AUTO-SELECT INSTANCE ---
   useEffect(() => {
@@ -125,59 +122,6 @@ export default function ChatPage() {
   return (
     <div className="flex flex-col h-[calc(100vh-6rem)] md:h-[calc(100vh-2rem)] h-dvh md:h-[calc(100dvh-2rem)] gap-2">
       
-      {/* 1. BARRA DE INSTÂNCIA GLOBAL (Novo) */}
-      <div className="flex items-center justify-between px-4 py-2 bg-zinc-900/80 border border-zinc-800 rounded-xl backdrop-blur-sm shrink-0">
-          <div className="flex items-center gap-2 relative">
-             <button 
-                onClick={() => setShowInstanceMenu(!showInstanceMenu)}
-                className="flex items-center gap-2 hover:bg-zinc-800 p-1.5 rounded-lg transition-colors"
-             >
-                 <div className={cn(
-                     "w-2 h-2 rounded-full",
-                     selectedInstance?.status === 'connected' ? "bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]" : "bg-red-500"
-                 )} />
-                 <span className="text-sm font-bold text-zinc-200 flex items-center gap-2">
-                    {selectedInstance ? selectedInstance.name : "Selecione uma Instância"}
-                    <ChevronDown className="w-3 h-3 text-zinc-500" />
-                 </span>
-             </button>
-
-             {/* Dropdown de Instâncias */}
-             {showInstanceMenu && (
-                 <>
-                    <div className="fixed inset-0 z-40" onClick={() => setShowInstanceMenu(false)} />
-                    <div className="absolute top-10 left-0 w-64 bg-zinc-950 border border-zinc-800 rounded-xl shadow-2xl z-50 p-1 animate-in fade-in zoom-in-95">
-                        <p className="px-3 py-2 text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Conexões Disponíveis</p>
-                        {instances.map(inst => (
-                            <button 
-                                key={inst.id}
-                                onClick={() => { setSelectedInstance(inst); setShowInstanceMenu(false); }}
-                                className={cn(
-                                    "w-full text-left px-3 py-2 text-sm rounded-lg flex items-center justify-between transition-colors mb-0.5",
-                                    selectedInstance?.id === inst.id ? "bg-zinc-800 text-white" : "text-zinc-400 hover:bg-zinc-900 hover:text-white"
-                                )}
-                            >
-                                <span className="truncate">{inst.name}</span>
-                                {inst.status === 'connected' ? <Wifi className="w-3 h-3 text-green-500" /> : <AlertCircle className="w-3 h-3 text-red-500" />}
-                            </button>
-                        ))}
-                        <div className="h-px bg-zinc-800 my-1" />
-                        <button 
-                            onClick={() => router.push('/connections')}
-                            className="w-full text-left px-3 py-2 text-sm text-primary hover:bg-primary/10 rounded-lg flex items-center gap-2 transition-colors font-medium"
-                        >
-                            <Plus className="w-3 h-3" /> Nova Conexão
-                        </button>
-                    </div>
-                 </>
-             )}
-          </div>
-          
-          <div className="text-xs text-zinc-500 hidden md:block">
-              {selectedInstance?.session_id && <span className="font-mono opacity-50">ID: {selectedInstance.session_id.slice(0, 8)}...</span>}
-          </div>
-      </div>
-
       {/* 2. ÁREA DE CHAT (Grid Principal) */}
       <div className="flex flex-1 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950/50 shadow-2xl relative">
         
