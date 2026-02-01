@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { FileText, MapPin, Download, PlayCircle, Image as ImageIcon, Film, User, Copy, ShoppingBag, CheckCircle2, AlertCircle, Sticker, AlertTriangle, ZoomIn, X, Captions } from "lucide-react";
+import { FileText, MapPin, Download, PlayCircle, Image as ImageIcon, Film, User, Copy, ShoppingBag, CheckCircle2, AlertCircle, Sticker, AlertTriangle, ZoomIn, X, Captions, ExternalLink, Link as LinkIcon, Sparkles } from "lucide-react";
 import { Message } from "@/types";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/useToast";
@@ -20,6 +20,7 @@ export function MessageContent({ message }: MessageContentProps) {
   const [imgError, setImgError] = useState(false);
   const [isZoomed, setIsZoomed] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [showTranscription, setShowTranscription] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -145,13 +146,38 @@ export function MessageContent({ message }: MessageContentProps) {
                 )}
             </div>
         </div>
+        
+        {/* BOTÃO DE TRANSCRIÇÃO */}
         {transcription && (
-            <div className={cn(
-                "mt-1 p-2 rounded-md text-xs leading-relaxed border flex gap-2 max-w-[280px]",
-                isMe ? "bg-primary/5 border-primary/10 text-emerald-100" : "bg-zinc-800/50 border-zinc-700 text-zinc-300"
-            )}>
-                <Captions className="w-3 h-3 mt-0.5 opacity-50 shrink-0" />
-                <span className="italic">"{transcription}"</span>
+            <div className="mt-1">
+                {!showTranscription ? (
+                    <button 
+                        onClick={() => setShowTranscription(true)}
+                        className={cn(
+                            "text-[10px] flex items-center gap-1 hover:underline transition-colors px-1",
+                            isMe ? "text-emerald-200/70 hover:text-emerald-100" : "text-zinc-500 hover:text-zinc-300"
+                        )}
+                    >
+                        <Sparkles className="w-3 h-3" /> Ler Transcrição
+                    </button>
+                ) : (
+                    <div className={cn(
+                        "p-2 rounded-md text-xs leading-relaxed border flex flex-col gap-1 max-w-[280px] animate-in slide-in-from-top-1",
+                        isMe ? "bg-primary/5 border-primary/10 text-emerald-100" : "bg-zinc-800/50 border-zinc-700 text-zinc-300"
+                    )}>
+                        <div className="flex items-center gap-2 mb-0.5 opacity-60">
+                            <Captions className="w-3 h-3" />
+                            <span className="text-[10px] font-bold uppercase">Transcrição IA</span>
+                        </div>
+                        <span className="italic">"{transcription}"</span>
+                        <button 
+                            onClick={() => setShowTranscription(false)}
+                            className="text-[10px] self-end mt-1 opacity-50 hover:opacity-100"
+                        >
+                            Ocultar
+                        </button>
+                    </div>
+                )}
             </div>
         )}
       </div>
@@ -297,7 +323,7 @@ export function MessageContent({ message }: MessageContentProps) {
       );
   }
 
-  // --- 8. PRODUTO (NOVO) ---
+  // --- 8. PRODUTO ---
   if (type === 'product') {
       let title = content || "Produto";
       return (
@@ -316,6 +342,43 @@ export function MessageContent({ message }: MessageContentProps) {
               <div className="absolute top-2 right-2 bg-black/50 p-1 rounded text-white">
                   <ShoppingBag className="w-4 h-4" />
               </div>
+          </div>
+      );
+  }
+
+  // --- 9. CARD / RICH LINK (NOVO) ---
+  if (type === 'card') {
+      let cardData = { title: 'Link', description: '', link: '#', thumbnailUrl: '' };
+      try {
+          if (content.startsWith('{')) {
+              cardData = JSON.parse(content);
+          }
+      } catch (e) {}
+
+      return (
+          <div className="mt-1 w-[280px] bg-zinc-900 border border-zinc-700 rounded-xl overflow-hidden hover:border-zinc-500 transition-colors group">
+              <a href={cardData.link} target="_blank" rel="noopener noreferrer" className="block">
+                  {/* Thumbnail */}
+                  <div className="h-36 bg-zinc-950 relative border-b border-zinc-800 flex items-center justify-center overflow-hidden">
+                      {cardData.thumbnailUrl ? (
+                          <img src={cardData.thumbnailUrl} alt="Thumbnail" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                      ) : (
+                          <LinkIcon className="w-10 h-10 text-zinc-700" />
+                      )}
+                      <div className="absolute top-2 right-2 bg-black/60 p-1.5 rounded-full text-white backdrop-blur-sm">
+                          <ExternalLink className="w-3 h-3" />
+                      </div>
+                  </div>
+                  
+                  {/* Content */}
+                  <div className="p-3">
+                      <h4 className="font-bold text-zinc-100 text-sm leading-tight mb-1 line-clamp-2">{cardData.title}</h4>
+                      {cardData.description && (
+                          <p className="text-xs text-zinc-400 line-clamp-2 leading-relaxed">{cardData.description}</p>
+                      )}
+                      <p className="text-[10px] text-blue-400/80 mt-2 truncate font-mono opacity-80">{cardData.link}</p>
+                  </div>
+              </a>
           </div>
       );
   }

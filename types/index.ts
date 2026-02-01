@@ -126,6 +126,7 @@ export interface Message {
   read_at?: string;
   delivered_at?: string;
   lead_id?: string;
+  transcription?: string | null; // Adicionado para suporte a áudio transcrito
 }
 
 export interface PipelineStage {

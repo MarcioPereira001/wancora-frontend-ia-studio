@@ -1,3 +1,4 @@
+
 import { z } from 'zod';
 
 // Validação de UUID
@@ -8,7 +9,7 @@ export const SendMessageSchema = z.object({
   sessionId: z.string().min(1, "Session ID obrigatório"),
   companyId: uuidSchema,
   to: z.string().min(5, "Destinatário inválido"),
-  type: z.enum(['text', 'image', 'video', 'audio', 'document', 'poll', 'location', 'contact', 'pix']),
+  type: z.enum(['text', 'image', 'video', 'audio', 'document', 'poll', 'location', 'contact', 'pix', 'card']),
   text: z.string().optional(),
   url: z.string().url().optional().or(z.literal("")),
   fileName: z.string().optional(),
@@ -33,12 +34,21 @@ export const SendMessageSchema = z.object({
     phone: z.string()
   }).optional(),
   
+  // Novo tipo Card (Rich Link)
+  card: z.object({
+      title: z.string().min(1, "Título obrigatório"),
+      description: z.string().optional(),
+      link: z.string().url("Link inválido"),
+      thumbnailUrl: z.string().url().optional().or(z.literal(""))
+  }).optional(),
+
   mimetype: z.string().optional()
 }).refine(data => {
     // Regras condicionais
     if (data.type === 'text' && !data.text) return false;
     if (['image', 'video', 'audio', 'document'].includes(data.type) && !data.url) return false;
     if (data.type === 'poll' && !data.poll) return false;
+    if (data.type === 'card' && !data.card) return false;
     return true;
 }, {
     message: "Payload inválido para o tipo de mensagem especificado."

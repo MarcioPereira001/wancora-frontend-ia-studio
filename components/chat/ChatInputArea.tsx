@@ -2,7 +2,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Paperclip, Mic, Send, Trash2, Image as IconImage, FileText, Music, MapPin, User, BarChart2, DollarSign, Ban, Smile, CheckSquare, Loader2, Sticker, ShoppingBag } from 'lucide-react';
+import { Paperclip, Mic, Send, Trash2, Image as IconImage, FileText, MapPin, User, BarChart2, Ban, Smile, CheckSquare, Loader2, Sticker, ShoppingBag, LayoutTemplate } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useChatStore } from '@/store/useChatStore';
 import { useAuthStore } from '@/store/useAuthStore';
@@ -42,9 +42,10 @@ export function ChatInputArea() {
   const audioInputRef = useRef<HTMLInputElement>(null);
   const stickerInputRef = useRef<HTMLInputElement>(null);
 
-  const [activeModal, setActiveModal] = useState<'poll'|'contact'|'location'|'delete_confirm'|'catalog'|null>(null);
+  const [activeModal, setActiveModal] = useState<'poll'|'contact'|'location'|'delete_confirm'|'catalog'|'card'|null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   
+  // Modal States
   const [pollQuestion, setPollQuestion] = useState("");
   const [pollOptions, setPollOptions] = useState(["Sim", "Não"]);
   const [contactName, setContactName] = useState("");
@@ -52,6 +53,12 @@ export function ChatInputArea() {
   const [locLat, setLocLat] = useState<number | null>(null);
   const [locLng, setLocLng] = useState<number | null>(null);
   const [locLoading, setLocLoading] = useState(false);
+  
+  // Card States
+  const [cardTitle, setCardTitle] = useState("");
+  const [cardDesc, setCardDesc] = useState("");
+  const [cardLink, setCardLink] = useState("");
+  const [cardThumb, setCardThumb] = useState("");
 
   useEffect(() => {
       setMediaMenuOpen(false);
@@ -94,6 +101,7 @@ export function ChatInputArea() {
           location: payload.type === 'location' ? payload.content : undefined,
           contact: payload.type === 'contact' ? payload.content : undefined,
           product: payload.type === 'product' ? payload.content : undefined,
+          card: payload.type === 'card' ? payload.content : undefined,
           mimetype: payload.mimetype,
           fileName: payload.fileName,
           ptt: payload.ptt
@@ -101,7 +109,8 @@ export function ChatInputArea() {
 
       const validation = SendMessageSchema.safeParse(apiPayload);
       if (!validation.success) {
-          addToast({ type: 'error', title: 'Erro', message: 'Mensagem inválida.' });
+          console.log(validation.error);
+          addToast({ type: 'error', title: 'Erro', message: 'Mensagem inválida. Verifique os campos.' });
           return;
       }
 
@@ -112,6 +121,7 @@ export function ChatInputArea() {
       if (payload.type === 'location') contentDisplay = JSON.stringify(payload.content);
       if (payload.type === 'contact') contentDisplay = JSON.stringify(payload.content);
       if (payload.type === 'product') contentDisplay = payload.content.title || 'Produto';
+      if (payload.type === 'card') contentDisplay = JSON.stringify(payload.content);
       if (payload.type === 'sticker') contentDisplay = 'Figurinha';
       if (payload.caption) contentDisplay = payload.caption;
 
@@ -270,8 +280,26 @@ export function ChatInputArea() {
               priceAmount1000: (product.price || 0) * 1000,
               productImageCount: product.image_url ? 1 : 0
           },
-          url: product.image_url // Passa URL para o sender tentar baixar/usar
+          url: product.image_url 
       });
+      setActiveModal(null);
+  };
+
+  const handleSendCard = () => {
+      if(!cardTitle.trim() || !cardLink.trim()) {
+          addToast({ type: 'warning', title: 'Campos Obrigatórios', message: 'Título e Link são necessários.' });
+          return;
+      }
+      dispatchMessage({
+          type: 'card',
+          content: {
+              title: cardTitle,
+              description: cardDesc,
+              link: cardLink,
+              thumbnailUrl: cardThumb
+          }
+      });
+      setCardTitle(""); setCardDesc(""); setCardLink(""); setCardThumb("");
       setActiveModal(null);
   };
 
@@ -344,6 +372,9 @@ export function ChatInputArea() {
                         <button onClick={() => { setMediaMenuOpen(false); setActiveModal('catalog'); }} className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
                             <ShoppingBag className="w-5 h-5 text-pink-400" /> Produto
                         </button>
+                        <button onClick={() => { setMediaMenuOpen(false); setActiveModal('card'); }} className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
+                            <LayoutTemplate className="w-5 h-5 text-orange-400" /> Card (Link)
+                        </button>
                         <button onClick={() => { setMediaMenuOpen(false); setActiveModal('location'); }} className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
                             <MapPin className="w-5 h-5 text-red-400" /> Localização
                         </button>
@@ -413,6 +444,28 @@ export function ChatInputArea() {
               {locLoading ? <Loader2 className="w-10 h-10 animate-spin mx-auto" /> : 
               locLat ? <Button onClick={handleSendLocation} className="w-full">Enviar Localização</Button> :
               <Button onClick={getCurrentLocation} className="w-full">Obter Localização</Button>}
+          </div>
+      </Modal>
+
+      <Modal isOpen={activeModal === 'card'} onClose={() => setActiveModal(null)} title="Novo Card (Rich Link)">
+          <div className="space-y-4">
+              <div>
+                <label className="text-xs font-bold text-zinc-500 uppercase">Título</label>
+                <Input value={cardTitle} onChange={e => setCardTitle(e.target.value)} placeholder="Ex: Promoção Relâmpago" className="mt-1" />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-zinc-500 uppercase">Descrição (Opcional)</label>
+                <Input value={cardDesc} onChange={e => setCardDesc(e.target.value)} placeholder="Clique para saber mais..." className="mt-1" />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-zinc-500 uppercase">Link de Destino</label>
+                <Input value={cardLink} onChange={e => setCardLink(e.target.value)} placeholder="https://seu-site.com" className="mt-1" />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-zinc-500 uppercase">Imagem de Capa (URL)</label>
+                <Input value={cardThumb} onChange={e => setCardThumb(e.target.value)} placeholder="https://.../imagem.jpg" className="mt-1" />
+              </div>
+              <Button onClick={handleSendCard} className="w-full bg-orange-500 hover:bg-orange-600 text-white">Enviar Card</Button>
           </div>
       </Modal>
 
