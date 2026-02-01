@@ -1,16 +1,8 @@
+
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   reactStrictMode: false,
-  
-  // Ignorar erros no build para garantir o MVP
-  typescript: {
-    ignoreBuildErrors: true,
-  },
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
-
   images: {
     remotePatterns: [
       {
@@ -19,8 +11,21 @@ const nextConfig: NextConfig = {
       },
     ],
   },
-
-  // Configuração correta para ignorar módulos de servidor no cliente
+  typescript: {
+    ignoreBuildErrors: true,
+  },
+  // Proxy para o Backend
+  async rewrites() {
+    return [
+      {
+        source: '/api/v1/:path*',
+        destination: process.env.NEXT_PUBLIC_BACKEND_URL 
+          ? `${process.env.NEXT_PUBLIC_BACKEND_URL}/:path*` 
+          : 'http://localhost:3001/api/v1/:path*',
+      },
+    ];
+  },
+  // Configuração do Webpack para ignorar 'fs' e outros módulos nativos no client-side
   webpack: (config, { isServer }) => {
     if (!isServer) {
       config.resolve.fallback = {
@@ -32,8 +37,8 @@ const nextConfig: NextConfig = {
         path: false,
         stream: false,
         constants: false,
-        crypto: false,
         os: false,
+        crypto: false,
       };
     }
     return config;

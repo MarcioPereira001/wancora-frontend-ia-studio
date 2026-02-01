@@ -9,10 +9,10 @@ import { Save, Download, FileText, ChevronLeft } from 'lucide-react';
 import { useToast } from '@/hooks/useToast';
 import { useCloudStore } from '@/store/useCloudStore';
 import { useAuthStore } from '@/store/useAuthStore';
-import htmlToDocx from 'html-to-docx';
+// REMOVIDO: import htmlToDocx from 'html-to-docx'; (Causa erro de fs no build)
 import { jsPDF } from 'jspdf';
 
-// Carrega react-quill-new dinamicamente para evitar erro SSR e compatibilidade com React 19
+// Carrega react-quill-new dinamicamente
 const ReactQuill = dynamic(() => import('react-quill-new'), { ssr: false });
 import 'react-quill-new/dist/quill.snow.css';
 
@@ -32,6 +32,10 @@ export function EditorApp({ windowId }: { windowId: string }) {
       if (!content.trim()) return;
       setIsSaving(true);
       try {
+          // IMPORTAÇÃO DINÂMICA: O Pulo do Gato 🐱
+          // Isso garante que o 'fs' só seja exigido sob demanda, permitindo que o Webpack ignore-o no bundle principal
+          const htmlToDocx = (await import('html-to-docx')).default;
+
           const blob = await htmlToDocx(content, null, {
               table: { row: { cantSplit: true } },
               footer: true,
@@ -50,9 +54,7 @@ export function EditorApp({ windowId }: { windowId: string }) {
   };
 
   const handleExportPDF = () => {
-      // jsPDF v4.0.0 usa exportação nomeada ou construtor direto
       const doc = new jsPDF();
-      // Simples extração de texto para MVP
       const tempDiv = document.createElement('div');
       tempDiv.innerHTML = content;
       const text = tempDiv.innerText || '';
