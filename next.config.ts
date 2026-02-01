@@ -2,6 +2,15 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   reactStrictMode: false,
+  
+  // Ignorar erros no build para garantir o MVP
+  typescript: {
+    ignoreBuildErrors: true,
+  },
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
+
   images: {
     remotePatterns: [
       {
@@ -10,33 +19,8 @@ const nextConfig: NextConfig = {
       },
     ],
   },
-  
-  // --- BLOCO DE SEGURANÇA DE DEPLOY (MVP) ---
-  typescript: {
-    // Ignora erros de tipagem (TS) para não travar o build
-    ignoreBuildErrors: true,
-  },
-  eslint: {
-    // Ignora erros de estilo (Lint) para não travar o build
-    // Isso substitui a flag --no-lint que foi removida
-    ignoreDuringBuilds: true,
-  },
-  // -------------------------------------------
 
-  // @ts-ignore - Silencia erro de tipagem se a propriedade for muito nova
-  turbopack: {},
-
-  async rewrites() {
-    return [
-      {
-        source: '/api/v1/:path*',
-        destination: process.env.NEXT_PUBLIC_BACKEND_URL 
-          ? `${process.env.NEXT_PUBLIC_BACKEND_URL}/:path*` 
-          : 'http://localhost:3001/api/v1/:path*',
-      },
-    ];
-  },
-  
+  // Configuração correta para ignorar módulos de servidor no cliente
   webpack: (config, { isServer }) => {
     if (!isServer) {
       config.resolve.fallback = {
@@ -48,6 +32,8 @@ const nextConfig: NextConfig = {
         path: false,
         stream: false,
         constants: false,
+        crypto: false,
+        os: false,
       };
     }
     return config;
