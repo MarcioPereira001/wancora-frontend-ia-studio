@@ -115,13 +115,13 @@ Histórico de mensagens.
 * `remote_jid`: text
 * `whatsapp_id`: text (Unique Index composto com remote_jid)
 * `from_me`: boolean
-* `content`: text
-* `message_type`: text ('text', 'image', 'audio', 'video', 'document', 'poll', 'location', 'sticker', 'contact', 'pix')
+* `content`: text (Para Cards, armazena o JSON com título/descrição/link)
+* `transcription`: text (Nullable) <- [NOVO] Transcrição de áudio via IA
+* `message_type`: text ('text', 'image', 'audio', 'video', 'document', 'poll', 'location', 'sticker', 'contact', 'pix', 'card') <- [ATUALIZADO]
 * `media_url`: text
 * `created_at`: timestamptz
 * `delivered_at`: timestamptz
 * `read_at`: timestamptz
-* ... (colunas existentes) ...
 * `reactions`: jsonb (Default: '[]') - Array de reações `{ text: "👍", actor: "jid", ts: 123 }`.
 * `poll_votes`: jsonb (Default: '[]') - Array de votos `{ voterJid: "...", selectedOptions: [...] }`.
 
