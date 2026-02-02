@@ -11,34 +11,43 @@ export function GlobalSyncIndicator() {
   const { forcedSyncId, clearSyncAnimation } = useRealtimeStore();
   const [show, setShow] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
+  
+  // Estado local visual
   const [localPercent, setLocalPercent] = useState(0);
   const [fakePercent, setFakePercent] = useState(0); 
   const [localStatus, setLocalStatus] = useState<string>('waiting');
   
+  // TRAVA DE 20 SEGUNDOS (Modo Cinema)
+  const [isLocked, setIsLocked] = useState(false);
+  
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const fakeProgressRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lockTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const closingRef = useRef(false);
 
   const targetInstanceId = forcedSyncId;
 
-  // --- ANIMAÇÃO DE PREPARAÇÃO (0-95% em 20s) ---
+  // --- ANIMAÇÃO DE PREPARAÇÃO (0-95% em ~20s) ---
   useEffect(() => {
-    // Só roda o fake se estiver esperando ou importando contatos
-    if (localStatus === 'importing_contacts' || localStatus === 'waiting') {
+    // Roda a animação fake se estiver travado (20s iniciais) ou se o status real ainda for de preparação
+    const shouldRunFake = isLocked || localStatus === 'importing_contacts' || localStatus === 'waiting';
+
+    if (shouldRunFake) {
         let p = 0;
         if (fakeProgressRef.current) clearInterval(fakeProgressRef.current);
         
+        // 20000ms / 95 steps ~= 210ms por passo
         fakeProgressRef.current = setInterval(() => {
-            p += 1; 
-            if (p >= 95) p = 95; // Trava em 95%
-            setFakePercent(p);
-        }, 200); 
+            setFakePercent(prev => {
+                if (prev >= 95) return 95; // Teto da animação fake
+                return prev + 1;
+            });
+        }, 210); 
     } else {
-        // Se mudou para messages ou completed, para o fake
         if (fakeProgressRef.current) clearInterval(fakeProgressRef.current);
     }
     return () => { if (fakeProgressRef.current) clearInterval(fakeProgressRef.current); };
-  }, [localStatus]);
+  }, [localStatus, isLocked]);
 
   // --- MONITORAMENTO REALTIME ---
   useEffect(() => {
@@ -46,16 +55,32 @@ export function GlobalSyncIndicator() {
         if (show && !forcedSyncId && !closingRef.current) {
              closingRef.current = true;
              setIsVisible(false);
-             setTimeout(() => { setShow(false); closingRef.current = false; setLocalPercent(0); }, 500);
+             setTimeout(() => { 
+                 setShow(false); 
+                 closingRef.current = false; 
+                 setLocalPercent(0); 
+                 setFakePercent(0);
+                 setIsLocked(false);
+             }, 500);
         }
         return;
     }
 
+    // Ao abrir, inicia a trava de 20s
     if (forcedSyncId && !show) {
         setShow(true);
         setTimeout(() => setIsVisible(true), 50);
         setLocalStatus('waiting'); 
         setLocalPercent(0);
+        setFakePercent(0);
+        
+        // INICIA O MODO "CEGO" POR 20 SEGUNDOS
+        setIsLocked(true);
+        if (lockTimeoutRef.current) clearTimeout(lockTimeoutRef.current);
+        lockTimeoutRef.current = setTimeout(() => {
+            setIsLocked(false);
+            console.log("🔓 [SYNC UI] Trava de 20s liberada. Sincronizando com real...");
+        }, 20000); 
     }
 
     const fetchDirectStatus = async () => {
@@ -69,11 +94,26 @@ export function GlobalSyncIndicator() {
         if (data && !error) {
             const dbStatus = data.sync_status || 'waiting';
             const dbPercent = data.sync_percent || 0;
-            
-            // Debug para entender o fluxo
-            // console.log(`[SYNC UI] Status: ${dbStatus}, Percent: ${dbPercent}%`);
 
-            // 1. FORÇA FECHAMENTO
+            // 1. Abortar IMEDIATAMENTE se desconectou (Erro crítico fura o bloqueio)
+            if (data.status === 'disconnected') {
+                if (!closingRef.current) {
+                    setIsVisible(false);
+                    setTimeout(() => { setShow(false); clearSyncAnimation(); setIsLocked(false); }, 500);
+                }
+                return;
+            }
+
+            // --- LÓGICA DE BLOQUEIO ---
+            // Se estiver travado nos primeiros 20s, IGNOREMOS o backend (exceto desconexão)
+            // Mantemos visualmente como 'importing_contacts'
+            if (isLocked) {
+                setLocalStatus('importing_contacts');
+                return; 
+            }
+            // ---------------------------
+
+            // 2. FORÇA FECHAMENTO (Só processa se não estiver locked)
             if (dbStatus === 'completed') {
                 if (!closingRef.current) {
                     setLocalStatus('completed');
@@ -92,19 +132,9 @@ export function GlobalSyncIndicator() {
                 return;
             }
 
-            // 2. Abortar
-            if (data.status === 'disconnected') {
-                if (!closingRef.current) {
-                    setIsVisible(false);
-                    setTimeout(() => { setShow(false); clearSyncAnimation(); }, 500);
-                }
-                return;
-            }
-
-            // 3. Atualizar Estado
+            // 3. Atualizar Estado Real (Pós-Trava)
             setLocalStatus(dbStatus);
             
-            // PRIORIDADE REAL: Se o status for mensagens, a porcentagem real manda
             if (dbStatus === 'importing_messages') {
                 setLocalPercent(dbPercent);
             }
@@ -114,24 +144,25 @@ export function GlobalSyncIndicator() {
     fetchDirectStatus(); 
     intervalRef.current = setInterval(fetchDirectStatus, 1000);
 
-    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
-  }, [targetInstanceId, forcedSyncId, show, clearSyncAnimation]);
+    return () => { 
+        if (intervalRef.current) clearInterval(intervalRef.current);
+        if (lockTimeoutRef.current) clearTimeout(lockTimeoutRef.current);
+    };
+  }, [targetInstanceId, forcedSyncId, show, clearSyncAnimation, isLocked]);
 
   if (!show) return null;
 
   const isComplete = localStatus === 'completed' || localPercent === 100;
   
-  // Decide qual porcentagem mostrar
-  // Se status for messages, usa o real (localPercent), mesmo que seja 0% (início do lote)
-  // Se for contacts/waiting, usa o fake
-  const isRealPhase = localStatus === 'importing_messages';
-  const displayPercent = isRealPhase ? localPercent : fakePercent;
+  // Se estiver travado ou em fase inicial, usa a porcentagem fake
+  const showFake = isLocked || localStatus === 'importing_contacts' || localStatus === 'waiting';
+  const displayPercent = showFake ? fakePercent : localPercent;
   
   let statusLabel = 'Conexão Estabelecida';
   let Icon = Radio;
   let subLabel = 'Aguardando dados...';
   
-  // Cores: Preparação = Neutro, Download = Azul, Completo = Verde
+  // Cores
   let barColor = 'bg-slate-500'; 
   
   switch (localStatus) {
@@ -144,14 +175,13 @@ export function GlobalSyncIndicator() {
           statusLabel = 'Preparando Ambiente';
           subLabel = `Organizando contatos (${displayPercent}%)...`;
           Icon = Hourglass; 
-          barColor = 'bg-slate-500'; 
+          barColor = 'bg-slate-500'; // Neutro durante a trava/preparação
           break;
       case 'importing_messages':
           statusLabel = 'Baixando Histórico';
           subLabel = `Recuperando conversas (${displayPercent}%)...`;
           Icon = DownloadCloud;
-          // Agora fica AZUL vibrante para indicar que "agora é pra valer"
-          barColor = 'bg-gradient-to-r from-blue-600 to-cyan-400'; 
+          barColor = 'bg-gradient-to-r from-blue-600 to-cyan-400'; // Azul quando destrava e baixa
           break;
       case 'completed':
           statusLabel = 'Histórico 100% Concluído';
