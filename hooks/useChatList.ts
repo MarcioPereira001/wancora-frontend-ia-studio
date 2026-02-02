@@ -12,14 +12,15 @@ export function useChatList() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
-  // REF: Mantém o estado atual acessível dentro dos listeners do Realtime sem recriá-los
+  // REF: Mantém o estado atual acessível dentro dos listeners sem causar re-renders cíclicos
   const contactsRef = useRef<ChatContact[]>([]);
 
+  // Sincroniza Ref com State
   useEffect(() => {
     contactsRef.current = contacts;
   }, [contacts]);
 
-  // Função de Ordenação (Mensagem mais recente no topo)
+  // Ordenação Estável (Mais recente no topo)
   const sortContacts = useCallback((list: ChatContact[]) => {
       return [...list].sort((a, b) => {
           const tA = new Date(a.last_message_at || 0).getTime();
@@ -28,8 +29,7 @@ export function useChatList() {
       });
   }, []);
 
-  // Fetch Cirúrgico: Busca APENAS 1 contato completo (com Joins de Lead e Tags)
-  // Isso resolve o problema de "nome sumindo" pois pegamos a versão mais recente do banco
+  // Fetch Cirúrgico: Busca 1 contato completo
   const fetchSingleContact = async (jid: string) => {
       if (!user?.company_id) return null;
 
@@ -46,8 +46,7 @@ export function useChatList() {
               jid: data.jid,
               remote_jid: data.jid,
               company_id: data.company_id,
-              // Lógica de Prioridade de Nome: Agenda > PushName > Telefone
-              name: data.name || data.push_name, 
+              name: data.name || data.push_name, // Prioridade
               push_name: data.push_name,
               phone_number: data.phone,
               profile_pic_url: data.profile_pic_url,
@@ -64,12 +63,12 @@ export function useChatList() {
       return null;
   };
 
+  // Carga Inicial (Roda apenas 1 vez ou quando muda empresa)
   const refreshList = useCallback(async (showLoading = false) => {
       if (!user?.company_id) return;
       if (showLoading) setLoading(true);
       
       try {
-          // RPC Otimizada do Banco de Dados
           const { data, error: rpcError } = await supabase.rpc('get_my_chat_list', {
               p_company_id: user.company_id
           });
@@ -102,12 +101,12 @@ export function useChatList() {
 
     refreshList(true);
 
-    // --- REALTIME: Estratégia de "Merge Inteligente" ---
+    // --- REALTIME ---
     
-    // 1. Monitora Contatos (Nomes, Fotos, Status)
+    // 1. Monitora Contatos (UPDATE/INSERT)
     const contactsChannel = supabase.channel(`chat-list-contacts:${user.company_id}`)
       .on('postgres_changes', { 
-          event: '*', // INSERT ou UPDATE
+          event: '*', 
           schema: 'public', 
           table: 'contacts', 
           filter: `company_id=eq.${user.company_id}` 
@@ -116,23 +115,39 @@ export function useChatList() {
           if (payload.eventType === 'UPDATE' || payload.eventType === 'INSERT') {
               const newData = payload.new;
               
-              // Se foi ignorado/arquivado, remove da lista
               if (newData.is_ignored) {
                   setContacts(prev => prev.filter(c => c.jid !== newData.jid));
                   return;
               }
 
-              // Busca dados completos (incluindo leads/tags)
+              // Atualização Otimista Parcial (Sem Fetch) para performance em digitação/online
+              if (payload.eventType === 'UPDATE') {
+                   setContacts(prev => prev.map(c => {
+                       if (c.jid === newData.jid) {
+                           return {
+                               ...c,
+                               is_online: newData.is_online,
+                               // Se veio foto nova, atualiza
+                               profile_pic_url: newData.profile_pic_url || c.profile_pic_url,
+                               name: newData.name || c.name 
+                           };
+                       }
+                       return c;
+                   }));
+                   // Não retorna aqui, pois pode haver dados complexos (leads) que precisam do fetch
+              }
+
+              // Fetch Completo para garantir dados do Lead (Join)
               const fullContact = await fetchSingleContact(newData.jid);
               
               if (fullContact) {
                   setContacts(prev => {
                       const exists = prev.some(c => c.jid === fullContact.jid);
-                      // Se já existe, atualiza mantendo a posição (para não pular)
                       if (exists) {
+                          // Merge cuidadoso
                           return prev.map(c => c.jid === fullContact.jid ? { ...c, ...fullContact } : c);
                       }
-                      // Se é novo, põe no topo
+                      // Novo contato no topo
                       return sortContacts([fullContact, ...prev]);
                   });
               }
@@ -140,7 +155,7 @@ export function useChatList() {
       })
       .subscribe();
 
-    // 2. Monitora Mensagens (Para subir a conversa pro topo)
+    // 2. Monitora Mensagens (Apenas para subir a conversa)
     const messagesChannel = supabase.channel(`chat-list-messages:${user.company_id}`)
       .on('postgres_changes', { 
           event: 'INSERT', 
@@ -155,22 +170,20 @@ export function useChatList() {
               const existingIndex = prev.findIndex(c => c.jid === targetJid);
               
               if (existingIndex >= 0) {
-                  // Contato já existe: Atualiza prévia e move pro topo
+                  // Contato existe: Atualiza prévia e move pro topo
                   const contact = { ...prev[existingIndex] };
                   contact.last_message_content = newMsg.content;
                   contact.last_message_type = newMsg.message_type;
                   contact.last_message_at = newMsg.created_at;
-                  contact.last_message_time = newMsg.created_at;
                   
                   if (!newMsg.from_me) {
                       contact.unread_count = (contact.unread_count || 0) + 1;
                   }
 
                   const others = prev.filter(c => c.jid !== targetJid);
-                  return [contact, ...others];
+                  return [contact, ...others]; // Move pro topo
               } else {
-                  // Contato novo na lista (Ghost Contact): Busca e insere
-                  // Isso deve ser feito fora do setContacts para ser async, mas como fallback:
+                  // Mensagem de contato desconhecido na lista (Ghost): Busca e insere
                   fetchSingleContact(targetJid).then(fullContact => {
                       if(fullContact) {
                           setContacts(current => sortContacts([fullContact, ...current]));

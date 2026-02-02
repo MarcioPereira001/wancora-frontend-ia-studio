@@ -17,7 +17,7 @@ interface CRMState {
 
 export const useCRMStore = create<CRMState>((set, get) => {
   let channel: RealtimeChannel | null = null;
-  const supabase = createClient(); // Instância única fora para evitar recriação
+  const supabase = createClient(); 
 
   return {
     isInitialized: false,
@@ -27,7 +27,7 @@ export const useCRMStore = create<CRMState>((set, get) => {
     initializeCRM: async (companyId: string) => {
         // console.log(`🚀 [Gaming Mode] Inicializando Engine CRM: ${companyId}`);
 
-        // 1. SNAPSHOT (Load Inicial) 
+        // 1. SNAPSHOT (Load Inicial Completo)
         const [leadsRes, stagesRes] = await Promise.all([
             supabase.from('leads').select('*').eq('company_id', companyId).neq('status', 'archived'),
             supabase.from('pipeline_stages').select('*').eq('company_id', companyId).order('position')
@@ -41,10 +41,8 @@ export const useCRMStore = create<CRMState>((set, get) => {
             });
         }
 
-        // 2. WEBSOCKET SUBSCRIPTION (Event Driven)
-        if (channel) {
-             supabase.removeChannel(channel);
-        }
+        // 2. WEBSOCKET
+        if (channel) supabase.removeChannel(channel);
 
         channel = supabase.channel(`crm-gaming-mode:${companyId}`)
             .on('postgres_changes', { 
@@ -55,52 +53,36 @@ export const useCRMStore = create<CRMState>((set, get) => {
             }, async (payload) => {
                 const currentLeads = get().leads;
 
-                // INSERT: Novo Lead
                 if (payload.eventType === 'INSERT') {
                     const newLead = payload.new as Lead;
-                    
-                    // AUDITORIA: Verifica se o lead já está na lista para evitar duplicatas visuais
+                    // Verifica duplicidade visual
                     if (!currentLeads.find(l => l.id === newLead.id)) {
-                        // console.log("⚡ [CRM] Novo Lead (Realtime):", newLead.name);
-                        
-                        // HIDRATAÇÃO: As vezes o payload vem incompleto (ex: trigger de banco).
-                        // Buscamos o dado completo para garantir consistência.
-                        const { data: hydratedLead } = await supabase
-                            .from('leads')
-                            .select('*')
-                            .eq('id', newLead.id)
-                            .single();
-                            
-                        set({ leads: [hydratedLead || newLead, ...currentLeads] });
+                        set({ leads: [newLead, ...currentLeads] });
                     }
                 }
-                // UPDATE: Atualização de campo
                 else if (payload.eventType === 'UPDATE') {
                     const updatedLead = payload.new as Lead;
                     set({ 
                         leads: currentLeads.map(l => l.id === updatedLead.id ? { ...l, ...updatedLead } : l) 
                     });
                 }
-                // DELETE: Remoção
                 else if (payload.eventType === 'DELETE') {
                     set({ 
                         leads: currentLeads.filter(l => l.id !== payload.old.id) 
                     });
                 }
             })
-            // Escuta mudanças nos Estágios
             .on('postgres_changes', {
                 event: '*',
                 schema: 'public',
                 table: 'pipeline_stages',
                 filter: `company_id=eq.${companyId}`
             }, async () => {
+                // Refresh stages on change
                 const { data } = await supabase.from('pipeline_stages').select('*').eq('company_id', companyId).order('position');
                 if(data) set({ stages: data as PipelineStage[] });
             })
-            .subscribe((status) => {
-                if(status === 'CHANNEL_ERROR') console.error("🔴 [CRM] Erro na conexão Realtime.");
-            });
+            .subscribe();
     },
 
     moveLeadOptimistic: (leadId, toStageId, newPosition) => {
