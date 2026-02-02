@@ -10,6 +10,7 @@ import { ToastProvider } from "@/context/ToastContext";
 import { GlobalSyncIndicator } from '@/components/layout/GlobalSyncIndicator';
 import { DisconnectAlert } from '@/components/modals/DisconnectAlert';
 import { VersionGuard } from '@/components/system/VersionGuard';
+import { FocusGuard } from '@/components/system/FocusGuard';
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 const jetbrains = JetBrains_Mono({ subsets: ["latin"], variable: "--font-jetbrains" });
@@ -37,6 +38,7 @@ export default function RootLayout({
               {/* RealtimeProvider deve estar DENTRO do AuthProvider para acessar o user */}
               <RealtimeProvider>
                 <VersionGuard />
+                <FocusGuard /> {/* Guardião de Foco Adicionado */}
                 {children}
                 {/* INDICADORES GLOBAIS (Acima de tudo) */}
                 <GlobalSyncIndicator />

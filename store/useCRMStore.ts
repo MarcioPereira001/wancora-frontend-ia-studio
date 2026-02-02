@@ -17,6 +17,7 @@ interface CRMState {
 
 export const useCRMStore = create<CRMState>((set, get) => {
   let channel: RealtimeChannel | null = null;
+  const supabase = createClient(); // Instância única fora para evitar recriação
 
   return {
     isInitialized: false,
@@ -24,11 +25,9 @@ export const useCRMStore = create<CRMState>((set, get) => {
     stages: [],
 
     initializeCRM: async (companyId: string) => {
-        const supabase = createClient();
-        console.log(`🚀 [Gaming Mode] Inicializando Engine CRM: ${companyId}`);
+        // console.log(`🚀 [Gaming Mode] Inicializando Engine CRM: ${companyId}`);
 
-        // 1. SNAPSHOT (Load Inicial) - Executa sempre para garantir consistência ao focar na aba
-        // Isso previne que dados fiquem "stale" se a conexão websocket piscar
+        // 1. SNAPSHOT (Load Inicial) 
         const [leadsRes, stagesRes] = await Promise.all([
             supabase.from('leads').select('*').eq('company_id', companyId).neq('status', 'archived'),
             supabase.from('pipeline_stages').select('*').eq('company_id', companyId).order('position')
@@ -44,7 +43,6 @@ export const useCRMStore = create<CRMState>((set, get) => {
 
         // 2. WEBSOCKET SUBSCRIPTION (Event Driven)
         if (channel) {
-             // Se já existe canal, remove para evitar duplicidade de ouvintes (Memory Leak Protection)
              supabase.removeChannel(channel);
         }
 
@@ -54,24 +52,33 @@ export const useCRMStore = create<CRMState>((set, get) => {
                 schema: 'public', 
                 table: 'leads', 
                 filter: `company_id=eq.${companyId}` 
-            }, (payload) => {
+            }, async (payload) => {
                 const currentLeads = get().leads;
 
-                // INSERT: Novo Lead entra no topo ou na posição correta
+                // INSERT: Novo Lead
                 if (payload.eventType === 'INSERT') {
                     const newLead = payload.new as Lead;
-                    // Evita duplicata se o Optimistic UI já tiver inserido (embora raro aqui)
+                    
+                    // AUDITORIA: Verifica se o lead já está na lista para evitar duplicatas visuais
                     if (!currentLeads.find(l => l.id === newLead.id)) {
-                        console.log("⚡ [CRM] Novo Lead recebido:", newLead.name);
-                        set({ leads: [newLead, ...currentLeads] });
+                        // console.log("⚡ [CRM] Novo Lead (Realtime):", newLead.name);
+                        
+                        // HIDRATAÇÃO: As vezes o payload vem incompleto (ex: trigger de banco).
+                        // Buscamos o dado completo para garantir consistência.
+                        const { data: hydratedLead } = await supabase
+                            .from('leads')
+                            .select('*')
+                            .eq('id', newLead.id)
+                            .single();
+                            
+                        set({ leads: [hydratedLead || newLead, ...currentLeads] });
                     }
                 }
-                // UPDATE: Atualização de campo (mover card, mudar valor, etc)
+                // UPDATE: Atualização de campo
                 else if (payload.eventType === 'UPDATE') {
                     const updatedLead = payload.new as Lead;
-                    // Mapeia e substitui. O React detectará a mudança de referência e renderizará.
                     set({ 
-                        leads: currentLeads.map(l => l.id === updatedLead.id ? updatedLead : l) 
+                        leads: currentLeads.map(l => l.id === updatedLead.id ? { ...l, ...updatedLead } : l) 
                     });
                 }
                 // DELETE: Remoção
@@ -81,25 +88,21 @@ export const useCRMStore = create<CRMState>((set, get) => {
                     });
                 }
             })
-            // Escuta mudanças nos Estágios (Stages) também para consistência do Kanban
+            // Escuta mudanças nos Estágios
             .on('postgres_changes', {
                 event: '*',
                 schema: 'public',
                 table: 'pipeline_stages',
                 filter: `company_id=eq.${companyId}`
             }, async () => {
-                // Se mudou estrutura do funil (nome, ordem), faz refresh total dos stages
-                // É mais seguro fazer fetch aqui do que tentar "patch" na lista ordenada
                 const { data } = await supabase.from('pipeline_stages').select('*').eq('company_id', companyId).order('position');
                 if(data) set({ stages: data as PipelineStage[] });
             })
             .subscribe((status) => {
-                if(status === 'SUBSCRIBED') console.log("🟢 [CRM] Sincronização em Tempo Real Ativa.");
-                if(status === 'CHANNEL_ERROR') console.error("🔴 [CRM] Erro na conexão Realtime. Verifique logs.");
+                if(status === 'CHANNEL_ERROR') console.error("🔴 [CRM] Erro na conexão Realtime.");
             });
     },
 
-    // AÇÃO OTIMISTA: Move visualmente antes do servidor responder
     moveLeadOptimistic: (leadId, toStageId, newPosition) => {
         set((state) => ({
             leads: state.leads.map(l => 

@@ -12,7 +12,6 @@ export function useChatList() {
   const [error, setError] = useState<string | null>(null);
   
   // BUFFER DE ATUALIZAÇÃO (Anti-Jitter)
-  // Armazena atualizações pendentes para processar em lote
   const updatesBuffer = useRef<Map<string, any>>(new Map());
   const batchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -25,81 +24,133 @@ export function useChatList() {
       });
   }, []);
 
+  // Fetch Individual de Contato (Para Inserção Dinâmica)
+  const fetchSingleContact = async (jid: string, companyId: string) => {
+      // Tenta buscar o contato completo via RPC ou Tabela
+      // Como o RPC get_my_chat_list não filtra por JID, vamos simular buscando da tabela contacts
+      // e compondo com leads. É um fallback para garantir que o chat apareça.
+      const { data: contact } = await supabase
+          .from('contacts')
+          .select('*, leads(tags)')
+          .eq('jid', jid)
+          .eq('company_id', companyId)
+          .single();
+
+      if (contact) {
+          return {
+              id: contact.jid,
+              jid: contact.jid,
+              remote_jid: contact.jid,
+              company_id: contact.company_id,
+              name: contact.name || contact.push_name,
+              push_name: contact.push_name,
+              phone_number: contact.phone,
+              profile_pic_url: contact.profile_pic_url,
+              unread_count: contact.unread_count,
+              last_message_at: contact.last_message_at,
+              is_group: contact.jid.includes('@g.us'),
+              is_community: contact.is_community,
+              lead_tags: contact.leads?.[0]?.tags || []
+          } as ChatContact;
+      }
+      return null;
+  };
+
   // Processador do Buffer (Debounced)
-  const processBuffer = useCallback(() => {
+  const processBuffer = useCallback(async () => {
       if (updatesBuffer.current.size === 0) return;
 
-      setContacts(prev => {
-          let newList = [...prev];
-          const updates = updatesBuffer.current;
+      const updates = new Map<string, any>(updatesBuffer.current);
+      updatesBuffer.current.clear(); // Limpa imediatamente para não processar dnv
 
-          updates.forEach((payload, jid) => {
-              const existingIndex = newList.findIndex(c => c.jid === jid);
-              const existing = existingIndex >= 0 ? newList[existingIndex] : null;
+      // Snapshot atual para modificação
+      let newList = [...contacts];
+      let needsSort = false;
 
-              // 1. UPDATE DE CONTATO
-              if (payload.type === 'contact_update') {
-                  const updatedRow = payload.data;
-                  if (updatedRow.is_ignored) {
-                      newList = newList.filter(c => c.jid !== jid);
-                      return;
-                  }
+      for (const [jid, payload] of updates) {
+          const existingIndex = newList.findIndex(c => c.jid === jid);
+          const existing = existingIndex >= 0 ? newList[existingIndex] : null;
 
-                  const newItem: ChatContact = {
-                      ...(existing || {}),
-                      id: updatedRow.jid,
-                      jid: updatedRow.jid,
-                      remote_jid: updatedRow.jid,
-                      company_id: updatedRow.company_id,
-                      name: updatedRow.name || updatedRow.verified_name || updatedRow.push_name || existing?.name,
+          // 1. UPDATE DE CONTATO
+          if (payload.type === 'contact_update') {
+              const updatedRow = payload.data;
+              
+              // Se foi ignorado, remove da lista
+              if (updatedRow.is_ignored) {
+                  newList = newList.filter(c => c.jid !== jid);
+                  continue;
+              }
+
+              if (existing) {
+                  newList[existingIndex] = {
+                      ...existing,
+                      name: updatedRow.name || updatedRow.verified_name || updatedRow.push_name || existing.name,
                       push_name: updatedRow.push_name,
                       unread_count: updatedRow.unread_count,
                       last_message_at: updatedRow.last_message_at,
-                      last_message_time: updatedRow.last_message_at,
+                      last_message_time: updatedRow.last_message_at, // Compatibilidade
                       profile_pic_url: updatedRow.profile_pic_url,
                       is_muted: updatedRow.is_muted,
-                      is_online: updatedRow.is_online,
-                      phone_number: updatedRow.phone || existing?.phone_number || updatedRow.jid.split('@')[0],
-                      is_group: updatedRow.jid.includes('@g.us'),
-                      is_community: updatedRow.is_community || false,
-                      is_business: updatedRow.is_business
+                      is_online: updatedRow.is_online
                   };
-                  
-                  // Remove antigo e adiciona novo (será reordenado)
-                  if (existingIndex >= 0) newList.splice(existingIndex, 1);
-                  newList.push(newItem);
-              }
-              
-              // 2. NOVA MENSAGEM (Optimistic Top Move)
-              else if (payload.type === 'new_message') {
-                  const newMsg = payload.data;
-                  if (existingIndex === -1) {
-                      // Se o contato não existe na lista, forçamos um refresh total
-                      // para garantir dados consistentes (ex: nome, foto) vindos do RPC
-                      // Isso acontece na primeira mensagem de um novo contato
-                      return; 
+                  needsSort = true;
+              } else {
+                  // Contato novo via update? Raro, mas possível. Tenta buscar full.
+                  const fullContact = await fetchSingleContact(jid, updatedRow.company_id);
+                  if (fullContact) {
+                      newList.push(fullContact);
+                      needsSort = true;
                   }
-
-                  const contact = { ...newList[existingIndex] };
-                  contact.last_message_content = newMsg.content;
-                  contact.last_message_type = newMsg.message_type;
-                  contact.last_message_at = newMsg.created_at;
-                  contact.last_message_time = newMsg.created_at;
+              }
+          }
+          
+          // 2. NOVA MENSAGEM
+          else if (payload.type === 'new_message') {
+              const newMsg = payload.data;
+              
+              if (existing) {
+                  // Atualiza existente
+                  const updatedContact = { ...existing };
+                  updatedContact.last_message_content = newMsg.content;
+                  updatedContact.last_message_type = newMsg.message_type;
+                  updatedContact.last_message_at = newMsg.created_at;
+                  updatedContact.last_message_time = newMsg.created_at; // Compatibilidade
                   
                   if (!newMsg.from_me) {
-                      contact.unread_count = (contact.unread_count || 0) + 1;
+                      updatedContact.unread_count = (updatedContact.unread_count || 0) + 1;
                   }
 
-                  newList.splice(existingIndex, 1);
-                  newList.push(contact);
-              }
-          });
+                  // Move para o topo logicamente
+                  newList[existingIndex] = updatedContact;
+                  needsSort = true;
+              } else {
+                  // --- CORREÇÃO CRÍTICA: NOVO CONTATO ---
+                  // Se chegou mensagem de alguém que não está na lista, busca e insere!
+                  // Isso evita o bug de "ter que dar F5" para ver conversas novas.
+                  if (user?.company_id) {
+                      const fullContact = await fetchSingleContact(jid, user.company_id);
+                      if (fullContact) {
+                          // Injeta dados da mensagem inicial
+                          fullContact.last_message_content = newMsg.content;
+                          fullContact.last_message_type = newMsg.message_type;
+                          fullContact.last_message_at = newMsg.created_at;
+                          if(!newMsg.from_me) fullContact.unread_count = 1;
 
-          // Limpa buffer após processar
-          updatesBuffer.current.clear();
-          return sortContacts(newList);
-      });
-  }, [sortContacts]);
+                          newList.push(fullContact);
+                          needsSort = true;
+                      }
+                  }
+              }
+          }
+      }
+
+      if (needsSort) {
+          setContacts(sortContacts(newList));
+      } else {
+          setContacts(newList);
+      }
+
+  }, [contacts, sortContacts, user?.company_id]);
 
   const refreshList = async () => {
       if (!user?.company_id) return;
@@ -150,11 +201,10 @@ export function useChatList() {
           filter: `company_id=eq.${user.company_id}` 
       }, (payload) => {
           if (payload.eventType === 'UPDATE') {
-              // Adiciona ao buffer em vez de atualizar direto
               updatesBuffer.current.set(payload.new.jid, { type: 'contact_update', data: payload.new });
-          } else if (payload.eventType === 'INSERT') {
-              refreshList(); // Insert é raro (novo contato), vale refresh total
-          }
+          } 
+          // Não tratamos INSERT aqui porque INSERT em contacts geralmente vem acompanhado de mensagem
+          // e o tratamento de mensagem (new_message) já cuida de buscar o contato.
       })
       .subscribe();
 
@@ -166,21 +216,21 @@ export function useChatList() {
           table: 'messages', 
           filter: `company_id=eq.${user.company_id}` 
       }, (payload) => {
-          // Adiciona mensagem ao buffer
           updatesBuffer.current.set(payload.new.remote_jid, { type: 'new_message', data: payload.new });
       })
       .subscribe();
 
     // FLUSH LOOP: Processa o buffer a cada 1 segundo (Debounce Time)
-    // Isso transforma 50 updates/s em 1 update/s, salvando a CPU do cliente.
-    batchTimeoutRef.current = setInterval(processBuffer, 1000);
+    batchTimeoutRef.current = setInterval(() => {
+        if (updatesBuffer.current.size > 0) processBuffer();
+    }, 1000);
 
     return () => { 
         supabase.removeChannel(contactsChannel);
         supabase.removeChannel(messagesChannel);
         if (batchTimeoutRef.current) clearInterval(batchTimeoutRef.current);
     };
-  }, [user?.company_id, processBuffer]);
+  }, [user?.company_id, processBuffer]); // Removido 'contacts' das deps para evitar re-subscribe infinito
 
   return { contacts, loading, error, refreshList };
 }
