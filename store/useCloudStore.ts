@@ -1,8 +1,9 @@
 
 import { create } from 'zustand';
 import { DriveFile } from '@/types';
-import { api } from '@/services/api';
+import { api } from '@/services/api'; // Este wrapper usa fetch, precisamos bypassar para FormData
 import { useAuthStore } from './useAuthStore';
+import { BACKEND_URL } from '../config';
 
 interface CloudState {
   currentFolderId: string | null;
@@ -92,30 +93,34 @@ export const useCloudStore = create<CloudState>((set, get) => ({
       const companyId = useAuthStore.getState().user?.company_id;
       if (!companyId) throw new Error("Empresa não identificada");
       
-      // Converte para Base64 para enviar via JSON (evita complexidade de multipart no backend atual)
-      return new Promise<void>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.readAsDataURL(file);
-          reader.onload = async () => {
-              try {
-                  const base64 = (reader.result as string).split(',')[1];
-                  
-                  await api.post('/cloud/google/upload', {
-                      companyId,
-                      name: file.name,
-                      mimeType: file.type,
-                      base64,
-                      folderId: get().currentFolderId
-                  });
-                  
-                  // Refresh após upload
-                  get().fetchFiles();
-                  resolve();
-              } catch (e) {
-                  reject(e);
-              }
-          };
-          reader.onerror = error => reject(error);
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('companyId', companyId);
+      formData.append('name', file.name);
+      formData.append('mimeType', file.type);
+      // FormData transforma null em "null" string, tratamos isso no backend
+      formData.append('folderId', get().currentFolderId || 'null');
+
+      // Fazendo fetch direto para suportar FormData (o api wrapper do projeto força Content-Type: json)
+      const token = (await import('@/utils/supabase/client')).createClient().auth.getSession().then(({data}) => data.session?.access_token);
+      
+      const headers: Record<string, string> = {};
+      if(token) headers['Authorization'] = `Bearer ${await token}`;
+
+      const baseUrl = typeof window !== 'undefined' ? '/api/v1' : (BACKEND_URL || 'http://localhost:3001/api/v1');
+      
+      const response = await fetch(`${baseUrl}/cloud/google/upload`, {
+          method: 'POST',
+          headers, // Não seta Content-Type, o browser faz isso para multipart com boundary
+          body: formData
       });
+
+      if (!response.ok) {
+          const err = await response.text();
+          throw new Error(`Erro no upload: ${err}`);
+      }
+
+      // Refresh após upload
+      get().fetchFiles();
   }
 }));
