@@ -17,7 +17,7 @@ interface CRMState {
 
 export const useCRMStore = create<CRMState>((set, get) => {
   let channel: RealtimeChannel | null = null;
-  const supabase = createClient(); 
+  const supabase = createClient();
 
   return {
     isInitialized: false,
@@ -25,9 +25,7 @@ export const useCRMStore = create<CRMState>((set, get) => {
     stages: [],
 
     initializeCRM: async (companyId: string) => {
-        // console.log(`🚀 [Gaming Mode] Inicializando Engine CRM: ${companyId}`);
-
-        // 1. SNAPSHOT (Load Inicial Completo)
+        // 1. SNAPSHOT (Load Inicial)
         const [leadsRes, stagesRes] = await Promise.all([
             supabase.from('leads').select('*').eq('company_id', companyId).neq('status', 'archived'),
             supabase.from('pipeline_stages').select('*').eq('company_id', companyId).order('position')
@@ -41,7 +39,7 @@ export const useCRMStore = create<CRMState>((set, get) => {
             });
         }
 
-        // 2. WEBSOCKET
+        // 2. WEBSOCKET SUBSCRIPTION
         if (channel) supabase.removeChannel(channel);
 
         channel = supabase.channel(`crm-gaming-mode:${companyId}`)
@@ -50,35 +48,38 @@ export const useCRMStore = create<CRMState>((set, get) => {
                 schema: 'public', 
                 table: 'leads', 
                 filter: `company_id=eq.${companyId}` 
-            }, async (payload) => {
+            }, (payload) => {
                 const currentLeads = get().leads;
 
+                // INSERT: Novo Lead
                 if (payload.eventType === 'INSERT') {
                     const newLead = payload.new as Lead;
-                    // Verifica duplicidade visual
+                    // Evita duplicata se já existir no estado
                     if (!currentLeads.find(l => l.id === newLead.id)) {
                         set({ leads: [newLead, ...currentLeads] });
                     }
                 }
+                // UPDATE: Atualização de campo
                 else if (payload.eventType === 'UPDATE') {
                     const updatedLead = payload.new as Lead;
                     set({ 
                         leads: currentLeads.map(l => l.id === updatedLead.id ? { ...l, ...updatedLead } : l) 
                     });
                 }
+                // DELETE: Remoção
                 else if (payload.eventType === 'DELETE') {
                     set({ 
                         leads: currentLeads.filter(l => l.id !== payload.old.id) 
                     });
                 }
             })
+            // Escuta mudanças nos Estágios (Para consistência do Kanban)
             .on('postgres_changes', {
                 event: '*',
                 schema: 'public',
                 table: 'pipeline_stages',
                 filter: `company_id=eq.${companyId}`
             }, async () => {
-                // Refresh stages on change
                 const { data } = await supabase.from('pipeline_stages').select('*').eq('company_id', companyId).order('position');
                 if(data) set({ stages: data as PipelineStage[] });
             })
