@@ -8,7 +8,7 @@ import QueryProvider from "@/providers/QueryProvider";
 import RealtimeProvider from "@/providers/RealtimeProvider"; 
 import { ToastProvider } from "@/context/ToastContext";
 import { GlobalSyncIndicator } from '@/components/layout/GlobalSyncIndicator';
-import { DisconnectAlert } from '@/components/modals/DisconnectAlert'; // NOVO IMPORT
+import { DisconnectAlert } from '@/components/modals/DisconnectAlert';
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 const jetbrains = JetBrains_Mono({ subsets: ["latin"], variable: "--font-jetbrains" });
@@ -24,7 +24,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="pt-BR" className="dark">
+    <html lang="pt-BR" className="dark" suppressHydrationWarning>
+      <head>
+          {/* CDN FIX: Carrega estilos do editor Quill globalmente para evitar erros de build 'Module not found' */}
+          <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/quill@2.0.2/dist/quill.snow.css" />
+      </head>
       <body className={`${inter.variable} ${jetbrains.variable} bg-background font-sans text-foreground`}>
         <QueryProvider>
           <ToastProvider>

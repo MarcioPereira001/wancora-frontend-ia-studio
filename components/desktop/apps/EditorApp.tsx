@@ -14,7 +14,8 @@ import { jsPDF } from 'jspdf';
 
 // Carrega react-quill-new dinamicamente
 const ReactQuill = dynamic(() => import('react-quill-new'), { ssr: false });
-import 'react-quill-new/dist/quill.snow.css';
+// FIXED: Importação CSS via CDN no layout.tsx para evitar erro de build "Module not found"
+// import 'react-quill-new/dist/quill.snow.css';
 
 // Estilos customizados
 import './editor.css';

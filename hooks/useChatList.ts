@@ -14,7 +14,7 @@ export function useChatList() {
   // BUFFER DE ATUALIZAÇÃO (Anti-Jitter)
   // Armazena atualizações pendentes para processar em lote
   const updatesBuffer = useRef<Map<string, any>>(new Map());
-  const batchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const batchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Função de Ordenação Estrita (Mais recente -> Mais antigo)
   const sortContacts = useCallback((list: ChatContact[]) => {
