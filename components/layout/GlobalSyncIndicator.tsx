@@ -4,7 +4,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useRealtimeStore } from '@/store/useRealtimeStore';
 import { createClient } from '@/utils/supabase/client';
-import { RefreshCw, CheckCircle2, Database, Users, MessageSquare, Radio, Loader2, Map as MapIcon, HardDrive } from 'lucide-react';
+import { RefreshCw, CheckCircle2, Database, Users, MessageSquare, Radio, Loader2, HardDrive, DownloadCloud } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export function GlobalSyncIndicator() {
@@ -18,21 +18,20 @@ export function GlobalSyncIndicator() {
   const closingRef = useRef(false); // Lock para evitar múltiplos triggers de fechamento
 
   // MODIFICAÇÃO CRÍTICA:
-  // O indicador agora obedece estritamente ao 'forcedSyncId'.
-  // Ele NÃO busca mais instâncias aleatórias que estejam conectando em background (Auto-Reconnect).
-  // Isso garante que ele só apareça quando o usuário acaba de ler o QR Code no Modal.
+  // O indicador obedece estritamente ao 'forcedSyncId' gerado pelo QR Code.
   const targetInstanceId = forcedSyncId;
 
   useEffect(() => {
-    // Se não tem alvo e não estamos em processo de fechamento
+    // Se não tem alvo e não estamos em processo de fechamento, garante que esteja fechado
     if (!targetInstanceId) {
         if (show && !forcedSyncId && !closingRef.current) {
-             // Animação de saída se perdeu o alvo
+             // Animação de saída se perdeu o alvo abruptamente
              closingRef.current = true;
              setIsVisible(false);
              setTimeout(() => { 
                  setShow(false); 
                  closingRef.current = false; 
+                 setLocalPercent(0); 
              }, 500);
         }
         return;
@@ -43,7 +42,7 @@ export function GlobalSyncIndicator() {
         setShow(true);
         setTimeout(() => setIsVisible(true), 50); // Animação de entrada
         setLocalStatus('waiting'); 
-        setLocalPercent(0);
+        setLocalPercent(1); // Inicia com 1% para feedback visual imediato
     }
 
     const fetchDirectStatus = async () => {
@@ -57,21 +56,34 @@ export function GlobalSyncIndicator() {
 
         if (data && !error) {
             const dbSyncStatus = data.sync_status || 'waiting';
-            const dbPercent = data.sync_percent || 0;
+            let dbPercent = data.sync_percent || 0;
 
-            // CRITÉRIO DE SUCESSO: Status completed OU 100% atingido
-            const isDone = dbSyncStatus === 'completed' || dbPercent >= 100;
+            // --- LÓGICA DE UX "SMOOTH LOADER" ---
+            // 1. O 'completed' é a única verdade absoluta.
+            const isReallyDone = dbSyncStatus === 'completed';
 
-            if (isDone) {
+            // 2. Se não acabou, travamos visualmente em 99% mesmo que o cálculo matemático tenha estourado.
+            // Isso evita que o usuário ache que travou no 100% ou que o modal feche antes da hora.
+            if (!isReallyDone && dbPercent >= 100) {
+                dbPercent = 99;
+            }
+
+            // 3. Garantimos que a porcentagem nunca retroceda visualmente (Monotonic Increase)
+            if (dbPercent > localPercent) {
+                setLocalPercent(dbPercent);
+            }
+
+            // --- FINALIZAÇÃO ---
+            if (isReallyDone) {
                 setLocalPercent(100);
                 setLocalStatus('completed');
 
-                // FINALIZAÇÃO AUTOMÁTICA
+                // FINALIZAÇÃO AUTOMÁTICA (Com delay para leitura)
                 if (show && !closingRef.current) {
                     closingRef.current = true;
-                    console.log("✅ [Sync] Concluído. Iniciando fechamento...");
+                    console.log("✅ [Sync] Concluído 100%. Iniciando fechamento suave...");
 
-                    // Mantém visível por 3 segundos para usuário ver o 100% verde
+                    // Mantém visível por 4 segundos para usuário ver o 100% verde e a mensagem de sucesso
                     setTimeout(() => {
                         setIsVisible(false); // Trigger CSS Exit
                         
@@ -81,17 +93,16 @@ export function GlobalSyncIndicator() {
                             if(forcedSyncId) clearSyncAnimation(); 
                             closingRef.current = false;
                         }, 500);
-                    }, 3000);
+                    }, 4000);
                 }
                 return;
             }
 
-            // EXIBIÇÃO CONTÍNUA (ENQUANTO CARREGA)
+            // --- EM ANDAMENTO ---
             setLocalStatus(dbSyncStatus);
-            setLocalPercent(dbPercent);
 
+            // Se desconectou abruptamente (Erro/Banimento/Queda), fecha rápido para não ficar preso
             if (data.status === 'disconnected') {
-                // Se desconectou, fecha mais rápido
                 if (!closingRef.current) {
                     setIsVisible(false);
                     setTimeout(() => {
@@ -99,62 +110,58 @@ export function GlobalSyncIndicator() {
                         if(forcedSyncId) clearSyncAnimation();
                     }, 500);
                 }
-            } else if (!show && !closingRef.current) {
-                // Se conectou e não estava mostrando, mostra agora
-                setShow(true);
-                setTimeout(() => setIsVisible(true), 50);
-            }
+            } 
         }
     };
 
-    // Polling Agressivo (1s)
+    // Polling Agressivo (1s) para sensação de tempo real
     fetchDirectStatus(); 
     intervalRef.current = setInterval(fetchDirectStatus, 1000);
 
     return () => {
         if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [targetInstanceId, forcedSyncId, show, clearSyncAnimation]);
+  }, [targetInstanceId, forcedSyncId, show, clearSyncAnimation]); // localPercent removido das deps para evitar loop
 
   if (!show) return null;
 
-  const isComplete = localPercent >= 100 || localStatus === 'completed';
+  const isComplete = localStatus === 'completed';
   
-  // Mapeamento Visual
+  // Mapeamento Visual Rico
   let statusLabel = 'Conexão Estabelecida';
   let Icon = Radio;
   let subLabel = 'Aguardando dados...';
   
   switch (localStatus) {
       case 'waiting': 
-          statusLabel = 'Iniciando Sessão';
-          subLabel = 'Conectado! Preparando download...';
+          statusLabel = 'Aguardando WhatsApp';
+          subLabel = 'Estabelecendo túnel seguro...';
           Icon = Loader2;
           break;
       case 'importing_contacts':
-          statusLabel = 'Mapeando Contatos';
-          subLabel = 'Identificando nomes e grupos...';
+          statusLabel = 'Sincronizando Agenda';
+          subLabel = 'Baixando contatos e grupos...';
           Icon = Users;
           break;
       case 'importing_messages':
-          statusLabel = 'Baixando Histórico';
-          subLabel = 'Recuperando conversas recentes...';
-          Icon = MessageSquare;
+          statusLabel = 'Baixando Conversas';
+          subLabel = 'Recuperando histórico de chat...';
+          Icon = DownloadCloud;
           break;
       case 'processing_history':
           statusLabel = 'Organizando CRM';
-          subLabel = 'Indexando leads e mensagens...';
+          subLabel = 'Criando leads e indexando...';
           Icon = Database;
           break;
       case 'completed':
-          statusLabel = 'Tudo Pronto!';
-          subLabel = 'Sincronização finalizada.';
+          statusLabel = 'Sincronização Completa!';
+          subLabel = 'Seu histórico está pronto.';
           Icon = CheckCircle2;
           break;
       default:
           if (localPercent > 0) {
               statusLabel = 'Processando Dados';
-              subLabel = 'Por favor, aguarde...';
+              subLabel = 'Isso pode levar alguns minutos...';
               Icon = HardDrive;
           }
           break;
@@ -165,42 +172,42 @@ export function GlobalSyncIndicator() {
         "fixed bottom-6 right-6 z-[99999] pointer-events-auto transition-all duration-700 cubic-bezier(0.16, 1, 0.3, 1)",
         isVisible ? "translate-y-0 opacity-100" : "translate-y-20 opacity-0"
     )}>
-      <div className="bg-[#09090b] border border-zinc-800 rounded-xl shadow-[0_0_80px_rgba(0,0,0,0.8)] p-4 w-80 ring-1 ring-white/10 relative overflow-hidden backdrop-blur-2xl">
+      <div className="bg-[#09090b] border border-zinc-800 rounded-xl shadow-[0_0_80px_rgba(0,0,0,0.8)] p-5 w-96 ring-1 ring-white/10 relative overflow-hidden backdrop-blur-2xl">
         
         {/* Efeito de Fundo */}
         <div className={`absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent ${isComplete ? 'via-emerald-500' : 'via-blue-600'} to-transparent opacity-75`} />
 
-        <div className="flex items-center justify-between mb-3 relative z-10">
-          <div className="flex items-center gap-3">
-            <div className={`p-2 rounded-lg transition-colors duration-500 ${isComplete ? 'bg-emerald-500/10 text-emerald-500' : 'bg-zinc-800 text-blue-400'}`}>
+        <div className="flex items-center justify-between mb-4 relative z-10">
+          <div className="flex items-center gap-4">
+            <div className={`p-3 rounded-xl transition-colors duration-500 shadow-inner ${isComplete ? 'bg-emerald-500/10 text-emerald-500' : 'bg-zinc-800 text-blue-400'}`}>
                {isComplete ? (
-                 <CheckCircle2 className="w-5 h-5" />
+                 <CheckCircle2 className="w-6 h-6" />
                ) : (
-                 <Icon className={`w-5 h-5 ${localStatus === 'waiting' || localPercent < 100 ? 'animate-pulse' : ''}`} />
+                 <Icon className={`w-6 h-6 ${localStatus === 'waiting' || localPercent < 100 ? 'animate-pulse' : ''}`} />
                )}
             </div>
             <div className="flex flex-col min-w-0">
-              <span className="text-sm font-bold text-white leading-none mb-1 truncate">
+              <span className="text-base font-bold text-white leading-tight mb-1 truncate">
                 {statusLabel}
               </span>
-              <span className="text-[10px] text-zinc-400 font-medium truncate max-w-[160px]">
+              <span className="text-xs text-zinc-400 font-medium truncate max-w-[180px] animate-pulse">
                 {subLabel}
               </span>
             </div>
           </div>
-          <span className={`text-lg font-mono font-bold transition-colors ${isComplete ? 'text-emerald-500' : 'text-white'}`}>
+          <span className={`text-2xl font-mono font-bold transition-colors ${isComplete ? 'text-emerald-500' : 'text-white'}`}>
             {localPercent}%
           </span>
         </div>
 
         {/* Barra de Progresso */}
-        <div className="h-1.5 w-full bg-zinc-800 rounded-full overflow-hidden relative z-10">
+        <div className="h-2 w-full bg-zinc-800 rounded-full overflow-hidden relative z-10">
             <div 
-              className={`h-full transition-all duration-700 ease-out relative ${isComplete ? 'bg-emerald-500' : 'bg-gradient-to-r from-blue-600 to-cyan-400'}`}
-              style={{ width: `${Math.max(5, localPercent)}%` }} 
+              className={`h-full transition-all duration-1000 ease-out relative ${isComplete ? 'bg-emerald-500' : 'bg-gradient-to-r from-blue-600 to-cyan-400'}`}
+              style={{ width: `${Math.max(2, localPercent)}%` }} 
             >
                 {!isComplete && (
-                    <div className="absolute inset-0 bg-white/30 w-full animate-[shimmer_1s_infinite] -skew-x-12" />
+                    <div className="absolute inset-0 bg-white/30 w-full animate-[shimmer_1.5s_infinite] -skew-x-12" />
                 )}
             </div>
         </div>

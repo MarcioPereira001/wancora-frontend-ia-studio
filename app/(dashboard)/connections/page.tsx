@@ -81,7 +81,13 @@ export default function ConnectionsPage() {
 
         if (status.status === 'connected') {
             setStep('success');
-            if(status.id) triggerSyncAnimation(status.id);
+            
+            // FIX RECONEXÃO: Só dispara a animação de sync se NÃO estiver completo.
+            // Se já for 'completed', significa que é uma reconexão e não precisa do modal de loading.
+            if(status.id && status.sync_status !== 'completed') {
+                triggerSyncAnimation(status.id);
+            }
+            
             if (intervalRef.current) clearInterval(intervalRef.current);
         } else if (status.qrcode_url && status.qrcode_url.length > 10) {
             setStep('qr_scan');
