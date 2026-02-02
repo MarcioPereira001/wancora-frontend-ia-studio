@@ -12,7 +12,7 @@ export function GlobalSyncIndicator() {
   const [show, setShow] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
   const [localPercent, setLocalPercent] = useState(0);
-  const [fakePercent, setFakePercent] = useState(0); // Para animação de preparação
+  const [fakePercent, setFakePercent] = useState(0); 
   const [localStatus, setLocalStatus] = useState<string>('waiting');
   
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -21,17 +21,18 @@ export function GlobalSyncIndicator() {
 
   const targetInstanceId = forcedSyncId;
 
-  // --- ANIMAÇÃO DE PREPARAÇÃO (0-100% em 20s) ---
+  // --- ANIMAÇÃO DE PREPARAÇÃO (0-99% em 12s) ---
+  // 12000ms / 100 steps = 120ms por step
   useEffect(() => {
     if (localStatus === 'importing_contacts') {
         let p = 0;
         if (fakeProgressRef.current) clearInterval(fakeProgressRef.current);
         
         fakeProgressRef.current = setInterval(() => {
-            p += 1; // Sobe 1% a cada 200ms = 20 segundos total
-            if (p >= 99) p = 99; // Trava em 99 até o backend liberar
+            p += 1; 
+            if (p >= 99) p = 99; // Trava em 99 visualmente até o backend liberar
             setFakePercent(p);
-        }, 200);
+        }, 120); // 120ms * 100 = 12 segundos
     } else {
         if (fakeProgressRef.current) clearInterval(fakeProgressRef.current);
         setFakePercent(0);
@@ -39,7 +40,7 @@ export function GlobalSyncIndicator() {
     return () => { if (fakeProgressRef.current) clearInterval(fakeProgressRef.current); };
   }, [localStatus]);
 
-  // --- LÓGICA PRINCIPAL ---
+  // --- MONITORAMENTO REALTIME ---
   useEffect(() => {
     if (!targetInstanceId) {
         if (show && !forcedSyncId && !closingRef.current) {
@@ -69,14 +70,14 @@ export function GlobalSyncIndicator() {
             const dbStatus = data.sync_status || 'waiting';
             const dbPercent = data.sync_percent || 0;
 
-            // 1. FORÇA FECHAMENTO (Status Completed)
+            // 1. FORÇA FECHAMENTO (Status Completed = 100%)
             if (dbStatus === 'completed') {
                 if (!closingRef.current) {
                     setLocalStatus('completed');
-                    setLocalPercent(100);
+                    setLocalPercent(100); // Força visual 100%
                     
                     closingRef.current = true;
-                    // Mantém na tela por 4 segundos para celebrar
+                    // Mantém na tela por 3 segundos para ler "Concluído"
                     setTimeout(() => {
                         setIsVisible(false);
                         setTimeout(() => {
@@ -84,15 +85,17 @@ export function GlobalSyncIndicator() {
                             clearSyncAnimation();
                             closingRef.current = false;
                         }, 500);
-                    }, 4000);
+                    }, 3000);
                 }
                 return;
             }
 
             // 2. Abortar se desconectou
             if (data.status === 'disconnected') {
-                setIsVisible(false);
-                setTimeout(() => { setShow(false); clearSyncAnimation(); }, 500);
+                if (!closingRef.current) {
+                    setIsVisible(false);
+                    setTimeout(() => { setShow(false); clearSyncAnimation(); }, 500);
+                }
                 return;
             }
 
@@ -100,9 +103,11 @@ export function GlobalSyncIndicator() {
             setLocalStatus(dbStatus);
             
             // Só atualiza a porcentagem real se estivermos na fase de mensagens
-            // Na fase de contatos usamos a fakePercent
+            // Na fase de contatos/waiting, a barra obedece o fakePercent
             if (dbStatus === 'importing_messages') {
-                if (dbPercent > localPercent) setLocalPercent(dbPercent);
+                // Se o banco resetou para 0 (inicio do processamento), aceitamos
+                // Se o banco subiu, aceitamos.
+                setLocalPercent(dbPercent);
             }
         }
     };
@@ -118,8 +123,8 @@ export function GlobalSyncIndicator() {
   const isComplete = localStatus === 'completed' || localPercent === 100;
   
   // Decide qual porcentagem mostrar
-  // Se está importando contatos -> Mostra animação de "Preparando" (Fake)
-  // Se está importando mensagens -> Mostra real do banco
+  // importing_contacts = Fake Animation (0-99 em 12s)
+  // importing_messages = Real DB Percent
   const displayPercent = localStatus === 'importing_contacts' ? fakePercent : localPercent;
   
   let statusLabel = 'Conexão Estabelecida';
@@ -136,8 +141,8 @@ export function GlobalSyncIndicator() {
       case 'importing_contacts':
           statusLabel = 'Preparando Ambiente';
           subLabel = `Organizando contatos (${displayPercent}%)...`;
-          Icon = Hourglass; // Ampulheta para dar ideia de tempo
-          barColor = 'bg-gradient-to-r from-yellow-500 to-orange-500'; // Cor diferente para preparação
+          Icon = Hourglass; 
+          barColor = 'bg-gradient-to-r from-yellow-500 to-orange-500'; 
           break;
       case 'importing_messages':
           statusLabel = 'Baixando Histórico';
