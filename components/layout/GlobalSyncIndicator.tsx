@@ -4,7 +4,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useRealtimeStore } from '@/store/useRealtimeStore';
 import { createClient } from '@/utils/supabase/client';
-import { CheckCircle2, Radio, Loader2, HardDrive, DownloadCloud, Hourglass } from 'lucide-react';
+import { CheckCircle2, Loader2, Hourglass, XCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export function GlobalSyncIndicator() {
@@ -12,188 +12,108 @@ export function GlobalSyncIndicator() {
   const [show, setShow] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
   
-  // Estado local visual
-  const [localPercent, setLocalPercent] = useState(0);
-  const [fakePercent, setFakePercent] = useState(0); 
-  const [localStatus, setLocalStatus] = useState<string>('waiting');
+  // Estado puramente visual controlado por timer
+  const [displayPercent, setDisplayPercent] = useState(0);
+  const [statusLabel, setStatusLabel] = useState('Preparando Ambiente');
+  const [isComplete, setIsComplete] = useState(false);
   
-  // TRAVA DE 20 SEGUNDOS (Modo Cinema)
-  const [isLocked, setIsLocked] = useState(false);
-  
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const fakeProgressRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const lockTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const closingRef = useRef(false);
 
-  const targetInstanceId = forcedSyncId;
-
-  // --- ANIMAÇÃO DE PREPARAÇÃO (0-95% em ~20s) ---
+  // --- CICLO DE VIDA RÍGIDO (20 SEGUNDOS) ---
   useEffect(() => {
-    // Roda a animação fake se estiver travado (20s iniciais) ou se o status real ainda for de preparação
-    const shouldRunFake = isLocked || localStatus === 'importing_contacts' || localStatus === 'waiting';
-
-    if (shouldRunFake) {
-        let p = 0;
-        if (fakeProgressRef.current) clearInterval(fakeProgressRef.current);
-        
-        // 20000ms / 95 steps ~= 210ms por passo
-        fakeProgressRef.current = setInterval(() => {
-            setFakePercent(prev => {
-                if (prev >= 95) return 95; // Teto da animação fake
-                return prev + 1;
-            });
-        }, 210); 
-    } else {
-        if (fakeProgressRef.current) clearInterval(fakeProgressRef.current);
-    }
-    return () => { if (fakeProgressRef.current) clearInterval(fakeProgressRef.current); };
-  }, [localStatus, isLocked]);
-
-  // --- MONITORAMENTO REALTIME ---
-  useEffect(() => {
-    if (!targetInstanceId) {
-        if (show && !forcedSyncId && !closingRef.current) {
+    // 1. FECHAR (Limpeza)
+    if (!forcedSyncId) {
+        if (show && !closingRef.current) {
              closingRef.current = true;
              setIsVisible(false);
              setTimeout(() => { 
                  setShow(false); 
                  closingRef.current = false; 
-                 setLocalPercent(0); 
-                 setFakePercent(0);
-                 setIsLocked(false);
+                 setDisplayPercent(0); 
+                 setIsComplete(false);
              }, 500);
         }
         return;
     }
 
-    // Ao abrir, inicia a trava de 20s
+    // 2. ABRIR E INICIAR TIMER (Apenas se não estiver aberto)
     if (forcedSyncId && !show) {
         setShow(true);
         setTimeout(() => setIsVisible(true), 50);
-        setLocalStatus('waiting'); 
-        setLocalPercent(0);
-        setFakePercent(0);
         
-        // INICIA O MODO "CEGO" POR 20 SEGUNDOS
-        setIsLocked(true);
-        if (lockTimeoutRef.current) clearTimeout(lockTimeoutRef.current);
-        lockTimeoutRef.current = setTimeout(() => {
-            setIsLocked(false);
-            console.log("🔓 [SYNC UI] Trava de 20s liberada. Sincronizando com real...");
-        }, 20000); 
-    }
+        setDisplayPercent(0);
+        setStatusLabel('Sincronizando Histórico');
+        setIsComplete(false);
+        
+        // Duração Total: 20 segundos (20000ms)
+        // Intervalo de atualização: 200ms
+        // Passo: 100 / (20000/200) = 1% a cada tick
+        const TOTAL_DURATION = 20000;
+        const INTERVAL = 200;
+        const STEP = 1; 
 
-    const fetchDirectStatus = async () => {
-        const supabase = createClient();
-        const { data, error } = await supabase
-            .from('instances')
-            .select('sync_status, sync_percent, status')
-            .eq('id', targetInstanceId)
-            .single();
+        if (timerRef.current) clearInterval(timerRef.current);
 
-        if (data && !error) {
-            const dbStatus = data.sync_status || 'waiting';
-            const dbPercent = data.sync_percent || 0;
-
-            // 1. Abortar IMEDIATAMENTE se desconectou (Erro crítico fura o bloqueio)
-            if (data.status === 'disconnected') {
-                if (!closingRef.current) {
-                    setIsVisible(false);
-                    setTimeout(() => { setShow(false); clearSyncAnimation(); setIsLocked(false); }, 500);
-                }
-                return;
-            }
-
-            // --- LÓGICA DE BLOQUEIO ---
-            // Se estiver travado nos primeiros 20s, IGNOREMOS o backend (exceto desconexão)
-            // Mantemos visualmente como 'importing_contacts'
-            if (isLocked) {
-                setLocalStatus('importing_contacts');
-                return; 
-            }
-            // ---------------------------
-
-            // 2. FORÇA FECHAMENTO (Só processa se não estiver locked)
-            if (dbStatus === 'completed') {
-                if (!closingRef.current) {
-                    setLocalStatus('completed');
-                    setLocalPercent(100); 
+        timerRef.current = setInterval(() => {
+            setDisplayPercent(prev => {
+                const next = prev + STEP;
+                
+                // --- PONTO DE CORTE OBRIGATÓRIO ---
+                if (next >= 100) {
+                    if(timerRef.current) clearInterval(timerRef.current);
                     
-                    closingRef.current = true;
+                    // Finalização Visual Forçada
+                    setIsComplete(true);
+                    setStatusLabel('Concluído');
+                    
+                    // Fecha após 1.5s mostrando "100%"
                     setTimeout(() => {
+                        closingRef.current = true;
                         setIsVisible(false);
                         setTimeout(() => {
                             setShow(false);
-                            clearSyncAnimation();
+                            clearSyncAnimation(); // Libera a store
                             closingRef.current = false;
                         }, 500);
-                    }, 3000);
+                    }, 1500);
+                    
+                    return 100;
                 }
-                return;
-            }
+                return next;
+            });
+        }, INTERVAL);
+    }
 
-            // 3. Atualizar Estado Real (Pós-Trava)
-            setLocalStatus(dbStatus);
-            
-            if (dbStatus === 'importing_messages') {
-                setLocalPercent(dbPercent);
-            }
+    // 3. MONITORAMENTO DE ERRO (Safety Check apenas)
+    // Se a conexão cair no meio, abortamos para não enganar o usuário
+    const checkConnection = async () => {
+        if (!forcedSyncId) return;
+        const supabase = createClient();
+        const { data } = await supabase.from('instances').select('status').eq('id', forcedSyncId).single();
+        
+        if (data?.status === 'disconnected') {
+            if (timerRef.current) clearInterval(timerRef.current);
+            setStatusLabel('Conexão Perdida');
+            setTimeout(() => { clearSyncAnimation(); }, 2000);
         }
     };
-
-    fetchDirectStatus(); 
-    intervalRef.current = setInterval(fetchDirectStatus, 1000);
+    // Verifica conexão a cada 2s só por segurança
+    const safetyInterval = setInterval(checkConnection, 2000);
 
     return () => { 
-        if (intervalRef.current) clearInterval(intervalRef.current);
-        if (lockTimeoutRef.current) clearTimeout(lockTimeoutRef.current);
+        if (timerRef.current) clearInterval(timerRef.current);
+        clearInterval(safetyInterval);
     };
-  }, [targetInstanceId, forcedSyncId, show, clearSyncAnimation, isLocked]);
+  }, [forcedSyncId, show, clearSyncAnimation]);
 
   if (!show) return null;
 
-  const isComplete = localStatus === 'completed' || localPercent === 100;
-  
-  // Se estiver travado ou em fase inicial, usa a porcentagem fake
-  const showFake = isLocked || localStatus === 'importing_contacts' || localStatus === 'waiting';
-  const displayPercent = showFake ? fakePercent : localPercent;
-  
-  let statusLabel = 'Conexão Estabelecida';
-  let Icon = Radio;
-  let subLabel = 'Aguardando dados...';
-  
-  // Cores
-  let barColor = 'bg-slate-500'; 
-  
-  switch (localStatus) {
-      case 'waiting': 
-          statusLabel = 'Aguardando WhatsApp';
-          subLabel = 'Estabelecendo conexão segura...';
-          Icon = Loader2;
-          break;
-      case 'importing_contacts':
-          statusLabel = 'Preparando Ambiente';
-          subLabel = `Organizando contatos (${displayPercent}%)...`;
-          Icon = Hourglass; 
-          barColor = 'bg-slate-500'; // Neutro durante a trava/preparação
-          break;
-      case 'importing_messages':
-          statusLabel = 'Baixando Histórico';
-          subLabel = `Recuperando conversas (${displayPercent}%)...`;
-          Icon = DownloadCloud;
-          barColor = 'bg-gradient-to-r from-blue-600 to-cyan-400'; // Azul quando destrava e baixa
-          break;
-      case 'completed':
-          statusLabel = 'Histórico 100% Concluído';
-          subLabel = 'Tudo pronto!';
-          Icon = CheckCircle2;
-          barColor = 'bg-emerald-500';
-          break;
-      default:
-          statusLabel = 'Processando';
-          subLabel = 'Organizando dados...';
-          Icon = HardDrive;
-  }
+  // Cor da Barra: Neutra (Slate) durante processo, Verde no final
+  const barColor = isComplete ? 'bg-emerald-500' : 'bg-slate-500';
+  const Icon = isComplete ? CheckCircle2 : Hourglass;
+  const iconColor = isComplete ? 'text-emerald-500' : 'text-slate-400';
+  const iconBg = isComplete ? 'bg-emerald-500/10' : 'bg-zinc-800';
 
   return (
     <div className={cn(
@@ -202,34 +122,36 @@ export function GlobalSyncIndicator() {
     )}>
       <div className="bg-[#09090b] border border-zinc-800 rounded-xl shadow-[0_0_80px_rgba(0,0,0,0.8)] p-5 w-96 ring-1 ring-white/10 relative overflow-hidden backdrop-blur-2xl">
         
-        <div className={`absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent ${isComplete ? 'via-emerald-500' : 'via-blue-600'} to-transparent opacity-75`} />
+        {/* Glow Topo */}
+        <div className={`absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent ${isComplete ? 'via-emerald-500' : 'via-slate-500'} to-transparent opacity-75`} />
 
         <div className="flex items-center justify-between mb-4 relative z-10">
           <div className="flex items-center gap-4">
-            <div className={`p-3 rounded-xl transition-colors duration-500 shadow-inner ${isComplete ? 'bg-emerald-500/10 text-emerald-500' : 'bg-zinc-800 text-blue-400'}`}>
-               {isComplete ? <CheckCircle2 className="w-6 h-6" /> : <Icon className={`w-6 h-6 ${!isComplete ? 'animate-pulse' : ''}`} />}
+            <div className={`p-3 rounded-xl transition-colors duration-500 shadow-inner ${iconBg} ${iconColor}`}>
+               <Icon className={`w-6 h-6 ${!isComplete ? 'animate-pulse' : ''}`} />
             </div>
             <div className="flex flex-col min-w-0">
               <span className="text-base font-bold text-white leading-tight mb-1 truncate">
                 {statusLabel}
               </span>
               <span className="text-xs text-zinc-400 font-medium truncate max-w-[180px]">
-                {subLabel}
+                {isComplete ? 'Download em background...' : 'Organizando dados...'}
               </span>
             </div>
           </div>
-          <span className={`text-2xl font-mono font-bold transition-colors ${isComplete ? 'text-emerald-500' : 'text-white'}`}>
+          <span className={`text-2xl font-mono font-bold transition-colors ${isComplete ? 'text-emerald-500' : 'text-zinc-500'}`}>
             {displayPercent}%
           </span>
         </div>
 
+        {/* Barra de Progresso */}
         <div className="h-2 w-full bg-zinc-800 rounded-full overflow-hidden relative z-10">
             <div 
-              className={`h-full transition-all duration-300 ease-out relative ${barColor}`}
+              className={`h-full transition-all duration-200 ease-linear relative ${barColor}`}
               style={{ width: `${Math.max(5, displayPercent)}%` }} 
             >
                 {!isComplete && (
-                    <div className="absolute inset-0 bg-white/20 w-full animate-[shimmer_1.5s_infinite] -skew-x-12" />
+                    <div className="absolute inset-0 bg-white/10 w-full animate-[shimmer_1.5s_infinite] -skew-x-12" />
                 )}
             </div>
         </div>
