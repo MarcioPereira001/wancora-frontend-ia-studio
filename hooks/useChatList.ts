@@ -7,10 +7,20 @@ import { ChatContact } from '@/types';
 export function useChatList() {
   const { user } = useAuthStore();
   const supabase = createClient();
+  
   const [contacts, setContacts] = useState<ChatContact[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
+  // REF PATTERN: Mantém a lista atualizada acessível dentro de closures (intervalos/callbacks)
+  // sem precisar adicionar 'contacts' nas dependências e causar re-renders.
+  const contactsRef = useRef<ChatContact[]>([]);
+
+  // Sincroniza o Ref com o State sempre que o State mudar
+  useEffect(() => {
+    contactsRef.current = contacts;
+  }, [contacts]);
+
   // BUFFER DE ATUALIZAÇÃO (Anti-Jitter)
   const updatesBuffer = useRef<Map<string, any>>(new Map());
   const batchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -26,9 +36,6 @@ export function useChatList() {
 
   // Fetch Individual de Contato (Para Inserção Dinâmica)
   const fetchSingleContact = async (jid: string, companyId: string) => {
-      // Tenta buscar o contato completo via RPC ou Tabela
-      // Como o RPC get_my_chat_list não filtra por JID, vamos simular buscando da tabela contacts
-      // e compondo com leads. É um fallback para garantir que o chat apareça.
       const { data: contact } = await supabase
           .from('contacts')
           .select('*, leads(tags)')
@@ -56,15 +63,15 @@ export function useChatList() {
       return null;
   };
 
-  // Processador do Buffer (Debounced)
+  // Processador do Buffer (Estável - Sem dependência de 'contacts')
   const processBuffer = useCallback(async () => {
       if (updatesBuffer.current.size === 0) return;
 
       const updates = new Map<string, any>(updatesBuffer.current);
-      updatesBuffer.current.clear(); // Limpa imediatamente para não processar dnv
+      updatesBuffer.current.clear(); 
 
-      // Snapshot atual para modificação
-      let newList = [...contacts];
+      // Lê do REF para evitar recriar a função
+      let newList = [...contactsRef.current];
       let needsSort = false;
 
       for (const [jid, payload] of updates) {
@@ -75,7 +82,6 @@ export function useChatList() {
           if (payload.type === 'contact_update') {
               const updatedRow = payload.data;
               
-              // Se foi ignorado, remove da lista
               if (updatedRow.is_ignored) {
                   newList = newList.filter(c => c.jid !== jid);
                   continue;
@@ -88,18 +94,20 @@ export function useChatList() {
                       push_name: updatedRow.push_name,
                       unread_count: updatedRow.unread_count,
                       last_message_at: updatedRow.last_message_at,
-                      last_message_time: updatedRow.last_message_at, // Compatibilidade
+                      last_message_time: updatedRow.last_message_at,
                       profile_pic_url: updatedRow.profile_pic_url,
                       is_muted: updatedRow.is_muted,
                       is_online: updatedRow.is_online
                   };
                   needsSort = true;
               } else {
-                  // Contato novo via update? Raro, mas possível. Tenta buscar full.
-                  const fullContact = await fetchSingleContact(jid, updatedRow.company_id);
-                  if (fullContact) {
-                      newList.push(fullContact);
-                      needsSort = true;
+                  // Contato novo via update? Raro, mas possível.
+                  if (user?.company_id) {
+                      const fullContact = await fetchSingleContact(jid, user.company_id);
+                      if (fullContact) {
+                          newList.push(fullContact);
+                          needsSort = true;
+                      }
                   }
               }
           }
@@ -109,28 +117,23 @@ export function useChatList() {
               const newMsg = payload.data;
               
               if (existing) {
-                  // Atualiza existente
                   const updatedContact = { ...existing };
                   updatedContact.last_message_content = newMsg.content;
                   updatedContact.last_message_type = newMsg.message_type;
                   updatedContact.last_message_at = newMsg.created_at;
-                  updatedContact.last_message_time = newMsg.created_at; // Compatibilidade
+                  updatedContact.last_message_time = newMsg.created_at;
                   
                   if (!newMsg.from_me) {
                       updatedContact.unread_count = (updatedContact.unread_count || 0) + 1;
                   }
 
-                  // Move para o topo logicamente
                   newList[existingIndex] = updatedContact;
                   needsSort = true;
               } else {
-                  // --- CORREÇÃO CRÍTICA: NOVO CONTATO ---
-                  // Se chegou mensagem de alguém que não está na lista, busca e insere!
-                  // Isso evita o bug de "ter que dar F5" para ver conversas novas.
+                  // Contato Fantasma: Busca e insere
                   if (user?.company_id) {
                       const fullContact = await fetchSingleContact(jid, user.company_id);
                       if (fullContact) {
-                          // Injeta dados da mensagem inicial
                           fullContact.last_message_content = newMsg.content;
                           fullContact.last_message_type = newMsg.message_type;
                           fullContact.last_message_at = newMsg.created_at;
@@ -144,16 +147,19 @@ export function useChatList() {
           }
       }
 
+      // Atualiza o estado apenas se necessário
       if (needsSort) {
           setContacts(sortContacts(newList));
       } else {
           setContacts(newList);
       }
 
-  }, [contacts, sortContacts, user?.company_id]);
+  }, [sortContacts, user?.company_id]); // Dependências estáveis
 
-  const refreshList = async () => {
+  const refreshList = useCallback(async (showLoading = false) => {
       if (!user?.company_id) return;
+      
+      if (showLoading) setLoading(true);
       
       try {
           const { data, error: rpcError } = await supabase.rpc('get_my_chat_list', {
@@ -173,24 +179,22 @@ export function useChatList() {
               lead_tags: row.lead_tags || []
           }));
 
-          setContacts(formatted); // Já vem ordenado do banco
+          setContacts(formatted); 
           setError(null);
       } catch (e: any) {
           console.error("ChatList Error:", e.message);
           setError(e.message);
+      } finally {
+          if (showLoading) setLoading(false);
       }
-  };
+  }, [user?.company_id]);
 
+  // Efeito de Inicialização e Subscription
   useEffect(() => {
     if (!user?.company_id) return;
 
-    const init = async () => {
-      setLoading(true);
-      await refreshList();
-      setLoading(false);
-    };
-
-    init();
+    // Load inicial (Mostra Loading)
+    refreshList(true);
 
     // CHANNEL 1: Contatos
     const contactsChannel = supabase.channel(`chat-list-contacts:${user.company_id}`)
@@ -203,8 +207,6 @@ export function useChatList() {
           if (payload.eventType === 'UPDATE') {
               updatesBuffer.current.set(payload.new.jid, { type: 'contact_update', data: payload.new });
           } 
-          // Não tratamos INSERT aqui porque INSERT em contacts geralmente vem acompanhado de mensagem
-          // e o tratamento de mensagem (new_message) já cuida de buscar o contato.
       })
       .subscribe();
 
@@ -220,7 +222,7 @@ export function useChatList() {
       })
       .subscribe();
 
-    // FLUSH LOOP: Processa o buffer a cada 1 segundo (Debounce Time)
+    // FLUSH LOOP (Intervalo Estável)
     batchTimeoutRef.current = setInterval(() => {
         if (updatesBuffer.current.size > 0) processBuffer();
     }, 1000);
@@ -230,7 +232,7 @@ export function useChatList() {
         supabase.removeChannel(messagesChannel);
         if (batchTimeoutRef.current) clearInterval(batchTimeoutRef.current);
     };
-  }, [user?.company_id, processBuffer]); // Removido 'contacts' das deps para evitar re-subscribe infinito
+  }, [user?.company_id, refreshList, processBuffer]); // processBuffer agora é estável
 
   return { contacts, loading, error, refreshList };
 }
