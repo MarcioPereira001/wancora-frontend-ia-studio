@@ -21,18 +21,18 @@ export function GlobalSyncIndicator() {
 
   const targetInstanceId = forcedSyncId;
 
-  // --- ANIMAÇÃO DE PREPARAÇÃO (0-99% em 12s) ---
-  // 12000ms / 100 steps = 120ms por step
+  // --- ANIMAÇÃO DE PREPARAÇÃO (0-95% em 20s) ---
+  // 20000ms / 95 steps = ~210ms por step
   useEffect(() => {
-    if (localStatus === 'importing_contacts') {
+    if (localStatus === 'importing_contacts' || localStatus === 'waiting') {
         let p = 0;
         if (fakeProgressRef.current) clearInterval(fakeProgressRef.current);
         
         fakeProgressRef.current = setInterval(() => {
             p += 1; 
-            if (p >= 99) p = 99; // Trava em 99 visualmente até o backend liberar
+            if (p >= 95) p = 95; // Trava em 95% e fica esperando o backend
             setFakePercent(p);
-        }, 120); // 120ms * 100 = 12 segundos
+        }, 210); 
     } else {
         if (fakeProgressRef.current) clearInterval(fakeProgressRef.current);
         setFakePercent(0);
@@ -74,7 +74,7 @@ export function GlobalSyncIndicator() {
             if (dbStatus === 'completed') {
                 if (!closingRef.current) {
                     setLocalStatus('completed');
-                    setLocalPercent(100); // Força visual 100%
+                    setLocalPercent(100); 
                     
                     closingRef.current = true;
                     // Mantém na tela por 3 segundos para ler "Concluído"
@@ -103,10 +103,8 @@ export function GlobalSyncIndicator() {
             setLocalStatus(dbStatus);
             
             // Só atualiza a porcentagem real se estivermos na fase de mensagens
-            // Na fase de contatos/waiting, a barra obedece o fakePercent
             if (dbStatus === 'importing_messages') {
-                // Se o banco resetou para 0 (inicio do processamento), aceitamos
-                // Se o banco subiu, aceitamos.
+                // Se o banco resetou para 0 (inicio de um novo lote), aceitamos
                 setLocalPercent(dbPercent);
             }
         }
@@ -123,14 +121,17 @@ export function GlobalSyncIndicator() {
   const isComplete = localStatus === 'completed' || localPercent === 100;
   
   // Decide qual porcentagem mostrar
-  // importing_contacts = Fake Animation (0-99 em 12s)
-  // importing_messages = Real DB Percent
-  const displayPercent = localStatus === 'importing_contacts' ? fakePercent : localPercent;
+  // Fase Inicial -> Fake Percent
+  // Fase Mensagens -> Real Percent
+  const isPrepPhase = localStatus === 'importing_contacts' || localStatus === 'waiting';
+  const displayPercent = isPrepPhase ? fakePercent : localPercent;
   
   let statusLabel = 'Conexão Estabelecida';
   let Icon = Radio;
   let subLabel = 'Aguardando dados...';
-  let barColor = 'bg-gradient-to-r from-blue-600 to-cyan-400';
+  
+  // COR NEUTRA (Slate-600) para preparação
+  let barColor = 'bg-slate-500'; 
   
   switch (localStatus) {
       case 'waiting': 
@@ -142,19 +143,19 @@ export function GlobalSyncIndicator() {
           statusLabel = 'Preparando Ambiente';
           subLabel = `Organizando contatos (${displayPercent}%)...`;
           Icon = Hourglass; 
-          barColor = 'bg-gradient-to-r from-yellow-500 to-orange-500'; 
+          barColor = 'bg-slate-500'; // Cinza Azulado Neutro
           break;
       case 'importing_messages':
           statusLabel = 'Baixando Histórico';
           subLabel = `Recuperando conversas (${displayPercent}%)...`;
           Icon = DownloadCloud;
-          barColor = 'bg-gradient-to-r from-blue-600 to-cyan-400';
+          barColor = 'bg-gradient-to-r from-blue-600 to-cyan-400'; // Azul Vibrante
           break;
       case 'completed':
           statusLabel = 'Histórico 100% Concluído';
           subLabel = 'Tudo pronto!';
           Icon = CheckCircle2;
-          barColor = 'bg-emerald-500';
+          barColor = 'bg-emerald-500'; // Verde Sucesso
           break;
       default:
           statusLabel = 'Processando';
@@ -196,7 +197,7 @@ export function GlobalSyncIndicator() {
               style={{ width: `${Math.max(5, displayPercent)}%` }} 
             >
                 {!isComplete && (
-                    <div className="absolute inset-0 bg-white/30 w-full animate-[shimmer_1.5s_infinite] -skew-x-12" />
+                    <div className="absolute inset-0 bg-white/20 w-full animate-[shimmer_1.5s_infinite] -skew-x-12" />
                 )}
             </div>
         </div>
