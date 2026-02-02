@@ -65,7 +65,7 @@ export function GlobalSyncIndicator() {
             // 2. Se não acabou, travamos visualmente em 99% mesmo que o cálculo matemático tenha estourado.
             // Isso evita que o usuário ache que travou no 100% ou que o modal feche antes da hora.
             if (!isReallyDone && dbPercent >= 100) {
-                dbPercent = 99;
+                dbPercent = 100;
             }
 
             // 3. Garantimos que a porcentagem nunca retroceda visualmente (Monotonic Increase)
