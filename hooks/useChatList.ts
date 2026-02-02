@@ -12,19 +12,14 @@ export function useChatList() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
-  // REF PATTERN: Mantém a lista atualizada acessível dentro de closures
+  // REF: Mantém o estado atual acessível dentro dos listeners do Realtime sem recriá-los
   const contactsRef = useRef<ChatContact[]>([]);
 
-  // Sincroniza o Ref com o State
   useEffect(() => {
     contactsRef.current = contacts;
   }, [contacts]);
 
-  // BUFFER DE ATUALIZAÇÃO (Anti-Jitter / Debounce)
-  const updatesBuffer = useRef<Map<string, any>>(new Map());
-  const batchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Função de Ordenação (Mais recente -> Mais antigo)
+  // Função de Ordenação (Mensagem mais recente no topo)
   const sortContacts = useCallback((list: ChatContact[]) => {
       return [...list].sort((a, b) => {
           const tA = new Date(a.last_message_at || 0).getTime();
@@ -33,142 +28,48 @@ export function useChatList() {
       });
   }, []);
 
-  // Fetch Individual de Contato (Para Inserção Dinâmica)
-  const fetchSingleContact = async (jid: string, companyId: string) => {
-      const { data: contact } = await supabase
+  // Fetch Cirúrgico: Busca APENAS 1 contato completo (com Joins de Lead e Tags)
+  // Isso resolve o problema de "nome sumindo" pois pegamos a versão mais recente do banco
+  const fetchSingleContact = async (jid: string) => {
+      if (!user?.company_id) return null;
+
+      const { data } = await supabase
           .from('contacts')
           .select('*, leads(tags, status, pipeline_stage_id, pipeline_stages(name, color))')
           .eq('jid', jid)
-          .eq('company_id', companyId)
+          .eq('company_id', user.company_id)
           .single();
 
-      if (contact) {
+      if (data) {
           return {
-              id: contact.jid,
-              jid: contact.jid,
-              remote_jid: contact.jid,
-              company_id: contact.company_id,
-              name: contact.name || contact.push_name,
-              push_name: contact.push_name,
-              phone_number: contact.phone,
-              profile_pic_url: contact.profile_pic_url,
-              unread_count: contact.unread_count,
-              last_message_at: contact.last_message_at,
-              last_message_time: contact.last_message_at,
-              is_group: contact.jid.includes('@g.us'),
-              is_community: contact.is_community,
-              is_online: contact.is_online,
-              lead_tags: contact.leads?.[0]?.tags || [],
-              stage_name: contact.leads?.[0]?.pipeline_stages?.name,
-              stage_color: contact.leads?.[0]?.pipeline_stages?.color
+              id: data.jid,
+              jid: data.jid,
+              remote_jid: data.jid,
+              company_id: data.company_id,
+              // Lógica de Prioridade de Nome: Agenda > PushName > Telefone
+              name: data.name || data.push_name, 
+              push_name: data.push_name,
+              phone_number: data.phone,
+              profile_pic_url: data.profile_pic_url,
+              unread_count: data.unread_count,
+              last_message_at: data.last_message_at,
+              is_group: data.jid.includes('@g.us'),
+              is_community: data.is_community,
+              is_online: data.is_online,
+              lead_tags: data.leads?.[0]?.tags || [],
+              stage_name: data.leads?.[0]?.pipeline_stages?.name,
+              stage_color: data.leads?.[0]?.pipeline_stages?.color
           } as ChatContact;
       }
       return null;
   };
 
-  // Processador do Buffer (Lógica Corrigida para INSERT/UPDATE)
-  const processBuffer = useCallback(async () => {
-      if (updatesBuffer.current.size === 0) return;
-
-      const updates = new Map<string, any>(updatesBuffer.current);
-      updatesBuffer.current.clear(); 
-
-      let newList = [...contactsRef.current];
-      let needsSort = false;
-
-      for (const [jid, payload] of updates) {
-          const existingIndex = newList.findIndex(c => c.jid === jid);
-          const existing = existingIndex >= 0 ? newList[existingIndex] : null;
-
-          // 1. UPDATE/INSERT DE CONTATO
-          if (payload.type === 'contact_change') {
-              const updatedRow = payload.data;
-              
-              // Se foi marcado como ignorado/arquivado, remove da lista visual
-              if (updatedRow.is_ignored) {
-                  if (existing) {
-                      newList = newList.filter(c => c.jid !== jid);
-                  }
-                  continue;
-              }
-
-              if (existing) {
-                  // Merge inteligente: Só atualiza o que mudou
-                  newList[existingIndex] = {
-                      ...existing,
-                      name: updatedRow.name || updatedRow.verified_name || updatedRow.push_name || existing.name,
-                      push_name: updatedRow.push_name,
-                      unread_count: updatedRow.unread_count,
-                      last_message_at: updatedRow.last_message_at,
-                      last_message_time: updatedRow.last_message_at,
-                      profile_pic_url: updatedRow.profile_pic_url,
-                      is_muted: updatedRow.is_muted,
-                      is_online: updatedRow.is_online
-                  };
-                  needsSort = true;
-              } else {
-                  // Contato Novo (INSERT via Sync): Busca dados completos e insere
-                  // Isso resolve o problema de ter que dar refresh
-                  if (user?.company_id) {
-                      const fullContact = await fetchSingleContact(jid, user.company_id);
-                      if (fullContact) {
-                          newList.push(fullContact);
-                          needsSort = true;
-                      }
-                  }
-              }
-          }
-          
-          // 2. NOVA MENSAGEM
-          else if (payload.type === 'new_message') {
-              const newMsg = payload.data;
-              
-              if (existing) {
-                  const updatedContact = { ...existing };
-                  updatedContact.last_message_content = newMsg.content;
-                  updatedContact.last_message_type = newMsg.message_type;
-                  updatedContact.last_message_at = newMsg.created_at;
-                  updatedContact.last_message_time = newMsg.created_at;
-                  
-                  if (!newMsg.from_me) {
-                      updatedContact.unread_count = (updatedContact.unread_count || 0) + 1;
-                  }
-
-                  newList[existingIndex] = updatedContact;
-                  needsSort = true;
-              } else {
-                  // Mensagem de contato desconhecido (Ghost Contact)
-                  // Força busca e inserção
-                  if (user?.company_id) {
-                      const fullContact = await fetchSingleContact(jid, user.company_id);
-                      if (fullContact) {
-                          fullContact.last_message_content = newMsg.content;
-                          fullContact.last_message_type = newMsg.message_type;
-                          fullContact.last_message_at = newMsg.created_at;
-                          if(!newMsg.from_me) fullContact.unread_count = 1;
-
-                          newList.push(fullContact);
-                          needsSort = true;
-                      }
-                  }
-              }
-          }
-      }
-
-      if (needsSort) {
-          setContacts(sortContacts(newList));
-      } else {
-          setContacts(newList);
-      }
-
-  }, [sortContacts, user?.company_id]); 
-
   const refreshList = useCallback(async (showLoading = false) => {
       if (!user?.company_id) return;
-      
       if (showLoading) setLoading(true);
       
       try {
+          // RPC Otimizada do Banco de Dados
           const { data, error: rpcError } = await supabase.rpc('get_my_chat_list', {
               p_company_id: user.company_id
           });
@@ -201,43 +102,91 @@ export function useChatList() {
 
     refreshList(true);
 
-    // CHANNEL 1: Contatos (INSERT + UPDATE) -> CRÍTICO PARA SYNC
+    // --- REALTIME: Estratégia de "Merge Inteligente" ---
+    
+    // 1. Monitora Contatos (Nomes, Fotos, Status)
     const contactsChannel = supabase.channel(`chat-list-contacts:${user.company_id}`)
       .on('postgres_changes', { 
-          event: '*', // Escuta TUDO (INSERT, UPDATE, DELETE)
+          event: '*', // INSERT ou UPDATE
           schema: 'public', 
           table: 'contacts', 
           filter: `company_id=eq.${user.company_id}` 
-      }, (payload) => {
-          if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-              updatesBuffer.current.set(payload.new.jid, { type: 'contact_change', data: payload.new });
-          } 
-          // Delete é tratado no processBuffer se is_ignored=true vier no update
+      }, async (payload) => {
+          
+          if (payload.eventType === 'UPDATE' || payload.eventType === 'INSERT') {
+              const newData = payload.new;
+              
+              // Se foi ignorado/arquivado, remove da lista
+              if (newData.is_ignored) {
+                  setContacts(prev => prev.filter(c => c.jid !== newData.jid));
+                  return;
+              }
+
+              // Busca dados completos (incluindo leads/tags)
+              const fullContact = await fetchSingleContact(newData.jid);
+              
+              if (fullContact) {
+                  setContacts(prev => {
+                      const exists = prev.some(c => c.jid === fullContact.jid);
+                      // Se já existe, atualiza mantendo a posição (para não pular)
+                      if (exists) {
+                          return prev.map(c => c.jid === fullContact.jid ? { ...c, ...fullContact } : c);
+                      }
+                      // Se é novo, põe no topo
+                      return sortContacts([fullContact, ...prev]);
+                  });
+              }
+          }
       })
       .subscribe();
 
-    // CHANNEL 2: Mensagens
+    // 2. Monitora Mensagens (Para subir a conversa pro topo)
     const messagesChannel = supabase.channel(`chat-list-messages:${user.company_id}`)
       .on('postgres_changes', { 
           event: 'INSERT', 
           schema: 'public', 
           table: 'messages', 
           filter: `company_id=eq.${user.company_id}` 
-      }, (payload) => {
-          updatesBuffer.current.set(payload.new.remote_jid, { type: 'new_message', data: payload.new });
+      }, async (payload) => {
+          const newMsg = payload.new;
+          const targetJid = newMsg.remote_jid;
+          
+          setContacts(prev => {
+              const existingIndex = prev.findIndex(c => c.jid === targetJid);
+              
+              if (existingIndex >= 0) {
+                  // Contato já existe: Atualiza prévia e move pro topo
+                  const contact = { ...prev[existingIndex] };
+                  contact.last_message_content = newMsg.content;
+                  contact.last_message_type = newMsg.message_type;
+                  contact.last_message_at = newMsg.created_at;
+                  contact.last_message_time = newMsg.created_at;
+                  
+                  if (!newMsg.from_me) {
+                      contact.unread_count = (contact.unread_count || 0) + 1;
+                  }
+
+                  const others = prev.filter(c => c.jid !== targetJid);
+                  return [contact, ...others];
+              } else {
+                  // Contato novo na lista (Ghost Contact): Busca e insere
+                  // Isso deve ser feito fora do setContacts para ser async, mas como fallback:
+                  fetchSingleContact(targetJid).then(fullContact => {
+                      if(fullContact) {
+                          setContacts(current => sortContacts([fullContact, ...current]));
+                      }
+                  });
+                  return prev;
+              }
+          });
       })
       .subscribe();
-
-    batchTimeoutRef.current = setInterval(() => {
-        if (updatesBuffer.current.size > 0) processBuffer();
-    }, 1000);
 
     return () => { 
         supabase.removeChannel(contactsChannel);
         supabase.removeChannel(messagesChannel);
-        if (batchTimeoutRef.current) clearInterval(batchTimeoutRef.current);
     };
-  }, [user?.company_id, refreshList, processBuffer]);
+  }, [user?.company_id, refreshList, sortContacts]);
 
   return { contacts, loading, error, refreshList };
 }
