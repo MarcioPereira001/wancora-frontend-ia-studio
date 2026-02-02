@@ -121,6 +121,39 @@ export interface DashboardKPI {
   avgTicket: number;
 }
 
+// --- MESSAGE CONTENT TYPES (STRONG TYPING) ---
+
+export interface PollOption {
+  optionName: string;
+}
+
+export interface PollContent {
+  name: string;
+  options: PollOption[] | string[];
+  selectableOptionsCount?: number;
+  values?: string[]; // Compatibilidade com versões antigas
+}
+
+export interface LocationContent {
+  latitude: number;
+  longitude: number;
+  degreesLatitude?: number; // Compatibilidade Baileys
+  degreesLongitude?: number;
+}
+
+export interface ContactContent {
+  displayName: string;
+  vcard: string;
+  phone?: string;
+}
+
+export interface CardContent {
+  title: string;
+  description?: string;
+  link: string;
+  thumbnailUrl?: string;
+}
+
 export interface Message {
   id: string;
   remote_jid: string;
@@ -140,7 +173,7 @@ export interface Message {
   read_at?: string;
   delivered_at?: string;
   lead_id?: string;
-  transcription?: string | null; // Adicionado para suporte a áudio transcrito
+  transcription?: string | null;
 }
 
 export interface PipelineStage {

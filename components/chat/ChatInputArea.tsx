@@ -32,9 +32,11 @@ export function ChatInputArea() {
   const mediaMenuRef = useRef<HTMLDivElement>(null);
   const emojiRef = useRef<HTMLDivElement>(null);
   
+  // Audio Recording State
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioStreamRef = useRef<MediaStream | null>(null); // REF PARA LIMPEZA DE MEMÓRIA
   const audioChunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   
@@ -60,11 +62,25 @@ export function ChatInputArea() {
   const [cardLink, setCardLink] = useState("");
   const [cardThumb, setCardThumb] = useState("");
 
+  // 🛡️ MEMORY LEAK FIX: Limpeza ao desmontar ou trocar chat
   useEffect(() => {
       setMediaMenuOpen(false);
       setEmojiPickerOpen(false);
       setActiveModal(null);
-      if (isRecording) stopRecording(true);
+      
+      // Se mudar de contato enquanto grava, cancela e limpa
+      if (isRecording) {
+          stopRecording(true);
+      }
+      
+      return () => {
+          // Garante que o stream seja morto ao desmontar o componente
+          if (audioStreamRef.current) {
+              audioStreamRef.current.getTracks().forEach(track => track.stop());
+              audioStreamRef.current = null;
+          }
+          if (timerRef.current) clearInterval(timerRef.current);
+      };
   }, [activeContact?.id]);
 
   useEffect(() => {
@@ -181,6 +197,9 @@ export function ChatInputArea() {
   const startRecording = async () => {
       try {
           const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          // Armazena referência para limpeza posterior
+          audioStreamRef.current = stream;
+
           let mimeType = 'audio/mp4';
           if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = 'audio/webm';
 
@@ -191,6 +210,9 @@ export function ChatInputArea() {
           mediaRecorder.ondataavailable = (event) => { if (event.data.size > 0) audioChunksRef.current.push(event.data); };
           
           mediaRecorder.onstop = async () => {
+              // Se foi cancelado, não processa
+              if (!mediaRecorderRef.current) return;
+
               const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
               const audioFile = new File([audioBlob], `ptt_${Date.now()}.${mimeType === 'audio/mp4' ? 'mp4' : 'webm'}`, { type: mimeType });
               
@@ -200,7 +222,12 @@ export function ChatInputArea() {
                       await dispatchMessage({ type: 'audio', url: publicUrl, mimetype: mimeType, ptt: true });
                   } catch (e) {}
               }
-              stream.getTracks().forEach(track => track.stop());
+              
+              // Limpeza crítica de tracks
+              if (audioStreamRef.current) {
+                  audioStreamRef.current.getTracks().forEach(track => track.stop());
+                  audioStreamRef.current = null;
+              }
           };
           mediaRecorder.start();
           setIsRecording(true);
@@ -212,10 +239,16 @@ export function ChatInputArea() {
   const stopRecording = (cancel = false) => {
       if (mediaRecorderRef.current && isRecording) {
           if (cancel) {
-              mediaRecorderRef.current.ondataavailable = null;
+              // Remove listener para não disparar envio
               mediaRecorderRef.current.onstop = null;
+              // Limpa tracks imediatamente
+              if (audioStreamRef.current) {
+                  audioStreamRef.current.getTracks().forEach(track => track.stop());
+                  audioStreamRef.current = null;
+              }
           }
           mediaRecorderRef.current.stop();
+          mediaRecorderRef.current = null; // Zera referência
       }
       setIsRecording(false);
       if (timerRef.current) clearInterval(timerRef.current);

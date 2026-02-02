@@ -44,6 +44,13 @@ Atualizado para a arquitetura mais moderna e segura do React.
 * **Desktop Environment:**
     * **Zustand Store (`useDesktopStore`):** Gerencia o estado global das janelas (posição `x,y`, tamanho, ordem `z-index`, minimização e foco).
     * **Apps Isolados:** Cada funcionalidade (Drive, Editor) é um componente independente carregado dentro de um `WindowFrame` genérico.
+* **Buffer de Atualizações (Chat List):** Implementação de um `Update Buffer` com *debounce* de 1 segundo na lista de contatos (`useChatList`).
+    * **Motivo:** O Supabase Realtime envia eventos um a um. Em disparos em massa, isso causava "flickering" visual. O buffer acumula eventos e renderiza a lista apenas uma vez por segundo, garantindo estabilidade visual (0 FPS drop).
+* **Strict Typing & Safety:**
+    * **No-Any Policy:** Componentes críticos como `MessageContent` e `ChatInput` foram refatorados para usar Interfaces Estritas (`PollContent`, `CardContent`, `LocationContent`).
+    * **JSON Parsing Seguro:** Implementação de `safeParse` para evitar que mensagens malformadas do WhatsApp (ex: JSON incompleto) quebrem a renderização da tela branca (White Screen of Death).
+* **Memory Leak Protection:**
+    * O componente de áudio (`ChatInputArea`) agora implementa limpeza forçada de `MediaStreamTracks` ao desmontar, impedindo que o ícone de "Microfone Ativo" persista no navegador após sair do chat.
 
 ### B. O Core Backend (Node.js + @whiskeysockets/baileys)
 Este é o coração pulsante. Ele não é apenas uma API REST; é um Gerenciador de Estado Persistente.
@@ -69,6 +76,20 @@ Este é o coração pulsante. Ele não é apenas uma API REST; é um Gerenciador
     * **Unwrap:** Função nativa (`unwrapMessage`) para desenrolar mensagens complexas (ViewOnce, Editadas, Docs com Legenda) antes de salvar.
     * **Deduplicação:** Uso rigoroso de `whatsapp_id` + `remote_jid` como chave composta única para evitar mensagens repetidas.
     * **Mutex:** Sistema de bloqueio (`leadCreationLock`) para impedir criação duplicada de leads em rajadas de mensagens.
+
+### Melhorias de Estabilidade (v5.1 - Stability Patch)
+* **Event-Driven Queue:** O processamento de mensagens (`messageQueue.js`) abandonou o loop recursivo (`setImmediate`) em favor de uma arquitetura baseada em eventos. Isso reduz o uso de CPU em ociosidade (Idle) para quase 0%.
+* **Smart Media Handling:**
+    * **Sharp Optimization:** Imagens recebidas são redimensionadas para HD (max 1280px) e convertidas para JPEG antes do upload. Isso previne que fotos de 40MB (iPhone Pro) saturem o Storage ou a banda do usuário.
+    * **Stream Uploads:** Uploads para o Google Drive agora usam `multipart/form-data` e Streams, eliminando o erro de *Payload Too Large* e *Out of Memory* ao lidar com arquivos grandes.
+* **BullMQ Chunking:** A inserção de jobs de campanha no Redis agora é feita em lotes (Chunks de 500), prevenindo timeouts na conexão Redis durante disparos massivos (10k+ leads).
+
+### Confiabilidade de Background (v5.2 - Resilience Patch)
+* **Redis Distributed Lock (Agenda):** O Worker de agendamentos (`agendaWorker.js`) agora implementa um padrão de *Mutex* distribuído (`SET NX EX`). Isso garante atomicidade: mesmo se você escalar o backend para 10 containers, apenas um processará os lembretes, eliminando o risco de mensagens duplicadas para o cliente.
+* **Persistent Retry Cache:** O contador de retentativas de decriptação (`msgRetryCounterCache`) do Baileys foi movido da memória RAM para o Redis.
+    * **Impacto:** Se o servidor reiniciar durante uma conversa intensa, ele não perde a chave de sessão de criptografia, prevenindo a temida mensagem *"Aguardando mensagem. Isso pode levar alguns instantes"*.
+* **Sentinel Safety:** O Agente de IA agora possui um "Sandbox" de execução para Tools. Se a IA alucinar parâmetros inválidos (ex: tentar enviar um arquivo que não existe), o erro é capturado e tratado internamente sem derrubar o processo do Node.js.
+* **Thumbnail Timeout:** A geração de prévias de links (Cards) agora tem um timeout rígido de 5 segundos. Se o site de destino for lento, o bot envia o link sem imagem em vez de travar a fila de envio.
 
 ### C. O Banco de Dados (Supabase / PostgreSQL)
 A Fonte da Verdade. Se não está no banco, não existe.

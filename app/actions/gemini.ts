@@ -4,6 +4,11 @@
 import { GoogleGenAI } from "@google/genai";
 import { createClient } from "@/utils/supabase/server";
 
+// 🛡️ SECURITY GUARD: Impede execução no Client-Side
+if (typeof window !== 'undefined') {
+    throw new Error("⚠️ FATAL: Tentativa de executar código de IA no navegador. Esta ação deve ser Server-Side.");
+}
+
 // Factory para obter cliente autenticado com a chave correta (Tenant ou Global)
 const getAuthenticatedAI = async () => {
     const supabase = await createClient();

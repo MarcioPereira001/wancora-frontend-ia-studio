@@ -325,16 +325,15 @@ Lista arquivos. Usa estratégia "Hybrid Cache": lê do banco `drive_cache` imedi
 * **Response:** `{ "files": [ ... ], "source": "hybrid" }`
 
 #### `POST /cloud/google/upload`
-Faz upload de um arquivo diretamente para o Google Drive e atualiza o cache local.
-* **Body:** 
-  ```json
-  { 
-    "companyId": "uuid", 
-    "name": "contrato.pdf", 
-    "mimeType": "application/pdf", 
-    "base64": "JVBERi0xLjQKJ...", 
-    "folderId": "google_folder_id_ou_null" 
-  }```
+Faz upload de um arquivo diretamente para o Google Drive via Streaming (Multipart).
+* **Header:** `Content-Type: multipart/form-data`
+* **Form Data Fields:**
+  * `file`: (Binary) O arquivo em si.
+  * `companyId`: uuid
+  * `name`: string (Nome do arquivo ex: contrato.pdf)
+  * `mimeType`: string (Mime type ex: application/pdf)
+  * `folderId`: string | "null" (ID da pasta pai ou string "null" para raiz)
+* **Comportamento:** O arquivo é processado em memória (RAM) e enviado via Stream para o Google, sem salvar no disco do servidor e sem travar o Event Loop com JSON gigantes.
 
 #### `POST /cloud/google/send-to-whatsapp`
 Faz streaming do arquivo do Drive diretamente para o WhatsApp sem salvar em disco local (apenas buffer em memória).

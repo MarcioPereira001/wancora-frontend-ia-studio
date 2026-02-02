@@ -403,16 +403,18 @@ ALTER TABLE public.lead_activities REPLICA IDENTITY FULL;
 ```
 
 ## 5. Políticas de Segurança (RLS) & Performance
+
 **RLS (Row Level Security):** Todas as tabelas possuem RLS ativado. O acesso é restrito via `company_id`. O Backend utiliza a `service_role key` para ignorar RLS durante processamentos em background (Workers).
 
-**Índices Recomendados:**
-* `idx_leads_company_id` (Vital para Kanban)
-* `idx_leads_pipeline_stage` (Vital para filtros de funil)
-* `idx_contacts_company_id`
-* `idx_messages_remote_jid_company` (Vital para carregar histórico de chat)
-* `idx_agents_company`
-* `idx_appointments_worker_lookup` (Vital para o Agenda Worker)
+**Índices de Alta Performance (Aplicados v5.1):**
+*   `idx_messages_remote_jid_company`: Otimiza a abertura de chat e scroll de histórico (Composite Index).
+*   `idx_contacts_last_message`: Acelera a ordenação da Sidebar (Inbox) em 100x.
+*   `idx_leads_company_phone`: Vital para o "Lead Guard" evitar duplicidade na criação de leads.
+*   `idx_appointments_worker`: Índice parcial (Filtered Index) que permite ao Worker de Agenda encontrar lembretes pendentes em milissegundos, ignorando milhões de registros antigos.
 
+**Estratégia de Limpeza (Storage Garbage Collection):**
+*   A View `view_orphan_storage_files` lista arquivos no bucket `chat-media` que não possuem referência na tabela `messages`.
+*   Deve ser monitorada mensalmente para reduzir custos de armazenamento.
 ---
 
 ## 6. Storage (Arquivos & Mídia)

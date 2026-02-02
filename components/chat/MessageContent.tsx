@@ -4,7 +4,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { FileText, MapPin, Download, PlayCircle, Image as ImageIcon, Film, User, Copy, ShoppingBag, CheckCircle2, AlertCircle, Sticker, AlertTriangle, ZoomIn, X, Captions, ExternalLink, Link as LinkIcon, Sparkles } from "lucide-react";
-import { Message } from "@/types";
+import { Message, LocationContent, ContactContent, CardContent } from "@/types";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/useToast";
 import { useAuthStore } from '@/store/useAuthStore';
@@ -12,6 +12,19 @@ import { PollBubble } from './PollBubble';
 
 interface MessageContentProps {
   message: Message;
+}
+
+// Helper seguro para parsing JSON
+function safeParse<T>(content: string): T | null {
+    if (!content || typeof content !== 'string') return null;
+    try {
+        if (content.trim().startsWith('{')) {
+            return JSON.parse(content) as T;
+        }
+    } catch (e) {
+        return null;
+    }
+    return null;
 }
 
 export function MessageContent({ message }: MessageContentProps) {
@@ -27,11 +40,11 @@ export function MessageContent({ message }: MessageContentProps) {
   }, []);
 
   const mediaUrl = message.media_url; 
-  let content = message.content || message.body || "";
+  const content = message.content || message.body || "";
   const type = (message.message_type || 'text') as string;
   const isMe = message.from_me;
   
-  const transcription = (message as any).transcription;
+  const transcription = message.transcription;
 
   const getMapEmbedUrl = (lat: number, lng: number) => {
       const bboxDelta = 0.002; 
@@ -210,7 +223,7 @@ export function MessageContent({ message }: MessageContentProps) {
 
   // --- 4. DOCUMENTO ---
   if (type === 'document') {
-    const fileName = (message as any).fileName || (mediaUrl ? decodeURIComponent(mediaUrl.split('/').pop()?.split('?')[0] || '') : 'Documento');
+    const fileName = message.fileName || (mediaUrl ? decodeURIComponent(mediaUrl.split('/').pop()?.split('?')[0] || '') : 'Documento');
     return (
       <div 
         onClick={() => mediaUrl && window.open(mediaUrl, '_blank')}
@@ -266,21 +279,19 @@ export function MessageContent({ message }: MessageContentProps) {
 
   // --- 6. LOCALIZAÇÃO ---
   if (type === 'location') {
-    let lat: number | null = null;
-    let long: number | null = null;
-    try {
-        const parsed = typeof content === 'string' && content.startsWith('{') ? JSON.parse(content) : {};
-        if(parsed.latitude && parsed.longitude) { lat = parsed.latitude; long = parsed.longitude; }
-    } catch(e) {}
+    const locData = safeParse<LocationContent>(content);
+    // Suporte a campos antigos ou novos
+    const lat = locData?.latitude || locData?.degreesLatitude;
+    const lng = locData?.longitude || locData?.degreesLongitude;
 
-    const mapsUrl = lat && long ? `https://www.google.com/maps?q=${lat},${long}` : '#';
+    const mapsUrl = lat && lng ? `https://www.google.com/maps?q=${lat},${lng}` : '#';
 
     return (
       <div className="mt-1">
           <a href={mapsUrl} target="_blank" rel="noopener noreferrer" className="block relative overflow-hidden rounded-xl border border-zinc-800/50 group w-[260px] hover:border-primary/50 transition-colors shadow-sm bg-zinc-900">
             <div className="h-36 w-full relative overflow-hidden bg-[#e5e7eb]">
-                {lat && long ? (
-                    <iframe width="100%" height="100%" frameBorder="0" scrolling="no" src={getMapEmbedUrl(lat, long)} className="pointer-events-none opacity-90 scale-110" />
+                {lat && lng ? (
+                    <iframe width="100%" height="100%" frameBorder="0" scrolling="no" src={getMapEmbedUrl(lat, lng)} className="pointer-events-none opacity-90 scale-110" />
                 ) : (
                     <div className="absolute inset-0 flex items-center justify-center bg-zinc-800 text-zinc-500"><MapPin className="w-8 h-8 opacity-20" /></div>
                 )}
@@ -289,7 +300,7 @@ export function MessageContent({ message }: MessageContentProps) {
                 <div className="w-10 h-10 rounded-full bg-zinc-700/50 flex items-center justify-center shrink-0"><MapPin className="w-5 h-5 text-green-500" /></div>
                 <div className="flex flex-col min-w-0">
                     <span className="font-bold text-sm text-zinc-100 truncate">Localização</span>
-                    <span className="text-xs text-zinc-400 truncate font-mono">{lat ? `${lat.toFixed(6)}, ${long?.toFixed(6)}` : '...'}</span>
+                    <span className="text-xs text-zinc-400 truncate font-mono">{lat ? `${lat.toFixed(6)}, ${lng?.toFixed(6)}` : '...'}</span>
                 </div>
             </div>
           </a>
@@ -299,15 +310,7 @@ export function MessageContent({ message }: MessageContentProps) {
 
   // --- 7. CONTATO ---
   if (type === 'contact') {
-      let contactData = { displayName: 'Contato', vcard: '', phone: '' };
-      try {
-          if(content.startsWith('{')) {
-             const parsed = JSON.parse(content);
-             contactData.displayName = parsed.displayName || 'Contato';
-             contactData.vcard = parsed.vcard || '';
-             contactData.phone = parsed.phone || '';
-          }
-      } catch(e) {}
+      const contactData = safeParse<ContactContent>(content) || { displayName: 'Contato', vcard: '', phone: '' };
 
       return (
           <div className={cn(
@@ -316,7 +319,7 @@ export function MessageContent({ message }: MessageContentProps) {
           )}>
               <div className="w-10 h-10 rounded-full bg-zinc-500/20 flex items-center justify-center text-zinc-300"><User className="w-5 h-5" /></div>
               <div className="flex-1 min-w-0">
-                  <p className="font-bold text-sm truncate text-blue-400">{contactData.displayName}</p>
+                  <p className="font-bold text-sm truncate text-blue-400">{contactData.displayName || 'Desconhecido'}</p>
                   <p className="text-xs opacity-70 truncate">{contactData.phone || 'Ver detalhes'}</p>
               </div>
           </div>
@@ -325,7 +328,7 @@ export function MessageContent({ message }: MessageContentProps) {
 
   // --- 8. PRODUTO ---
   if (type === 'product') {
-      let title = content || "Produto";
+      const title = content || "Produto";
       return (
           <div className="mt-1 w-[260px] bg-zinc-900 border border-zinc-700 rounded-xl overflow-hidden relative group">
               <div className="h-32 bg-zinc-800 relative">
@@ -348,12 +351,7 @@ export function MessageContent({ message }: MessageContentProps) {
 
   // --- 9. CARD / RICH LINK (NOVO) ---
   if (type === 'card') {
-      let cardData = { title: 'Link', description: '', link: '#', thumbnailUrl: '' };
-      try {
-          if (content.startsWith('{')) {
-              cardData = JSON.parse(content);
-          }
-      } catch (e) {}
+      const cardData = safeParse<CardContent>(content) || { title: 'Link', description: '', link: '#', thumbnailUrl: '' };
 
       return (
           <div className="mt-1 w-[280px] bg-zinc-900 border border-zinc-700 rounded-xl overflow-hidden hover:border-zinc-500 transition-colors group">
@@ -372,7 +370,7 @@ export function MessageContent({ message }: MessageContentProps) {
                   
                   {/* Content */}
                   <div className="p-3">
-                      <h4 className="font-bold text-zinc-100 text-sm leading-tight mb-1 line-clamp-2">{cardData.title}</h4>
+                      <h4 className="font-bold text-zinc-100 text-sm leading-tight mb-1 line-clamp-2">{cardData.title || 'Link'}</h4>
                       {cardData.description && (
                           <p className="text-xs text-zinc-400 line-clamp-2 leading-relaxed">{cardData.description}</p>
                       )}
