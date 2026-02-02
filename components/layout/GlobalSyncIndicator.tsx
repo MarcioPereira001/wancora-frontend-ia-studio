@@ -4,50 +4,61 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useRealtimeStore } from '@/store/useRealtimeStore';
 import { createClient } from '@/utils/supabase/client';
-import { RefreshCw, CheckCircle2, Database, Users, MessageSquare, Radio, Loader2, HardDrive, DownloadCloud } from 'lucide-react';
+import { CheckCircle2, Users, Radio, Loader2, HardDrive, DownloadCloud, Hourglass } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export function GlobalSyncIndicator() {
   const { forcedSyncId, clearSyncAnimation } = useRealtimeStore();
   const [show, setShow] = useState(false);
-  const [isVisible, setIsVisible] = useState(false); // Controle de Animação CSS
+  const [isVisible, setIsVisible] = useState(false);
   const [localPercent, setLocalPercent] = useState(0);
+  const [fakePercent, setFakePercent] = useState(0); // Para animação de preparação
   const [localStatus, setLocalStatus] = useState<string>('waiting');
   
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const closingRef = useRef(false); // Lock para evitar múltiplos triggers de fechamento
+  const fakeProgressRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const closingRef = useRef(false);
 
-  // MODIFICAÇÃO CRÍTICA:
-  // O indicador obedece estritamente ao 'forcedSyncId' gerado pelo QR Code.
   const targetInstanceId = forcedSyncId;
 
+  // --- ANIMAÇÃO DE PREPARAÇÃO (0-100% em 20s) ---
   useEffect(() => {
-    // Se não tem alvo e não estamos em processo de fechamento, garante que esteja fechado
+    if (localStatus === 'importing_contacts') {
+        let p = 0;
+        if (fakeProgressRef.current) clearInterval(fakeProgressRef.current);
+        
+        fakeProgressRef.current = setInterval(() => {
+            p += 1; // Sobe 1% a cada 200ms = 20 segundos total
+            if (p >= 99) p = 99; // Trava em 99 até o backend liberar
+            setFakePercent(p);
+        }, 200);
+    } else {
+        if (fakeProgressRef.current) clearInterval(fakeProgressRef.current);
+        setFakePercent(0);
+    }
+    return () => { if (fakeProgressRef.current) clearInterval(fakeProgressRef.current); };
+  }, [localStatus]);
+
+  // --- LÓGICA PRINCIPAL ---
+  useEffect(() => {
     if (!targetInstanceId) {
         if (show && !forcedSyncId && !closingRef.current) {
-             // Animação de saída se perdeu o alvo abruptamente
              closingRef.current = true;
              setIsVisible(false);
-             setTimeout(() => { 
-                 setShow(false); 
-                 closingRef.current = false; 
-                 setLocalPercent(0); 
-             }, 500);
+             setTimeout(() => { setShow(false); closingRef.current = false; setLocalPercent(0); }, 500);
         }
         return;
     }
 
-    // Se temos um ID forçado (Gatilho Manual), mostramos imediatamente
     if (forcedSyncId && !show) {
         setShow(true);
-        setTimeout(() => setIsVisible(true), 50); // Animação de entrada
+        setTimeout(() => setIsVisible(true), 50);
         setLocalStatus('waiting'); 
-        setLocalPercent(1); // Inicia com 1% para feedback visual imediato
+        setLocalPercent(0);
     }
 
     const fetchDirectStatus = async () => {
         const supabase = createClient();
-        
         const { data, error } = await supabase
             .from('instances')
             .select('sync_status, sync_percent, status')
@@ -55,42 +66,22 @@ export function GlobalSyncIndicator() {
             .single();
 
         if (data && !error) {
-            const dbSyncStatus = data.sync_status || 'waiting';
-            let dbPercent = data.sync_percent || 0;
+            const dbStatus = data.sync_status || 'waiting';
+            const dbPercent = data.sync_percent || 0;
 
-            // --- LÓGICA DE UX "SMOOTH LOADER" ---
-            // 1. O 'completed' é a única verdade absoluta.
-            const isReallyDone = dbSyncStatus === 'completed';
-
-            // 2. Se não acabou, travamos visualmente em 99% mesmo que o cálculo matemático tenha estourado.
-            // Isso evita que o usuário ache que travou no 100% ou que o modal feche antes da hora.
-            if (!isReallyDone && dbPercent >= 100) {
-                dbPercent = 100;
-            }
-
-            // 3. Garantimos que a porcentagem nunca retroceda visualmente (Monotonic Increase)
-            if (dbPercent > localPercent) {
-                setLocalPercent(dbPercent);
-            }
-
-            // --- FINALIZAÇÃO ---
-            if (isReallyDone) {
-                setLocalPercent(100);
-                setLocalStatus('completed');
-
-                // FINALIZAÇÃO AUTOMÁTICA (Com delay para leitura)
-                if (show && !closingRef.current) {
+            // 1. FORÇA FECHAMENTO (Status Completed)
+            if (dbStatus === 'completed') {
+                if (!closingRef.current) {
+                    setLocalStatus('completed');
+                    setLocalPercent(100);
+                    
                     closingRef.current = true;
-                    console.log("✅ [Sync] Concluído 100%. Iniciando fechamento suave...");
-
-                    // Mantém visível por 4 segundos para usuário ver o 100% verde e a mensagem de sucesso
+                    // Mantém na tela por 4 segundos para celebrar
                     setTimeout(() => {
-                        setIsVisible(false); // Trigger CSS Exit
-                        
-                        // Desmonta após animação CSS (500ms)
+                        setIsVisible(false);
                         setTimeout(() => {
                             setShow(false);
-                            if(forcedSyncId) clearSyncAnimation(); 
+                            clearSyncAnimation();
                             closingRef.current = false;
                         }, 500);
                     }, 4000);
@@ -98,73 +89,72 @@ export function GlobalSyncIndicator() {
                 return;
             }
 
-            // --- EM ANDAMENTO ---
-            setLocalStatus(dbSyncStatus);
-
-            // Se desconectou abruptamente (Erro/Banimento/Queda), fecha rápido para não ficar preso
+            // 2. Abortar se desconectou
             if (data.status === 'disconnected') {
-                if (!closingRef.current) {
-                    setIsVisible(false);
-                    setTimeout(() => {
-                        setShow(false);
-                        if(forcedSyncId) clearSyncAnimation();
-                    }, 500);
-                }
-            } 
+                setIsVisible(false);
+                setTimeout(() => { setShow(false); clearSyncAnimation(); }, 500);
+                return;
+            }
+
+            // 3. Atualizar Estado
+            setLocalStatus(dbStatus);
+            
+            // Só atualiza a porcentagem real se estivermos na fase de mensagens
+            // Na fase de contatos usamos a fakePercent
+            if (dbStatus === 'importing_messages') {
+                if (dbPercent > localPercent) setLocalPercent(dbPercent);
+            }
         }
     };
 
-    // Polling Agressivo (1s) para sensação de tempo real
     fetchDirectStatus(); 
     intervalRef.current = setInterval(fetchDirectStatus, 1000);
 
-    return () => {
-        if (intervalRef.current) clearInterval(intervalRef.current);
-    };
-  }, [targetInstanceId, forcedSyncId, show, clearSyncAnimation]); // localPercent removido das deps para evitar loop
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
+  }, [targetInstanceId, forcedSyncId, show, clearSyncAnimation]);
 
   if (!show) return null;
 
-  const isComplete = localStatus === 'completed';
+  const isComplete = localStatus === 'completed' || localPercent === 100;
   
-  // Mapeamento Visual Rico
+  // Decide qual porcentagem mostrar
+  // Se está importando contatos -> Mostra animação de "Preparando" (Fake)
+  // Se está importando mensagens -> Mostra real do banco
+  const displayPercent = localStatus === 'importing_contacts' ? fakePercent : localPercent;
+  
   let statusLabel = 'Conexão Estabelecida';
   let Icon = Radio;
   let subLabel = 'Aguardando dados...';
+  let barColor = 'bg-gradient-to-r from-blue-600 to-cyan-400';
   
   switch (localStatus) {
       case 'waiting': 
           statusLabel = 'Aguardando WhatsApp';
-          subLabel = 'Estabelecendo túnel seguro...';
+          subLabel = 'Estabelecendo conexão segura...';
           Icon = Loader2;
           break;
       case 'importing_contacts':
-          statusLabel = 'Sincronizando Agenda';
-          subLabel = 'Baixando contatos e grupos...';
-          Icon = Users;
+          statusLabel = 'Preparando Ambiente';
+          subLabel = `Organizando contatos (${displayPercent}%)...`;
+          Icon = Hourglass; // Ampulheta para dar ideia de tempo
+          barColor = 'bg-gradient-to-r from-yellow-500 to-orange-500'; // Cor diferente para preparação
           break;
       case 'importing_messages':
-          statusLabel = 'Baixando Conversas';
-          subLabel = 'Recuperando histórico de chat...';
+          statusLabel = 'Baixando Histórico';
+          subLabel = `Recuperando conversas (${displayPercent}%)...`;
           Icon = DownloadCloud;
-          break;
-      case 'processing_history':
-          statusLabel = 'Organizando CRM';
-          subLabel = 'Criando leads e indexando...';
-          Icon = Database;
+          barColor = 'bg-gradient-to-r from-blue-600 to-cyan-400';
           break;
       case 'completed':
-          statusLabel = 'Sincronização Completa!';
-          subLabel = 'Seu histórico está pronto.';
+          statusLabel = 'Histórico 100% Concluído';
+          subLabel = 'Tudo pronto!';
           Icon = CheckCircle2;
+          barColor = 'bg-emerald-500';
           break;
       default:
-          if (localPercent > 0) {
-              statusLabel = 'Processando Dados';
-              subLabel = 'Isso pode levar alguns minutos...';
-              Icon = HardDrive;
-          }
-          break;
+          statusLabel = 'Processando';
+          subLabel = 'Organizando dados...';
+          Icon = HardDrive;
   }
 
   return (
@@ -174,37 +164,31 @@ export function GlobalSyncIndicator() {
     )}>
       <div className="bg-[#09090b] border border-zinc-800 rounded-xl shadow-[0_0_80px_rgba(0,0,0,0.8)] p-5 w-96 ring-1 ring-white/10 relative overflow-hidden backdrop-blur-2xl">
         
-        {/* Efeito de Fundo */}
         <div className={`absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent ${isComplete ? 'via-emerald-500' : 'via-blue-600'} to-transparent opacity-75`} />
 
         <div className="flex items-center justify-between mb-4 relative z-10">
           <div className="flex items-center gap-4">
             <div className={`p-3 rounded-xl transition-colors duration-500 shadow-inner ${isComplete ? 'bg-emerald-500/10 text-emerald-500' : 'bg-zinc-800 text-blue-400'}`}>
-               {isComplete ? (
-                 <CheckCircle2 className="w-6 h-6" />
-               ) : (
-                 <Icon className={`w-6 h-6 ${localStatus === 'waiting' || localPercent < 100 ? 'animate-pulse' : ''}`} />
-               )}
+               {isComplete ? <CheckCircle2 className="w-6 h-6" /> : <Icon className={`w-6 h-6 ${localPercent < 100 ? 'animate-pulse' : ''}`} />}
             </div>
             <div className="flex flex-col min-w-0">
               <span className="text-base font-bold text-white leading-tight mb-1 truncate">
                 {statusLabel}
               </span>
-              <span className="text-xs text-zinc-400 font-medium truncate max-w-[180px] animate-pulse">
+              <span className="text-xs text-zinc-400 font-medium truncate max-w-[180px]">
                 {subLabel}
               </span>
             </div>
           </div>
           <span className={`text-2xl font-mono font-bold transition-colors ${isComplete ? 'text-emerald-500' : 'text-white'}`}>
-            {localPercent}%
+            {displayPercent}%
           </span>
         </div>
 
-        {/* Barra de Progresso */}
         <div className="h-2 w-full bg-zinc-800 rounded-full overflow-hidden relative z-10">
             <div 
-              className={`h-full transition-all duration-1000 ease-out relative ${isComplete ? 'bg-emerald-500' : 'bg-gradient-to-r from-blue-600 to-cyan-400'}`}
-              style={{ width: `${Math.max(2, localPercent)}%` }} 
+              className={`h-full transition-all duration-300 ease-out relative ${barColor}`}
+              style={{ width: `${Math.max(5, displayPercent)}%` }} 
             >
                 {!isComplete && (
                     <div className="absolute inset-0 bg-white/30 w-full animate-[shimmer_1.5s_infinite] -skew-x-12" />
