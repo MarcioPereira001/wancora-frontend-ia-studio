@@ -4,7 +4,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useRealtimeStore } from '@/store/useRealtimeStore';
 import { createClient } from '@/utils/supabase/client';
-import { CheckCircle2, Users, Radio, Loader2, HardDrive, DownloadCloud, Hourglass } from 'lucide-react';
+import { CheckCircle2, Radio, Loader2, HardDrive, DownloadCloud, Hourglass } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export function GlobalSyncIndicator() {
@@ -22,20 +22,20 @@ export function GlobalSyncIndicator() {
   const targetInstanceId = forcedSyncId;
 
   // --- ANIMAÇÃO DE PREPARAÇÃO (0-95% em 20s) ---
-  // 20000ms / 95 steps = ~210ms por step
   useEffect(() => {
+    // Só roda o fake se estiver esperando ou importando contatos
     if (localStatus === 'importing_contacts' || localStatus === 'waiting') {
         let p = 0;
         if (fakeProgressRef.current) clearInterval(fakeProgressRef.current);
         
         fakeProgressRef.current = setInterval(() => {
             p += 1; 
-            if (p >= 95) p = 95; // Trava em 95% e fica esperando o backend
+            if (p >= 95) p = 95; // Trava em 95%
             setFakePercent(p);
-        }, 210); 
+        }, 200); 
     } else {
+        // Se mudou para messages ou completed, para o fake
         if (fakeProgressRef.current) clearInterval(fakeProgressRef.current);
-        setFakePercent(0);
     }
     return () => { if (fakeProgressRef.current) clearInterval(fakeProgressRef.current); };
   }, [localStatus]);
@@ -69,15 +69,17 @@ export function GlobalSyncIndicator() {
         if (data && !error) {
             const dbStatus = data.sync_status || 'waiting';
             const dbPercent = data.sync_percent || 0;
+            
+            // Debug para entender o fluxo
+            // console.log(`[SYNC UI] Status: ${dbStatus}, Percent: ${dbPercent}%`);
 
-            // 1. FORÇA FECHAMENTO (Status Completed = 100%)
+            // 1. FORÇA FECHAMENTO
             if (dbStatus === 'completed') {
                 if (!closingRef.current) {
                     setLocalStatus('completed');
                     setLocalPercent(100); 
                     
                     closingRef.current = true;
-                    // Mantém na tela por 3 segundos para ler "Concluído"
                     setTimeout(() => {
                         setIsVisible(false);
                         setTimeout(() => {
@@ -90,7 +92,7 @@ export function GlobalSyncIndicator() {
                 return;
             }
 
-            // 2. Abortar se desconectou
+            // 2. Abortar
             if (data.status === 'disconnected') {
                 if (!closingRef.current) {
                     setIsVisible(false);
@@ -102,9 +104,8 @@ export function GlobalSyncIndicator() {
             // 3. Atualizar Estado
             setLocalStatus(dbStatus);
             
-            // Só atualiza a porcentagem real se estivermos na fase de mensagens
+            // PRIORIDADE REAL: Se o status for mensagens, a porcentagem real manda
             if (dbStatus === 'importing_messages') {
-                // Se o banco resetou para 0 (inicio de um novo lote), aceitamos
                 setLocalPercent(dbPercent);
             }
         }
@@ -121,16 +122,16 @@ export function GlobalSyncIndicator() {
   const isComplete = localStatus === 'completed' || localPercent === 100;
   
   // Decide qual porcentagem mostrar
-  // Fase Inicial -> Fake Percent
-  // Fase Mensagens -> Real Percent
-  const isPrepPhase = localStatus === 'importing_contacts' || localStatus === 'waiting';
-  const displayPercent = isPrepPhase ? fakePercent : localPercent;
+  // Se status for messages, usa o real (localPercent), mesmo que seja 0% (início do lote)
+  // Se for contacts/waiting, usa o fake
+  const isRealPhase = localStatus === 'importing_messages';
+  const displayPercent = isRealPhase ? localPercent : fakePercent;
   
   let statusLabel = 'Conexão Estabelecida';
   let Icon = Radio;
   let subLabel = 'Aguardando dados...';
   
-  // COR NEUTRA (Slate-600) para preparação
+  // Cores: Preparação = Neutro, Download = Azul, Completo = Verde
   let barColor = 'bg-slate-500'; 
   
   switch (localStatus) {
@@ -143,19 +144,20 @@ export function GlobalSyncIndicator() {
           statusLabel = 'Preparando Ambiente';
           subLabel = `Organizando contatos (${displayPercent}%)...`;
           Icon = Hourglass; 
-          barColor = 'bg-slate-500'; // Cinza Azulado Neutro
+          barColor = 'bg-slate-500'; 
           break;
       case 'importing_messages':
           statusLabel = 'Baixando Histórico';
           subLabel = `Recuperando conversas (${displayPercent}%)...`;
           Icon = DownloadCloud;
-          barColor = 'bg-gradient-to-r from-blue-600 to-cyan-400'; // Azul Vibrante
+          // Agora fica AZUL vibrante para indicar que "agora é pra valer"
+          barColor = 'bg-gradient-to-r from-blue-600 to-cyan-400'; 
           break;
       case 'completed':
           statusLabel = 'Histórico 100% Concluído';
           subLabel = 'Tudo pronto!';
           Icon = CheckCircle2;
-          barColor = 'bg-emerald-500'; // Verde Sucesso
+          barColor = 'bg-emerald-500';
           break;
       default:
           statusLabel = 'Processando';
@@ -175,7 +177,7 @@ export function GlobalSyncIndicator() {
         <div className="flex items-center justify-between mb-4 relative z-10">
           <div className="flex items-center gap-4">
             <div className={`p-3 rounded-xl transition-colors duration-500 shadow-inner ${isComplete ? 'bg-emerald-500/10 text-emerald-500' : 'bg-zinc-800 text-blue-400'}`}>
-               {isComplete ? <CheckCircle2 className="w-6 h-6" /> : <Icon className={`w-6 h-6 ${localPercent < 100 ? 'animate-pulse' : ''}`} />}
+               {isComplete ? <CheckCircle2 className="w-6 h-6" /> : <Icon className={`w-6 h-6 ${!isComplete ? 'animate-pulse' : ''}`} />}
             </div>
             <div className="flex flex-col min-w-0">
               <span className="text-base font-bold text-white leading-tight mb-1 truncate">
