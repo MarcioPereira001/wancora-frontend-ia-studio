@@ -29,36 +29,47 @@ export function useChatList() {
       });
   }, []);
 
-  // Fetch Cirúrgico: Busca 1 contato completo
+  // Fetch Cirúrgico: Busca 1 contato usando a RPC (Correção do Erro 400)
   const fetchSingleContact = async (jid: string) => {
       if (!user?.company_id) return null;
 
-      const { data } = await supabase
-          .from('contacts')
-          .select('*, leads(tags, status, pipeline_stage_id, pipeline_stages(name, color))')
-          .eq('jid', jid)
-          .eq('company_id', user.company_id)
-          .single();
+      try {
+          // Usa a nova função SQL em vez de query direta com join falho
+          const { data, error } = await supabase.rpc('get_contact_details', {
+              p_company_id: user.company_id,
+              p_jid: jid
+          });
 
-      if (data) {
-          return {
-              id: data.jid,
-              jid: data.jid,
-              remote_jid: data.jid,
-              company_id: data.company_id,
-              name: data.name || data.push_name, // Prioridade
-              push_name: data.push_name,
-              phone_number: data.phone,
-              profile_pic_url: data.profile_pic_url,
-              unread_count: data.unread_count,
-              last_message_at: data.last_message_at,
-              is_group: data.jid.includes('@g.us'),
-              is_community: data.is_community,
-              is_online: data.is_online,
-              lead_tags: data.leads?.[0]?.tags || [],
-              stage_name: data.leads?.[0]?.pipeline_stages?.name,
-              stage_color: data.leads?.[0]?.pipeline_stages?.color
-          } as ChatContact;
+          if (error) {
+              console.error("Erro fetchSingleContact:", error);
+              return null;
+          }
+
+          // Se retornou array (comportamento padrão de rpc setof table), pega o primeiro
+          const item = Array.isArray(data) ? data[0] : data;
+
+          if (item) {
+              return {
+                  id: item.jid,
+                  jid: item.jid,
+                  remote_jid: item.jid,
+                  company_id: user.company_id,
+                  name: item.name || item.push_name, // Prioridade
+                  push_name: item.push_name,
+                  phone_number: item.phone,
+                  profile_pic_url: item.profile_pic_url,
+                  unread_count: item.unread_count,
+                  last_message_at: item.last_message_at,
+                  is_group: item.is_group,
+                  is_community: item.is_community,
+                  is_online: item.is_online,
+                  lead_tags: item.lead_tags || [],
+                  stage_name: item.stage_name,
+                  stage_color: item.stage_color
+              } as ChatContact;
+          }
+      } catch (e) {
+          console.error("Exceção fetchSingleContact:", e);
       }
       return null;
   };
@@ -115,39 +126,23 @@ export function useChatList() {
           if (payload.eventType === 'UPDATE' || payload.eventType === 'INSERT') {
               const newData = payload.new;
               
+              // Se foi marcado como ignorado, remove da lista
               if (newData.is_ignored) {
                   setContacts(prev => prev.filter(c => c.jid !== newData.jid));
                   return;
               }
 
-              // Atualização Otimista Parcial (Sem Fetch) para performance em digitação/online
-              if (payload.eventType === 'UPDATE') {
-                   setContacts(prev => prev.map(c => {
-                       if (c.jid === newData.jid) {
-                           return {
-                               ...c,
-                               is_online: newData.is_online,
-                               // Se veio foto nova, atualiza
-                               profile_pic_url: newData.profile_pic_url || c.profile_pic_url,
-                               name: newData.name || c.name 
-                           };
-                       }
-                       return c;
-                   }));
-                   // Não retorna aqui, pois pode haver dados complexos (leads) que precisam do fetch
-              }
-
-              // Fetch Completo para garantir dados do Lead (Join)
+              // Fetch Completo via RPC para garantir dados do Lead (Join seguro)
               const fullContact = await fetchSingleContact(newData.jid);
               
               if (fullContact) {
                   setContacts(prev => {
                       const exists = prev.some(c => c.jid === fullContact.jid);
                       if (exists) {
-                          // Merge cuidadoso
+                          // Merge: Atualiza apenas o contato específico
                           return prev.map(c => c.jid === fullContact.jid ? { ...c, ...fullContact } : c);
                       }
-                      // Novo contato no topo
+                      // Insert: Adiciona no topo
                       return sortContacts([fullContact, ...prev]);
                   });
               }
@@ -155,7 +150,7 @@ export function useChatList() {
       })
       .subscribe();
 
-    // 2. Monitora Mensagens (Apenas para subir a conversa)
+    // 2. Monitora Mensagens (Apenas para subir a conversa pro topo)
     const messagesChannel = supabase.channel(`chat-list-messages:${user.company_id}`)
       .on('postgres_changes', { 
           event: 'INSERT', 
@@ -183,13 +178,14 @@ export function useChatList() {
                   const others = prev.filter(c => c.jid !== targetJid);
                   return [contact, ...others]; // Move pro topo
               } else {
-                  // Mensagem de contato desconhecido na lista (Ghost): Busca e insere
+                  // Mensagem de contato desconhecido (Ghost): Busca e insere
+                  // Isso elimina a necessidade do botão "Atualizar"
                   fetchSingleContact(targetJid).then(fullContact => {
                       if(fullContact) {
                           setContacts(current => sortContacts([fullContact, ...current]));
                       }
                   });
-                  return prev;
+                  return prev; // Retorna o mesmo estado por enquanto, o fetch atualizará depois
               }
           });
       })
