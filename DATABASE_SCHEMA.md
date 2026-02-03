@@ -54,6 +54,21 @@ Contatos brutos sincronizados do celular.
 * `parent_jid`: text (Para vincular Grupos a Comunidades)
 * `is_community`: boolean
 
+### `baileys_auth_state`
+Armazena chaves criptográficas e credenciais de sessão do WhatsApp (Multi-Device).
+* `session_id`: text (PK)
+* `data_type`: text (PK)
+* `key_id`: text (PK)
+* `payload`: jsonb
+* `updated_at`: timestamptz
+
+### `identity_map` (LID Resolver) [CRÍTICO v5.1]
+Tabela técnica essencial para o ecossistema Multi-Device (iOS/Android). O WhatsApp envia atualizações de presença e reações usando IDs ocultos (`@lid`) que não correspondem ao número de telefone. Esta tabela faz a ponte.
+* `lid_jid`: text (PK) - O ID opaco (Ex: `123456@lid`)
+* `phone_jid`: text - O ID real do telefone (Ex: `55119999@s.whatsapp.net`)
+* `company_id`: uuid (PK, FK -> companies)
+* `created_at`: timestamptz
+
 ### `leads` (CRM)
 A entidade de negócio principal.
 * `id`: uuid (PK)
@@ -245,19 +260,6 @@ Histórico de XP da equipe.
 * `points`: integer
 * `action_type`: text (Ex: 'closed_deal', 'added_lead')
 
-### `identity_map` (LID Resolver)
-Tabela técnica para resolver conflitos entre IDs de telefone e IDs ocultos (LID).
-* `lid_jid`: text (PK)
-* `phone_jid`: text
-* `company_id`: uuid
-
-### `baileys_auth_state` (Sessão WhatsApp)
-Persistência de credenciais do Baileys no banco (substitui arquivos locais).
-* `session_id`: text (PK)
-* `data_type`: text (PK)
-* `key_id`: text (PK)
-* `payload`: jsonb
-
 ### `scheduled_messages` (Agendamento de Envio)
 Mensagens avulsas agendadas no chat.
 * `id`: uuid (PK)
@@ -274,14 +276,6 @@ Gestão de planos do sistema.
 * `max_users`: integer
 * `max_connections`: integer
 * `features`: jsonb
-
-### `baileys_auth_state`
-Armazena chaves criptográficas e credenciais de sessão do WhatsApp (Multi-Device).
-* `session_id`: text (PK)
-* `data_type`: text (PK)
-* `key_id`: text (PK)
-* `payload`: jsonb
-* `updated_at`: timestamptz
 
 ### `webhook_logs` (Integrações) [NOVO]
 Logs de disparos de eventos para sistemas externos (n8n, Typebot).

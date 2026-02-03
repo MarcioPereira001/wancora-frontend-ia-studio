@@ -366,6 +366,8 @@ O sistema possui um **"Centralized Gatekeeper"** (`ensureLeadExists` em `sync.js
 *   **Trigger:** Acionado tanto por mensagens Realtime quanto pelo processamento de Histórico (Active Chats).
 *   **Blindagem de Identidade (LID Resolver):**
     *   Resolve IDs ocultos (`@lid`) para o telefone real antes de criar o lead.
+    *   O sistema resolve IDs de dispositivo (`@lid`) para o telefone real. Isso impede o bug do "Status Online Fantasma", onde um chat vazio aparecia na lista apenas porque o dispositivo do contato ficou online.
+*   **Política de Nomes (Trust the Book):** Se o nome vem da agenda do celular, ele é sagrado. Ignoramos filtros de validação para garantir que apelidos, números ou símbolos salvos intencionalmente pelo usuário sejam exibidos corretamente no CRM.
 *   **Regras de Exclusão (Hard Block):**
     *   🚫 Grupos (`@g.us`) e Canais (`@newsletter`).
     *   🚫 Broadcasts e Status.

@@ -356,7 +356,11 @@ O processo de sincronização inicial (messaging-history.set) utiliza uma arquit
 1.  **Initial Sync:** Baixa contatos e histórico.
 2. **Smart Fetch de Mídia (Active Retrieval):** O payload de histórico do WhatsApp raramente traz a URL da foto de perfil. O Backend implementa um loop inteligente que detecta a ausência da foto e executa `sock.profilePictureUrl(jid)` ativamente para cada contato durante a importação, garantindo avatares visíveis desde o primeiro segundo.
 3. Concurrency Lock: Uma flag isProcessingHistory atua como um Mutex para impedir que o histórico seja processado em duplicidade, o que causaria inconsistência no banco.
-4. Name Hunter V3: O sistema mapeia nomes da agenda (notify, verifiedName, short) em um mapa de memória (contactsMap) antes de salvar as mensagens. Se um nome for identificado como "genérico" (apenas números ou igual ao JID), o sistema tenta substituí-lo pelo pushName mais recente.
+4. **Name Hunter V3 (Trust the Book Policy):** 
+   O sistema agora implementa uma política de confiança total na agenda.
+   * **Lógica:** Se o contato vier com um nome (`c.name`) durante o sync, ele é considerado "Vindo da Agenda" (`isFromBook`).
+   * **Bypass de Validação:** Nomes vindos da agenda IGNORAM a validação de "Nome Genérico". Se o usuário salvou o contato como "123" ou "❤️", o sistema respeita e salva exatamente assim.
+   * **Fallback:** Se não houver nome na agenda, o sistema usa o `pushName` (Perfil público), mas aplica filtros estritos para evitar nomes como ".~." ou emojis soltos.
 5. Data Propagation: Ao descobrir um nome real via WhatsApp, o backend propaga essa atualização automaticamente para a tabela leads, garantindo que o Kanban e o Chat reflitam a identidade correta do contato.
 6. Optimistic Sync Delay: Um atraso de 300ms é aplicado antes do upsertMessage para garantir que o contato e o lead já tenham sido criados/atualizados, evitando erros de chave estrangeira.
 7.  **Smart Fetcher (Refresh Contact Info):** A cada mensagem recebida (`messages.upsert`), o sistema executa uma validação agressiva:
@@ -436,6 +440,15 @@ O sistema possui um **"Centralized Gatekeeper"** (`ensureLeadExists` em `sync.js
     *   Broadcasts (`status@broadcast`) -> **BLOQUEIO TOTAL** (Stories ignorados).
     *   Self (`meu próprio número`) -> Bloqueado.
     *   **Ignorados:** Se `contacts.is_ignored = true`, o lead é bloqueado (Feature "Remover do CRM").
+
+### 4.9. LID Identity Resolver (Multi-Device Fix)
+O backend atua como um proxy de tradução para eventos de JID.
+1. **Interceptação:** Ao receber eventos de `messages.upsert`, `presence.update` ou `history`, o sistema verifica se o ID termina em `@lid`.
+2. **Resolução:** Consulta a tabela `identity_map`.
+   * Se mapeado: Substitui o `remote_jid` pelo telefone real (`@s.whatsapp.net`) antes de processar.
+   * Se não mapeado: Bloqueia a criação de chats fantasmas no Frontend.
+3. **Aprendizado:** O vínculo é salvo/atualizado automaticamente sempre que um evento `contacts.upsert` traz o par `{ id: phone, lid: lid }`.
+
 ---
 
 ## 5. 📡 Realtime & WebSocket Events (Webhook Specs)
