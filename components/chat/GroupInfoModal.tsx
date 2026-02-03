@@ -1,7 +1,7 @@
 
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Modal } from '@/components/ui/Modal';
 import { ChatContact } from '@/types';
 import { Button } from '@/components/ui/button';
@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/useToast';
 import { api } from '@/services/api';
-import { Users, Lock, Unlock, Megaphone, Link as LinkIcon, Camera, Save, Loader2, UserMinus, ShieldCheck, ShieldOff } from 'lucide-react';
+import { Users, Lock, Unlock, Megaphone, Link as LinkIcon, Camera, Save, Loader2, Crown, Trash2 } from 'lucide-react';
 import { uploadChatMedia } from '@/utils/supabase/storage';
 import { cn } from '@/lib/utils';
 
@@ -29,12 +29,40 @@ export function GroupInfoModal({ isOpen, onClose, contact, sessionId }: GroupInf
   const [description, setDescription] = useState('');
   const [loading, setLoading] = useState(false);
   const [inviteCode, setInviteCode] = useState('');
+  
   const [participants, setParticipants] = useState<any[]>([]); 
+  const [loadingParticipants, setLoadingParticipants] = useState(false);
   const [newParticipant, setNewParticipant] = useState('');
 
   // Settings
-  const [isLocked, setIsLocked] = useState(false); // Only Admins Edit Info
-  const [isAnnouncement, setIsAnnouncement] = useState(false); // Only Admins Send Msgs
+  const [isLocked, setIsLocked] = useState(false); 
+  const [isAnnouncement, setIsAnnouncement] = useState(false); 
+
+  // Efeito para carregar participantes quando a aba muda
+  useEffect(() => {
+      if (isOpen && activeTab === 'participants') {
+          fetchParticipants();
+      }
+  }, [isOpen, activeTab]);
+
+  const fetchParticipants = async () => {
+      setLoadingParticipants(true);
+      try {
+          const res = await api.post('/management/group/metadata', {
+              sessionId,
+              groupId: contact.remote_jid
+          });
+          if (res.metadata && res.metadata.participants) {
+              setParticipants(res.metadata.participants);
+              setDescription(res.metadata.desc || ''); // Aproveita e atualiza a descrição se vier
+              setSubject(res.metadata.subject || contact.name);
+          }
+      } catch (e) {
+          console.error("Erro ao buscar participantes:", e);
+      } finally {
+          setLoadingParticipants(false);
+      }
+  };
 
   const handleUpdateSubject = async () => {
       if(!subject.trim()) return;
@@ -106,15 +134,12 @@ export function GroupInfoModal({ isOpen, onClose, contact, sessionId }: GroupInf
               participants: [participantJid]
           });
           addToast({ type: 'success', title: 'Sucesso', message: `Ação ${action} realizada.` });
-          // Em um cenário real, recarregaríamos a lista de participantes aqui
+          fetchParticipants(); // Refresh list
+          if(action === 'add') setNewParticipant('');
       } catch (e: any) {
           addToast({ type: 'error', title: 'Erro', message: e.message });
       } finally { setLoading(false); }
   };
-
-  // NOTA: Como não temos endpoint de GET metadata no backend atual, 
-  // assumimos que essa lista seria carregada via useEffect chamando a API.
-  // Por enquanto, deixaremos a UI preparada para a funcionalidade.
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Gestão do Grupo" maxWidth="lg">
@@ -199,9 +224,40 @@ export function GroupInfoModal({ isOpen, onClose, contact, sessionId }: GroupInf
                         <Button onClick={() => handleParticipantAction('add', newParticipant)} disabled={loading || newParticipant.length < 10}>Adicionar</Button>
                     </div>
 
-                    <div className="bg-zinc-900/30 rounded-lg border border-zinc-800 min-h-[200px] flex items-center justify-center text-zinc-500 text-sm">
-                        {/* Placeholder: Em produção, aqui renderizaria a lista de participantes obtida via API */}
-                        <p>A lista de participantes requer uma chamada de sincronização.</p>
+                    <div className="bg-zinc-900/30 rounded-lg border border-zinc-800 min-h-[300px] overflow-y-auto custom-scrollbar p-2">
+                        {loadingParticipants ? (
+                            <div className="flex justify-center py-10"><Loader2 className="w-8 h-8 text-primary animate-spin" /></div>
+                        ) : participants.length === 0 ? (
+                            <p className="text-center text-zinc-500 py-10 text-sm">Nenhum participante encontrado.</p>
+                        ) : (
+                            participants.map((p: any) => (
+                                <div key={p.id} className="flex items-center justify-between p-2 rounded hover:bg-zinc-900 group">
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center text-xs">
+                                            {p.admin ? <Crown className="w-4 h-4 text-yellow-500" /> : <Users className="w-4 h-4 text-zinc-600" />}
+                                        </div>
+                                        <div>
+                                            <p className="text-sm text-zinc-200">{p.id.split('@')[0]}</p>
+                                            {p.admin && <span className="text-[10px] text-yellow-600 bg-yellow-500/10 px-1 rounded uppercase font-bold">Admin</span>}
+                                        </div>
+                                    </div>
+                                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        {p.admin ? (
+                                            <Button variant="ghost" size="icon" className="h-7 w-7 text-zinc-500 hover:text-white" title="Remover Admin" onClick={() => handleParticipantAction('demote', p.id)}>
+                                                <Unlock className="w-3 h-3" />
+                                            </Button>
+                                        ) : (
+                                            <Button variant="ghost" size="icon" className="h-7 w-7 text-zinc-500 hover:text-yellow-500" title="Tornar Admin" onClick={() => handleParticipantAction('promote', p.id)}>
+                                                <Crown className="w-3 h-3" />
+                                            </Button>
+                                        )}
+                                        <Button variant="ghost" size="icon" className="h-7 w-7 text-zinc-500 hover:text-red-500" title="Remover" onClick={() => handleParticipantAction('remove', p.id)}>
+                                            <Trash2 className="w-3 h-3" />
+                                        </Button>
+                                    </div>
+                                </div>
+                            ))
+                        )}
                     </div>
                 </div>
             )}
@@ -217,16 +273,8 @@ export function GroupInfoModal({ isOpen, onClose, contact, sessionId }: GroupInf
                             </div>
                         </div>
                         <div className="flex gap-2">
-                            <Button 
-                                size="sm" 
-                                variant={!isLocked ? "secondary" : "ghost"} 
-                                onClick={() => { setIsLocked(false); api.post('/management/group/update', { sessionId, groupId: contact.remote_jid, action: 'locked', value: false }) }}
-                            >Todos</Button>
-                            <Button 
-                                size="sm" 
-                                variant={isLocked ? "secondary" : "ghost"}
-                                onClick={() => { setIsLocked(true); api.post('/management/group/update', { sessionId, groupId: contact.remote_jid, action: 'locked', value: true }) }}
-                            >Admins</Button>
+                            <Button size="sm" variant={!isLocked ? "secondary" : "ghost"} onClick={() => { setIsLocked(false); api.post('/management/group/update', { sessionId, groupId: contact.remote_jid, action: 'locked', value: false }) }}>Todos</Button>
+                            <Button size="sm" variant={isLocked ? "secondary" : "ghost"} onClick={() => { setIsLocked(true); api.post('/management/group/update', { sessionId, groupId: contact.remote_jid, action: 'locked', value: true }) }}>Admins</Button>
                         </div>
                     </div>
 
@@ -239,16 +287,8 @@ export function GroupInfoModal({ isOpen, onClose, contact, sessionId }: GroupInf
                             </div>
                         </div>
                         <div className="flex gap-2">
-                            <Button 
-                                size="sm" 
-                                variant={!isAnnouncement ? "secondary" : "ghost"}
-                                onClick={() => { setIsAnnouncement(false); api.post('/management/group/update', { sessionId, groupId: contact.remote_jid, action: 'announcement', value: false }) }}
-                            >Todos</Button>
-                            <Button 
-                                size="sm" 
-                                variant={isAnnouncement ? "secondary" : "ghost"}
-                                onClick={() => { setIsAnnouncement(true); api.post('/management/group/update', { sessionId, groupId: contact.remote_jid, action: 'announcement', value: true }) }}
-                            >Admins</Button>
+                            <Button size="sm" variant={!isAnnouncement ? "secondary" : "ghost"} onClick={() => { setIsAnnouncement(false); api.post('/management/group/update', { sessionId, groupId: contact.remote_jid, action: 'announcement', value: false }) }}>Todos</Button>
+                            <Button size="sm" variant={isAnnouncement ? "secondary" : "ghost"} onClick={() => { setIsAnnouncement(true); api.post('/management/group/update', { sessionId, groupId: contact.remote_jid, action: 'announcement', value: true }) }}>Admins</Button>
                         </div>
                     </div>
                 </div>

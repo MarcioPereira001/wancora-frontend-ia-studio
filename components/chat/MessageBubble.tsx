@@ -5,7 +5,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Message } from '@/types';
 import { MessageContent } from './MessageContent';
 import { Check, CheckCheck, Clock, Ban, ChevronDown, Trash2, Info, SmilePlus } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, formatPhone } from '@/lib/utils';
 import { Checkbox } from '@/components/ui/checkbox';
 import { api } from '@/services/api';
 import { useToast } from '@/hooks/useToast';
@@ -36,10 +36,16 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
   
   const menuRef = useRef<HTMLDivElement>(null);
 
-  // FIXED: Removemos a validação 'EMPTY' hardcoded que poderia esconder mensagens válidas do backend antigo
   if (!message) return null;
 
   const isSticker = message.message_type === 'sticker';
+  // Verifica se é grupo pelo JID do chat
+  const isGroupMessage = message.remote_jid.includes('@g.us');
+
+  // Nome do participante (se existir e não for eu)
+  // O backend agora salva 'participant' na mensagem. Se não tiver, formata o JID do participante se disponível.
+  const participantId = (message as any).participant;
+  const participantName = participantId ? formatPhone(participantId) : null;
 
   useEffect(() => {
       function handleClickOutside(event: MouseEvent) {
@@ -144,7 +150,7 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
             "flex items-start gap-2 w-full group/message relative", 
             isMe ? "justify-end" : "justify-start", 
             reactionCounts ? "mb-5" : "mb-1",
-            showMenu ? "z-50" : "z-auto" // Z-Index fix para menu
+            showMenu ? "z-50" : "z-auto" 
         )}
     >
         {isSelectionMode && (
@@ -219,8 +225,16 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
                 )}
                 onClick={() => isSelectionMode && onSelect && onSelect()}
             >
-                {!isMe && !isSticker && message.contact?.push_name && (
-                    <span className="text-[11px] font-bold text-orange-400 px-1 mb-0.5 truncate max-w-[200px] block opacity-90">
+                {/* Nome do Participante em Grupos (Se não for eu) */}
+                {isGroupMessage && !isMe && !isSticker && participantName && (
+                     <span className="text-[10px] font-bold text-orange-400 px-1 mb-0.5 truncate max-w-[200px] block opacity-90">
+                        {participantName}
+                     </span>
+                )}
+                
+                {/* PushName do contato em DM (Se não for salvo na agenda) */}
+                {!isGroupMessage && !isMe && !isSticker && message.contact?.push_name && (
+                    <span className="text-[10px] font-bold text-blue-400 px-1 mb-0.5 truncate max-w-[200px] block opacity-90">
                         {message.contact.push_name}
                     </span>
                 )}
