@@ -28,6 +28,9 @@ export function useChatList() {
 
   const fetchSingleContact = async (jid: string) => {
       if (!user?.company_id) return null;
+      
+      // 🛡️ GUARDIÃO ANTI-LID: O frontend NUNCA deve renderizar LIDs.
+      if (jid.includes('@lid')) return null;
 
       try {
           const { data, error } = await supabase.rpc('get_contact_details', {
@@ -40,8 +43,6 @@ export function useChatList() {
           const item = Array.isArray(data) ? data[0] : data;
 
           if (item) {
-              // FILTRO DE HIGIENE: Não retorna contato se não tiver mensagem e não for lead ativo
-              // Isso previne chats vazios criados apenas por status online
               if (!item.last_message_at && item.unread_count === 0) return null;
 
               return {
@@ -80,7 +81,10 @@ export function useChatList() {
 
           if (rpcError) throw rpcError;
 
-          const formatted: ChatContact[] = (data || []).map((row: any) => ({
+          // Filtra LIDs que possam ter escapado da RPC por segurança
+          const formatted: ChatContact[] = (data || [])
+            .filter((row: any) => !row.jid.includes('@lid')) 
+            .map((row: any) => ({
               ...row,
               id: row.jid, 
               remote_jid: row.jid, 
@@ -108,7 +112,7 @@ export function useChatList() {
 
     // --- REALTIME CHANNELS ---
     
-    // 1. Contatos (Merge Inteligente & Anti-Ghost)
+    // 1. Contatos
     const contactsChannel = supabase.channel(`chat-list-contacts:${user.company_id}`)
       .on('postgres_changes', { 
           event: '*', 
@@ -120,6 +124,9 @@ export function useChatList() {
           if (payload.eventType === 'UPDATE' || payload.eventType === 'INSERT') {
               const newData = payload.new;
               
+              // 🛡️ GUARDIÃO ANTI-LID REALTIME: Ignora eventos de LIDs
+              if (newData.jid.includes('@lid')) return;
+
               if (newData.is_ignored) {
                   setContacts(prev => prev.filter(c => c.jid !== newData.jid));
                   return;
@@ -127,7 +134,6 @@ export function useChatList() {
 
               const exists = contactsRef.current.some(c => c.jid === newData.jid);
 
-              // CENÁRIO 1: O contato JÁ EXISTE na lista
               if (exists) {
                    setContacts(prev => prev.map(c => {
                        if (c.jid === newData.jid) {
@@ -136,7 +142,7 @@ export function useChatList() {
                                is_online: newData.is_online,
                                last_seen_at: newData.last_seen_at,
                                profile_pic_url: newData.profile_pic_url || c.profile_pic_url,
-                               name: newData.name || c.name, // Prioriza update de nome da agenda
+                               name: newData.name || c.name, 
                                unread_count: newData.unread_count
                            };
                        }
@@ -145,18 +151,11 @@ export function useChatList() {
                    return;
               }
 
-              // CENÁRIO 2: O contato NÃO EXISTE
-              // Aqui aplicamos a correção: Se a mudança foi apenas Status Online ou Visto por último, IGNORA.
-              // Só buscamos se houver mudança de mensagem ou unread.
-              const isJustPresence = Object.keys(newData).every(k => 
-                  ['id', 'jid', 'company_id', 'is_online', 'last_seen_at', 'updated_at'].includes(k)
-              );
-
-              if (isJustPresence && !newData.last_message_at) {
-                  return; // Ignora ghosts online
+              // Verifica se vale a pena buscar (tem msg ou unread?)
+              if (Object.keys(newData).every(k => ['id', 'jid', 'company_id', 'is_online', 'last_seen_at', 'updated_at'].includes(k)) && !newData.last_message_at) {
+                  return; // Ignora ghosts online sem mensagem
               }
 
-              // Se passou no filtro, busca completo
               const fullContact = await fetchSingleContact(newData.jid);
               
               if (fullContact) {
@@ -169,7 +168,7 @@ export function useChatList() {
       })
       .subscribe();
 
-    // 2. Mensagens (Sobe para o topo)
+    // 2. Mensagens
     const messagesChannel = supabase.channel(`chat-list-messages:${user.company_id}`)
       .on('postgres_changes', { 
           event: 'INSERT', 
@@ -178,7 +177,10 @@ export function useChatList() {
           filter: `company_id=eq.${user.company_id}` 
       }, async (payload) => {
           const newMsg = payload.new;
-          // Ignora histórico antigo
+          
+          // 🛡️ GUARDIÃO ANTI-LID MENSAGENS
+          if (newMsg.remote_jid.includes('@lid')) return;
+
           if (Date.now() - new Date(newMsg.created_at).getTime() > 60000 * 5) return;
 
           const targetJid = newMsg.remote_jid;
@@ -187,7 +189,6 @@ export function useChatList() {
               const existingIndex = prev.findIndex(c => c.jid === targetJid);
               
               if (existingIndex >= 0) {
-                  // Atualiza e move pro topo
                   const contact = { ...prev[existingIndex] };
                   contact.last_message_content = newMsg.content;
                   contact.last_message_type = newMsg.message_type;
@@ -201,7 +202,6 @@ export function useChatList() {
                   const others = prev.filter(c => c.jid !== targetJid);
                   return [contact, ...others];
               } else {
-                  // Mensagem de novo contato -> Busca
                   fetchSingleContact(targetJid).then(fullContact => {
                       if(fullContact) {
                           setContacts(current => {
