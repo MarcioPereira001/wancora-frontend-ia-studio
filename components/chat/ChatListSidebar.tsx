@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
@@ -6,7 +5,8 @@ import { useChatList } from '@/hooks/useChatList';
 import { useChatStore } from '@/store/useChatStore';
 import { useRealtimeStore } from '@/store/useRealtimeStore';
 import { 
-    Search, Plus, MessageSquare, Loader2, RefreshCw, Users, Megaphone, Filter, Tag, Archive, Reply, ChevronDown, Smartphone, ArrowUp
+    Search, Plus, MessageSquare, Loader2, RefreshCw, Users, Megaphone, 
+    Filter, Tag, Archive, Reply, ChevronDown, Smartphone, ArrowUp
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -14,15 +14,15 @@ import { cn, getDisplayName } from '@/lib/utils';
 import { CreateGroupModal } from './CreateGroupModal';
 import { CreateChannelModal } from './CreateChannelModal';
 import { NewChatModal } from './NewChatModal';
-import { ChatListItem } from './ChatListItem'; 
-import { TagManageModal } from './TagManageModal'; 
+import { ChatListItem } from './ChatListItem';
+import { TagManageModal } from './TagManageModal';
 import { useAuthStore } from '@/store/useAuthStore';
 import { createClient } from '@/utils/supabase/client';
 import { ChatContact } from '@/types';
 import { useRouter } from 'next/navigation';
 
 export function ChatListSidebar() {
-  const { contacts, loading, refreshList } = useChatList(); 
+  const { contacts, loading, refreshList } = useChatList();
   const { activeContact, setActiveContact, selectedInstance, setSelectedInstance } = useChatStore();
   const { user } = useAuthStore();
   const { instances } = useRealtimeStore();
@@ -54,14 +54,15 @@ export function ChatListSidebar() {
   const tagDropdownRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
-  // --- AUTO SYNC (3 Minutos) ---
+  // --- AUTO SYNC (2 Minutos) ---
   useEffect(() => {
     const interval = setInterval(() => {
-        if (!isRefreshing && document.visibilityState === 'visible') {
+        // Verifica se a janela está visível para não gastar recurso em aba de fundo
+        if (!isRefreshing && typeof document !== 'undefined' && document.visibilityState === 'visible') {
             console.log("🔄 Auto-Sync Chat List...");
             refreshList(false); // Silent refresh
         }
-    }, 180000); // 3 minutos
+    }, 120000); // 2 minutos
 
     return () => clearInterval(interval);
   }, [refreshList, isRefreshing]);
