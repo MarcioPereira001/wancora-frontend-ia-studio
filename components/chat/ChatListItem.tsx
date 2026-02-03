@@ -100,7 +100,7 @@ export function ChatListItem({ contact, isActive, onClick, onTag, onHide, onDele
                 </div>
                 
                 {contact.is_online && !contact.is_group && (
-                    <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 border-2 border-zinc-900 rounded-full animate-in zoom-in duration-300"></div>
+                    <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 border-2 border-zinc-900 rounded-full animate-in zoom-in duration-300 shadow-md shadow-green-500/20"></div>
                 )}
             </div>
             
@@ -109,7 +109,7 @@ export function ChatListItem({ contact, isActive, onClick, onTag, onHide, onDele
                     <h3 className={cn("text-sm font-medium truncate flex items-center gap-1", isActive ? "text-white" : "text-zinc-200")}>
                         {displayName}
                         {contact.is_business && !contact.is_group && (
-                            <span className="text-[9px] bg-zinc-700 text-zinc-300 px-1 rounded border border-zinc-600 ml-1">BIZ</span>
+                            <span className="text-[8px] bg-zinc-700/80 text-zinc-400 px-1 py-[1px] rounded border border-zinc-600 ml-1 uppercase tracking-tighter font-semibold">Business</span>
                         )}
                     </h3>
                     <span className={cn("text-[10px] shrink-0 font-medium", contact.unread_count > 0 ? "text-green-500" : "text-zinc-500")}>

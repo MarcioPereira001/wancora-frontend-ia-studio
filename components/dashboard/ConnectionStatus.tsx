@@ -86,8 +86,8 @@ export function ConnectionStatus() {
               <p className="text-white font-bold text-lg flex items-center justify-center gap-2">
                   {instance?.name || 'WhatsApp'}
                   {instance.is_business_account && (
-                      <span className="text-[10px] bg-blue-500/20 text-blue-400 border border-blue-500/30 px-1.5 py-0.5 rounded flex items-center gap-1" title="WhatsApp Business">
-                          <Briefcase className="w-3 h-3" /> BIZ
+                      <span className="text-[9px] bg-blue-500/20 text-blue-400 border border-blue-500/30 px-1.5 py-0.5 rounded flex items-center gap-1 uppercase tracking-tighter" title="WhatsApp Business">
+                          <Briefcase className="w-3 h-3" /> BUSINESS
                       </span>
                   )}
               </p>
