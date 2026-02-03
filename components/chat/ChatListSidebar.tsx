@@ -60,7 +60,7 @@ export function ChatListSidebar() {
   const instanceDropdownRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
     
-  // --- AUTO SYNC (3 Minutos) ---
+  // --- AUTO SYNC (2 Minutos) ---
   useEffect(() => {
     const interval = setInterval(() => {
         // Verifica se a janela está visível para não gastar recurso em aba de fundo
@@ -68,7 +68,7 @@ export function ChatListSidebar() {
             console.log("🔄 Auto-Sync Chat List...");
             refreshList(false); // Silent refresh
         }
-    }, 180000); // 3 minutos
+    }, 120000); // 2 minutos
 
     return () => clearInterval(interval);
   }, [refreshList, isRefreshing]);
