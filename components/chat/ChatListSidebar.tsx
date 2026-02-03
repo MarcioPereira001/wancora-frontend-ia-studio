@@ -5,24 +5,23 @@ import { useChatList } from '@/hooks/useChatList';
 import { useChatStore } from '@/store/useChatStore';
 import { useRealtimeStore } from '@/store/useRealtimeStore';
 import { 
-    Search, Plus, MessageSquare, Loader2, RefreshCw, Users, Megaphone, 
+    Search, Plus, MessageSquare, Loader2, RefreshCw, Users, 
     Filter, Tag, Archive, Reply, ChevronDown, Smartphone, ArrowUp
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { cn, getDisplayName } from '@/lib/utils';
 import { CreateGroupModal } from './CreateGroupModal';
-import { CreateChannelModal } from './CreateChannelModal';
 import { NewChatModal } from './NewChatModal';
-import { ChatListItem } from './ChatListItem';
-import { TagManageModal } from './TagManageModal';
+import { ChatListItem } from './ChatListItem'; 
+import { TagManageModal } from './TagManageModal'; 
 import { useAuthStore } from '@/store/useAuthStore';
 import { createClient } from '@/utils/supabase/client';
 import { ChatContact } from '@/types';
 import { useRouter } from 'next/navigation';
 
 export function ChatListSidebar() {
-  const { contacts, loading, refreshList } = useChatList();
+  const { contacts, loading, refreshList } = useChatList(); 
   const { activeContact, setActiveContact, selectedInstance, setSelectedInstance } = useChatStore();
   const { user } = useAuthStore();
   const { instances } = useRealtimeStore();
@@ -43,7 +42,6 @@ export function ChatListSidebar() {
 
   // Modais
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
-  const [isChannelModalOpen, setIsChannelModalOpen] = useState(false);
   const [isNewChatModalOpen, setIsNewChatModalOpen] = useState(false);
   const [isTagModalOpen, setIsTagModalOpen] = useState(false);
   const [tagTargetLead, setTagTargetLead] = useState<{id: string, tags: string[]} | null>(null);
@@ -54,7 +52,7 @@ export function ChatListSidebar() {
   const tagDropdownRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
-  // --- AUTO SYNC (2 Minutos) ---
+  // --- AUTO SYNC (3 Minutos) ---
   useEffect(() => {
     const interval = setInterval(() => {
         // Verifica se a janela está visível para não gastar recurso em aba de fundo
@@ -62,7 +60,7 @@ export function ChatListSidebar() {
             console.log("🔄 Auto-Sync Chat List...");
             refreshList(false); // Silent refresh
         }
-    }, 120000); // 2 minutos
+    }, 180000); // 3 minutos
 
     return () => clearInterval(interval);
   }, [refreshList, isRefreshing]);
@@ -276,9 +274,6 @@ export function ChatListSidebar() {
                                     <button onClick={() => { setIsGroupModalOpen(true); setShowCreateMenu(false); }} className="w-full text-left px-3 py-2.5 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-white flex items-center gap-3 rounded-lg">
                                         <div className="p-1.5 bg-green-500/10 text-green-400 rounded-md"><Users className="w-4 h-4" /></div> Novo Grupo
                                     </button>
-                                    <button onClick={() => { setIsChannelModalOpen(true); setShowCreateMenu(false); }} className="w-full text-left px-3 py-2.5 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-white flex items-center gap-3 rounded-lg">
-                                        <div className="p-1.5 bg-purple-500/10 text-purple-400 rounded-md"><Megaphone className="w-4 h-4" /></div> Novo Canal
-                                    </button>
                                 </div>
                             </div>
                         </>
@@ -432,7 +427,6 @@ export function ChatListSidebar() {
         {/* MODAIS */}
         <NewChatModal isOpen={isNewChatModalOpen} onClose={() => setIsNewChatModalOpen(false)} />
         <CreateGroupModal isOpen={isGroupModalOpen} onClose={() => setIsGroupModalOpen(false)} sessionId={selectedInstance?.session_id || 'default'} companyId={user?.company_id || ''} existingContacts={contacts} />
-        <CreateChannelModal isOpen={isChannelModalOpen} onClose={() => setIsChannelModalOpen(false)} sessionId={selectedInstance?.session_id || 'default'} companyId={user?.company_id || ''} />
         
         {tagTargetLead && (
             <TagManageModal 
