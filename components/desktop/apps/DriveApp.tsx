@@ -54,7 +54,7 @@ export function DriveApp() {
           await createFolder(newFolderName);
           setIsCreatingFolder(false);
           setNewFolderName('');
-          // Pequeno delay para garantir que o cache local foi atualizado
+          // Delay para garantir propagação
           setTimeout(() => fetchFiles(currentFolderId), 500);
       } catch(e) {
           addToast({ type: 'error', title: 'Erro', message: 'Falha ao criar pasta.' });
@@ -90,18 +90,17 @@ export function DriveApp() {
           if (mime.includes('image') || mime.includes('video') || mime.includes('pdf')) {
               openWindow('preview', file.name, { url: file.web_view_link, type: mime, id: file.google_id });
           } 
-          // DOCX / GOOGLE DOCS -> EditorApp (Carrega conteúdo)
+          // DOCX / GOOGLE DOCS -> EditorApp (Carrega conteúdo para edição)
           else if (mime.includes('word') || mime.includes('document')) {
                openWindow('editor', file.name, { fileId: file.google_id, mimeType: mime });
           }
-          // OUTROS -> Link Externo (Download)
+          // OUTROS -> Link Externo (Download no Google)
           else if (file.web_view_link) {
               window.open(file.web_view_link, '_blank');
           }
       }
   };
 
-  // Conversão de Bytes
   const formatBytes = (bytes: number) => {
       if (bytes === 0) return '0 B';
       const k = 1024;
@@ -177,7 +176,7 @@ export function DriveApp() {
                 </div>
             ) : (
                 <div className="flex gap-2">
-                     <Button size="sm" variant="secondary" onClick={handleSync} className="h-8 text-xs bg-zinc-700 hover:bg-zinc-600 text-white gap-1 border border-zinc-600" title="Buscar todos arquivos do Google Drive">
+                     <Button size="sm" variant="secondary" onClick={handleSync} className="h-8 text-xs bg-zinc-700 hover:bg-zinc-600 text-white gap-1 border border-zinc-600" title="Importar tudo do Google Drive para o Sistema">
                         <DownloadCloud className="w-3.5 h-3.5" /> <span className="hidden lg:inline">Buscar Existentes</span>
                     </Button>
 

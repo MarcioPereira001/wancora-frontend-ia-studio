@@ -2,7 +2,7 @@
 import { create } from 'zustand';
 import { createClient } from '@/utils/supabase/client';
 import { Lead, PipelineStage } from '@/types';
-import { RealtimeChannel } from '@supabase/supabase-js';
+import type { RealtimeChannel } from '@supabase/supabase-js';
 
 interface CRMState {
   isInitialized: boolean;

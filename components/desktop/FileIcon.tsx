@@ -20,7 +20,7 @@ export const FileIcon: React.FC<FileIconProps> = ({ file, selected, onSelect, on
   const getContainerSize = () => {
       if (size === 'sm') return "w-[90px] h-[100px]";
       if (size === 'lg') return "w-[160px] h-[180px]";
-      return "w-[120px] h-[140px]"; // Default MD
+      return "w-[120px] h-[140px]"; 
   }
 
   const getIconSize = () => {
@@ -29,27 +29,16 @@ export const FileIcon: React.FC<FileIconProps> = ({ file, selected, onSelect, on
       return "w-14 h-14";
   }
 
-  // Renderiza o ícone correto baseado no MimeType
   const renderIcon = () => {
       const mime = file.mime_type;
       const s = getIconSize();
 
-      // PASTA (Amarelo Windows)
       if (file.is_folder) {
-          return (
-              <div className="relative">
-                  <Folder className={cn(s, "text-yellow-400 fill-yellow-400/20 drop-shadow-sm")} />
-                  {/* Detalhe visual de pasta cheia se quiser adicionar depois */}
-              </div>
-          );
+          return <Folder className={cn(s, "text-yellow-400 fill-yellow-400/20 drop-shadow-sm")} />;
       }
-
-      // IMAGEM (Thumbnail ou Ícone Roxo)
       if (mime.includes('image')) {
           return <ImageIcon className={cn(s, "text-purple-500 fill-purple-100")} />;
       }
-
-      // PDF (Vermelho)
       if (mime.includes('pdf')) {
           return (
               <div className="relative flex items-center justify-center">
@@ -58,44 +47,26 @@ export const FileIcon: React.FC<FileIconProps> = ({ file, selected, onSelect, on
               </div>
           );
       }
-
-      // WORD / DOCS (Azul)
       if (mime.includes('word') || mime.includes('document')) {
           return (
               <div className="relative flex items-center justify-center">
                   <FileText className={cn(s, "text-blue-100 fill-blue-600")} />
                   <span className="absolute text-[8px] font-bold text-white mb-2">DOC</span>
-                  <div className="absolute top-1/2 left-0 right-0 h-0.5 bg-white/30 w-1/2 mx-auto rounded"></div>
               </div>
           );
       }
-
-      // EXCEL / SHEETS (Verde)
       if (mime.includes('spreadsheet') || mime.includes('excel')) {
           return <FileSpreadsheet className={cn(s, "text-green-100 fill-green-600")} />;
       }
-
-      // VIDEO (Rosa)
       if (mime.includes('video')) {
           return <Film className={cn(s, "text-pink-500 fill-pink-100")} />;
       }
-
-      // AUDIO (Amarelo)
       if (mime.includes('audio')) {
           return <Music className={cn(s, "text-yellow-500 fill-yellow-100")} />;
       }
-
-      // ZIP / ARCHIVE (Laranja)
-      if (mime.includes('zip') || mime.includes('compressed') || mime.includes('tar')) {
+      if (mime.includes('zip') || mime.includes('compressed')) {
           return <FileArchive className={cn(s, "text-orange-500 fill-orange-100")} />;
       }
-      
-      // CODE (Cinza)
-      if (mime.includes('javascript') || mime.includes('json') || mime.includes('html')) {
-          return <FileCode className={cn(s, "text-zinc-400 fill-zinc-800")} />;
-      }
-
-      // GENÉRICO (Branco)
       return <File className={cn(s, "text-zinc-300")} />;
   };
 
@@ -106,7 +77,7 @@ export const FileIcon: React.FC<FileIconProps> = ({ file, selected, onSelect, on
 
   const handleDoubleClick = (e: React.MouseEvent) => {
       e.stopPropagation();
-      onNavigate(); // O Pai decide o que fazer (abrir pasta ou preview)
+      onNavigate();
   };
 
   return (

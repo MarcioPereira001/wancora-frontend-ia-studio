@@ -2,7 +2,7 @@
 import { create } from 'zustand';
 import { createClient } from '@/utils/supabase/client';
 import { Appointment } from '@/types';
-import { RealtimeChannel } from '@supabase/supabase-js';
+import type { RealtimeChannel } from '@supabase/supabase-js';
 
 interface CalendarState {
   appointments: Appointment[];

@@ -1,7 +1,7 @@
 
 import { create } from 'zustand';
 import { createClient } from '@/utils/supabase/client';
-import { RealtimeChannel } from '@supabase/supabase-js';
+import type { RealtimeChannel } from '@supabase/supabase-js';
 import { Instance } from '@/types';
 
 interface RealtimeState {
