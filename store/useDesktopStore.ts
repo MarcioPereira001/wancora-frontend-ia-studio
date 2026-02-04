@@ -1,7 +1,7 @@
 
 import { create } from 'zustand';
 
-export type AppType = 'drive' | 'editor' | 'preview';
+export type AppType = 'drive' | 'editor' | 'preview' | 'sheet'; // Add sheet
 
 export interface WindowInstance {
   id: string;
@@ -12,9 +12,9 @@ export interface WindowInstance {
   zIndex: number;
   position: { x: number; y: number };
   size: { width: number | string; height: number | string };
-  data?: any; // Dados extras (arquivo para preview, folderId, etc)
-  internalState?: any; // Persistência local (ex: conteúdo do editor não salvo)
-  isDirty?: boolean; // Se tem alterações não salvas
+  data?: any;
+  internalState?: any;
+  isDirty?: boolean;
 }
 
 interface DesktopState {
@@ -29,6 +29,8 @@ interface DesktopState {
   toggleMaximize: (id: string) => void;
   updateWindowPosition: (id: string, x: number, y: number) => void;
   
+  centerWindow: (id: string) => void; // NOVO
+  
   setWindowState: (id: string, state: any) => void;
   setWindowDirty: (id: string, isDirty: boolean) => void;
 }
@@ -41,8 +43,7 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
   openWindow: (type, title, data) => {
     const currentWindows = get().windows;
 
-    // 1. REGRA SINGLETON: Drive e Lixeira
-    // Se já houver uma janela de Drive aberta (exceto se for folder diferente, mas simplificamos para 1 app de arquivos)
+    // Singleton: Drive e Lixeira
     if (type === 'drive') {
         const existingDrive = currentWindows.find(w => w.type === 'drive' && w.title === title);
         if (existingDrive) {
@@ -51,11 +52,10 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
         }
     }
 
-    // 2. Limite de Editores (Performance)
-    if (type === 'editor') {
-        const editors = currentWindows.filter(w => w.type === 'editor');
-        if (editors.length >= 3) {
-            alert("Limite de 3 editores simultâneos atingido.");
+    if (type === 'editor' || type === 'sheet') {
+        const apps = currentWindows.filter(w => w.type === 'editor' || w.type === 'sheet');
+        if (apps.length >= 3) {
+            alert("Limite de 3 apps simultâneos atingido.");
             return;
         }
     }
@@ -68,7 +68,6 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
       isMinimized: false,
       isMaximized: false,
       zIndex: get().nextZIndex + 1,
-      // Posição inicial centralizada com leve aleatoriedade
       position: { x: 100 + (currentWindows.length * 20), y: 50 + (currentWindows.length * 20) },
       size: { width: 900, height: 600 },
       data,
@@ -124,6 +123,20 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
   updateWindowPosition: (id, x, y) => {
       set((state) => ({
           windows: state.windows.map(w => w.id === id ? { ...w, position: { x, y } } : w)
+      }))
+  },
+
+  centerWindow: (id) => {
+      set((state) => ({
+          windows: state.windows.map(w => w.id === id ? { 
+              ...w, 
+              isMinimized: false,
+              isMaximized: false,
+              position: { x: 100, y: 50 }, // Reset para posição segura
+              zIndex: state.nextZIndex + 1
+          } : w),
+          activeWindowId: id,
+          nextZIndex: state.nextZIndex + 1
       }))
   },
 

@@ -308,12 +308,22 @@ O sistema implementa uma hierarquia de permissões estrita baseada na coluna `ro
 
 ### ☁️ Módulo 7: Área de Trabalho (Desktop Environment)
 Um sistema operacional completo dentro do navegador para gestão de arquivos e produtividade.
-* **Window Manager:** Sistema de janelas flutuantes (`useDesktopStore`) que permite abrir múltiplas aplicações simultaneamente (ex: Explorador de Arquivos e Editor de Texto).
-* **Drive App:** Explorador de arquivos estilo Windows/Mac integrado nativamente ao Google Drive.
-    * **Hybrid Cache:** Navegação instantânea lendo do banco de dados, com sincronização silenciosa em background.
-* **Editor App:** Processador de texto rico (Rich Text) com capacidade de:
-    * Exportar para **PDF** e **DOCX**.
-    * Salvar documentos diretamente na nuvem (Google Drive) da empresa.
+* **Window Manager (v2.0):** 
+    * Sistema de janelas flutuantes (`useDesktopStore`) com controle de foco, minimização e *z-index*.
+    * **Physics Engine:** Correção de "Double Jump" no arraste utilizando `framer-motion` com reset de transformadas e `useMotionValue` para coordenadas absolutas.
+    * **Singleton Logic:** Impede múltiplas instâncias do Drive ou Lixeira abertas simultaneamente.
+* **Drive App (Híbrido):** 
+    * Explorador de arquivos integrado ao Google Drive.
+    * **Busca Ao Vivo:** Modal dedicado para encontrar e importar arquivos que já existem no Google Drive da empresa mas não estão no cache.
+    * **Lixeira Real:** Visualização direta da lixeira do Google Drive (sem cache local) para garantir dados frescos.
+* **Editor App (Word-like):** 
+    * Editor de texto rico (Rich Text) baseado em Quill.
+    * **Conversão Server-Side:** Capacidade de abrir arquivos `.docx` e Google Docs convertendo-os para HTML via Backend (`mammoth`), preservando a formatação original.
+    * Salva diretamente no Drive como `.docx`.
+* **Sheet App (Excel-like):** [NOVO]
+    * Editor de planilhas nativo leve (sem dependências pesadas de UI).
+    * Suporte a fórmulas básicas, formatação de células e persistência de estado local.
+    * Exporta e Salva como `.xlsx` (Excel) usando `exceljs` no cliente.
 * **Visualizador de Mídia:** Preview nativo de imagens e vídeos armazenados na nuvem.
 
 ---

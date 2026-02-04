@@ -9,7 +9,7 @@ export type ViewMode = 'list' | 'grid-sm' | 'grid-md' | 'grid-lg';
 
 interface CloudState {
   currentFolderId: string | null;
-  folderHistory: {id: string | null, name: string}[]; // Breadcrumbs
+  folderHistory: {id: string | null, name: string}[]; 
   files: DriveFile[];
   isLoading: boolean;
   selectedFileIds: Set<string>;
@@ -17,6 +17,7 @@ interface CloudState {
   
   viewMode: ViewMode;
   storageQuota: { usage: number, limit: number } | null;
+  isTrashView: boolean; // NOVO: Flag para saber se está na lixeira
 
   // Actions
   navigateTo: (folderId: string | null, folderName: string) => void;
@@ -33,6 +34,7 @@ interface CloudState {
   deleteSelected: () => Promise<void>;
   setViewMode: (mode: ViewMode) => void;
   syncNow: () => Promise<void>;
+  setTrashView: (isTrash: boolean) => void;
 }
 
 export const useCloudStore = create<CloudState>((set, get) => ({
@@ -44,6 +46,17 @@ export const useCloudStore = create<CloudState>((set, get) => ({
   clipboard: null,
   viewMode: 'grid-md',
   storageQuota: null,
+  isTrashView: false,
+
+  setTrashView: (isTrash) => {
+      set({ 
+          isTrashView: isTrash, 
+          currentFolderId: null, 
+          folderHistory: [{ id: null, name: isTrash ? 'Lixeira' : 'Meu Drive' }],
+          selectedFileIds: new Set()
+      });
+      get().fetchFiles(null);
+  },
 
   navigateTo: (folderId, folderName) => {
       const history = get().folderHistory;
@@ -75,12 +88,15 @@ export const useCloudStore = create<CloudState>((set, get) => ({
   fetchFiles: async (folderIdInput) => {
       const companyId = useAuthStore.getState().user?.company_id;
       const folderId = folderIdInput !== undefined ? folderIdInput : get().currentFolderId;
+      const isTrash = get().isTrashView;
 
       if (!companyId) return;
 
       set({ isLoading: true });
       try {
-          const queryString = folderId ? `?folderId=${folderId}` : '';
+          let queryString = `?folderId=${folderId || 'null'}`;
+          if (isTrash) queryString += `&isTrash=true`;
+
           const res = await api.post(`/cloud/google/list${queryString}`, { companyId });
           
           set({ files: res.files || [] });
@@ -170,7 +186,6 @@ export const useCloudStore = create<CloudState>((set, get) => ({
       const ids = Array.from(get().selectedFileIds);
       if (!companyId || ids.length === 0) return;
 
-      // Pega os google_ids reais dos arquivos selecionados
       const filesToDelete = get().files.filter(f => ids.includes(f.id));
       const googleIds = filesToDelete.map(f => f.google_id);
 

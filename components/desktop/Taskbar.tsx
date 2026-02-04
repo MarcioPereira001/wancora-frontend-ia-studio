@@ -4,11 +4,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useDesktopStore } from '@/store/useDesktopStore';
 import { cn } from '@/lib/utils';
-import { Zap, Cloud, FileText, Monitor, X, Minus, Save, Maximize2 } from 'lucide-react';
+import { Zap, Cloud, FileText, Monitor, X, Minus, Save, Maximize2, Layout, FileSpreadsheet } from 'lucide-react';
 import { useAuthStore } from '@/store/useAuthStore';
 
 export function Taskbar() {
-  const { windows, activeWindowId, focusWindow, toggleMinimize, closeWindow, openWindow } = useDesktopStore();
+  const { windows, activeWindowId, focusWindow, toggleMinimize, closeWindow, openWindow, centerWindow } = useDesktopStore();
   const { user } = useAuthStore();
   const [time, setTime] = useState(new Date());
   const [startMenuOpen, setStartMenuOpen] = useState(false);
@@ -22,7 +22,6 @@ export function Taskbar() {
     return () => clearInterval(timer);
   }, []);
 
-  // Fecha menu de contexto ao clicar fora
   useEffect(() => {
       const handleClick = (e: MouseEvent) => {
           if (contextMenuRef.current && !contextMenuRef.current.contains(e.target as Node)) {
@@ -35,24 +34,25 @@ export function Taskbar() {
 
   const handleWindowClick = (id: string, isMinimized: boolean, isActive: boolean) => {
       if (isMinimized) {
-          toggleMinimize(id); // Restaura
-          focusWindow(id);    // Traz pra frente
+          toggleMinimize(id); 
+          focusWindow(id);    
       } else if (isActive) {
-          toggleMinimize(id); // Minimiza se já ativo
+          toggleMinimize(id); 
       } else {
-          focusWindow(id); // Foca se está atrás
+          focusWindow(id); 
       }
   };
 
   const handleContextMenu = (e: React.MouseEvent, id: string) => {
       e.preventDefault();
-      setContextMenu({ id, x: e.clientX, y: e.clientY - 120 }); // Posiciona acima da barra
+      setContextMenu({ id, x: e.clientX, y: e.clientY - 160 }); // Sobe um pouco mais
   };
 
   const getIcon = (type: string) => {
       switch(type) {
           case 'drive': return <Cloud className="w-4 h-4 text-green-400" />;
           case 'editor': return <FileText className="w-4 h-4 text-blue-400" />;
+          case 'sheet': return <FileSpreadsheet className="w-4 h-4 text-green-500" />;
           case 'preview': return <Monitor className="w-4 h-4 text-purple-400" />;
           default: return <Monitor className="w-4 h-4" />;
       }
@@ -69,7 +69,7 @@ export function Taskbar() {
                      </div>
                      <div className="overflow-hidden">
                          <p className="text-sm font-bold text-white truncate">{user?.name}</p>
-                         <p className="text-[10px] text-zinc-500">Wancora OS v4.2</p>
+                         <p className="text-[10px] text-zinc-500">Wancora OS v4.5</p>
                      </div>
                 </div>
                 <div className="space-y-1">
@@ -79,6 +79,9 @@ export function Taskbar() {
                     <button onClick={() => { openWindow('editor', 'Novo Documento'); setStartMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-zinc-300 hover:bg-zinc-800 rounded flex items-center gap-2">
                         <FileText className="w-4 h-4" /> Editor de Texto
                     </button>
+                    <button onClick={() => { openWindow('sheet', 'Nova Planilha'); setStartMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-zinc-300 hover:bg-zinc-800 rounded flex items-center gap-2">
+                        <FileSpreadsheet className="w-4 h-4" /> Planilha
+                    </button>
                 </div>
             </div>
         )}
@@ -87,7 +90,7 @@ export function Taskbar() {
         {contextMenu && (
             <div 
                 ref={contextMenuRef}
-                className="fixed z-[10000] bg-[#1e1e20] border border-zinc-700 rounded-lg shadow-xl w-40 py-1 animate-in fade-in zoom-in-95"
+                className="fixed z-[10000] bg-[#1e1e20] border border-zinc-700 rounded-lg shadow-xl w-48 py-1 animate-in fade-in zoom-in-95"
                 style={{ top: contextMenu.y, left: contextMenu.x }}
             >
                 <button onClick={() => { toggleMinimize(contextMenu.id); setContextMenu(null); }} className="w-full text-left px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-700 flex items-center gap-2">
@@ -95,6 +98,9 @@ export function Taskbar() {
                 </button>
                 <button onClick={() => { focusWindow(contextMenu.id); setContextMenu(null); }} className="w-full text-left px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-700 flex items-center gap-2">
                     <Maximize2 className="w-3 h-3" /> Focar
+                </button>
+                <button onClick={() => { centerWindow(contextMenu.id); setContextMenu(null); }} className="w-full text-left px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-700 flex items-center gap-2">
+                    <Layout className="w-3 h-3" /> Restaurar Centralizado
                 </button>
                 <div className="h-px bg-zinc-700 my-1" />
                 <button onClick={() => { closeWindow(contextMenu.id); setContextMenu(null); }} className="w-full text-left px-3 py-2 text-xs text-red-400 hover:bg-red-900/20 flex items-center gap-2">

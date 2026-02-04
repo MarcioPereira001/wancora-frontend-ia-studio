@@ -350,6 +350,33 @@ Faz upload de um arquivo diretamente para o Google Drive via Streaming (Multipar
   * `folderId`: string | "null" (ID da pasta pai ou string "null" para raiz)
 * **Comportamento:** O arquivo é processado em memória (RAM) e enviado via Stream para o Google, sem salvar no disco do servidor e sem travar o Event Loop com JSON gigantes.
 
+#### `POST /cloud/google/search-live`
+Realiza uma busca em tempo real na API do Google Drive (ignora o cache local).
+* **Body:** `{ "companyId": "uuid", "query": "termo de busca" }`
+* **Response:** `{ "files": [ ... ] }`
+* **Uso:** Usado no modal de importação de arquivos existentes.
+
+#### `POST /cloud/google/import`
+Importa metadados de arquivos selecionados do Google Drive para o cache local (`drive_cache`), tornando-os visíveis no "Meu Drive" do sistema.
+* **Body:** 
+   ```json
+   { 
+     "companyId": "uuid", 
+     "files": [ { "id": "google_id", "name": "...", "mimeType": "..." }, ... ] 
+   }
+Response: { "success": true, "count": 10 }
+```
+#### POST /convert/docx
+Serviço de conversão de documentos. Baixa um arquivo DOCX (ou Google Doc exportado) do Drive, converte para HTML compatível com o Editor de Texto e retorna o conteúdo.
+Body: { "companyId": "uuid", "fileId": "google_file_id" }
+Response:
+```JSON
+{ 
+  "success": true, 
+  "html": "<p>Conteúdo do documento...</p>", 
+  "filename": "nome_do_arquivo.docx" 
+}
+```
 #### `POST /cloud/google/send-to-whatsapp`
 Faz streaming do arquivo do Drive diretamente para o WhatsApp sem salvar em disco local (apenas buffer em memória).
 * **Body:** 

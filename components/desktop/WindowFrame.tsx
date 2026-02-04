@@ -2,7 +2,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { motion, useDragControls } from 'framer-motion';
+import { motion, useDragControls, useMotionValue } from 'framer-motion';
 import { X, Minus, Square, Maximize2 } from 'lucide-react';
 import { useDesktopStore, WindowInstance } from '@/store/useDesktopStore';
 import { cn } from '@/lib/utils';
@@ -18,6 +18,10 @@ export interface WindowFrameProps {
 export const WindowFrame: React.FC<WindowFrameProps> = ({ window: win, children, constraintsRef }) => {
   const { closeWindow, focusWindow, toggleMinimize, toggleMaximize, updateWindowPosition } = useDesktopStore();
   const dragControls = useDragControls();
+  
+  // Motion Values para controlar a posição e resetar
+  const x = useMotionValue(0);
+  const y = useMotionValue(0);
   
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
 
@@ -50,30 +54,35 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({ window: win, children,
       drag={!win.isMaximized}
       dragControls={dragControls}
       dragListener={false} 
-      dragMomentum={false} 
-      dragElastic={0} // Impede o efeito elástico que causa pulos
-      dragConstraints={constraintsRef} // Limita ao container pai (papel de parede)
+      dragMomentum={false}
+      dragElastic={0}
+      dragConstraints={constraintsRef} 
       
-      // CRÍTICO: Atualiza o estado React ao final do arraste
-      onDragEnd={(_, info) => {
-          if (!win.isMaximized) {
-             const newX = win.position.x + info.offset.x;
-             const newY = win.position.y + info.offset.y;
-             updateWindowPosition(win.id, newX, newY);
-          }
-      }}
-
-      // CRÍTICO: Reseta a posição visual para bater com o estado absoluto
+      // CRÍTICO: Usa motion values
       style={{ 
+        x, y,
         zIndex: win.zIndex,
         position: 'absolute',
         top: win.isMaximized ? 0 : win.position.y,
         left: win.isMaximized ? 0 : win.position.x,
         width: win.isMaximized ? '100vw' : win.size.width,
         height: win.isMaximized ? 'calc(100vh - 48px)' : win.size.height,
-        // Força o reset do transform para evitar o "Double Jump"
-        x: 0,
-        y: 0 
+      }}
+      
+      onDragEnd={() => {
+         if (!win.isMaximized) {
+             // 1. Calcula nova posição
+             const newX = win.position.x + x.get();
+             const newY = win.position.y + y.get();
+             
+             // 2. Atualiza estado global
+             updateWindowPosition(win.id, newX, newY);
+             
+             // 3. Reseta motion value para 0 IMEDIATAMENTE
+             // Isso impede que o Framer aplique o translate em cima do novo top/left
+             x.set(0);
+             y.set(0);
+         }
       }}
       
       className={cn(
