@@ -7,7 +7,7 @@ import { useDesktopStore } from '@/store/useDesktopStore';
 import { FileIcon } from '../FileIcon';
 import { 
     Loader2, ArrowLeft, Cloud, UploadCloud, RefreshCw, Plus, FileText, FolderPlus, 
-    Trash2, LayoutGrid, List, Grid, HardDrive, CheckSquare, X 
+    Trash2, LayoutGrid, List, Grid, HardDrive, CheckSquare, X, DownloadCloud 
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/useToast';
@@ -54,6 +54,8 @@ export function DriveApp() {
           await createFolder(newFolderName);
           setIsCreatingFolder(false);
           setNewFolderName('');
+          // Pequeno delay para garantir que o cache local foi atualizado
+          setTimeout(() => fetchFiles(currentFolderId), 500);
       } catch(e) {
           addToast({ type: 'error', title: 'Erro', message: 'Falha ao criar pasta.' });
       }
@@ -73,7 +75,7 @@ export function DriveApp() {
   };
 
   const handleSync = async () => {
-      addToast({ type: 'info', title: 'Sincronizando', message: 'Buscando alterações no Drive...' });
+      addToast({ type: 'info', title: 'Sincronizando', message: 'Buscando todos os arquivos do Drive...' });
       await syncNow();
       addToast({ type: 'success', title: 'Pronto', message: 'Arquivos atualizados.' });
   };
@@ -82,11 +84,18 @@ export function DriveApp() {
       if (file.is_folder) {
           navigateTo(file.google_id, file.name);
       } else {
-          // Abre Preview (Se for imagem/video/pdf) ou Link Externo
           const mime = file.mime_type || '';
+          
+          // IMAGEM / VÍDEO / PDF -> PreviewApp
           if (mime.includes('image') || mime.includes('video') || mime.includes('pdf')) {
               openWindow('preview', file.name, { url: file.web_view_link, type: mime, id: file.google_id });
-          } else if (file.web_view_link) {
+          } 
+          // DOCX / GOOGLE DOCS -> EditorApp (Carrega conteúdo)
+          else if (mime.includes('word') || mime.includes('document')) {
+               openWindow('editor', file.name, { fileId: file.google_id, mimeType: mime });
+          }
+          // OUTROS -> Link Externo (Download)
+          else if (file.web_view_link) {
               window.open(file.web_view_link, '_blank');
           }
       }
@@ -126,7 +135,7 @@ export function DriveApp() {
                 <Button variant="ghost" size="icon" onClick={navigateUp} disabled={folderHistory.length <= 1} className="h-8 w-8 text-zinc-400 hover:text-white">
                     <ArrowLeft className="w-4 h-4" />
                 </Button>
-                <Button variant="ghost" size="icon" onClick={handleSync} className="h-8 w-8 text-zinc-400 hover:text-white" title="Sincronizar com Google Drive">
+                <Button variant="ghost" size="icon" onClick={() => fetchFiles(currentFolderId)} className="h-8 w-8 text-zinc-400 hover:text-white" title="Atualizar Pasta">
                     <RefreshCw className={cn("w-4 h-4", isLoading && "animate-spin")} />
                 </Button>
             </div>
@@ -167,26 +176,32 @@ export function DriveApp() {
                     </Button>
                 </div>
             ) : (
-                <div className="relative">
-                    <Button size="sm" onClick={(e) => { e.stopPropagation(); setShowNewMenu(!showNewMenu); }} className="h-8 bg-blue-600 hover:bg-blue-500 text-white gap-1">
-                        <Plus className="w-4 h-4" /> Novo
+                <div className="flex gap-2">
+                     <Button size="sm" variant="secondary" onClick={handleSync} className="h-8 text-xs bg-zinc-700 hover:bg-zinc-600 text-white gap-1 border border-zinc-600" title="Buscar todos arquivos do Google Drive">
+                        <DownloadCloud className="w-3.5 h-3.5" /> <span className="hidden lg:inline">Buscar Existentes</span>
                     </Button>
-                    
-                    {showNewMenu && (
-                        <div className="absolute right-0 top-10 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl w-48 py-1 z-50 animate-in zoom-in-95">
-                            <button onClick={() => { setIsCreatingFolder(true); setShowNewMenu(false); }} className="w-full text-left px-3 py-2 text-sm hover:bg-zinc-700 flex items-center gap-2">
-                                <FolderPlus className="w-4 h-4 text-yellow-400" /> Nova Pasta
-                            </button>
-                            <button onClick={() => openWindow('editor', 'Novo Documento')} className="w-full text-left px-3 py-2 text-sm hover:bg-zinc-700 flex items-center gap-2">
-                                <FileText className="w-4 h-4 text-blue-400" /> Documento Texto
-                            </button>
-                            <div className="h-px bg-zinc-700 my-1" />
-                            <label className="w-full text-left px-3 py-2 text-sm hover:bg-zinc-700 flex items-center gap-2 cursor-pointer">
-                                <UploadCloud className="w-4 h-4 text-green-400" /> Upload Arquivo
-                                <input type="file" className="hidden" onChange={handleUpload} />
-                            </label>
-                        </div>
-                    )}
+
+                    <div className="relative">
+                        <Button size="sm" onClick={(e) => { e.stopPropagation(); setShowNewMenu(!showNewMenu); }} className="h-8 bg-blue-600 hover:bg-blue-500 text-white gap-1 shadow-lg shadow-blue-500/20">
+                            <Plus className="w-4 h-4" /> Novo
+                        </Button>
+                        
+                        {showNewMenu && (
+                            <div className="absolute right-0 top-10 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl w-48 py-1 z-50 animate-in zoom-in-95">
+                                <button onClick={() => { setIsCreatingFolder(true); setShowNewMenu(false); }} className="w-full text-left px-3 py-2 text-sm hover:bg-zinc-700 flex items-center gap-2">
+                                    <FolderPlus className="w-4 h-4 text-yellow-400" /> Nova Pasta
+                                </button>
+                                <button onClick={() => openWindow('editor', 'Novo Documento')} className="w-full text-left px-3 py-2 text-sm hover:bg-zinc-700 flex items-center gap-2">
+                                    <FileText className="w-4 h-4 text-blue-400" /> Documento Texto
+                                </button>
+                                <div className="h-px bg-zinc-700 my-1" />
+                                <label className="w-full text-left px-3 py-2 text-sm hover:bg-zinc-700 flex items-center gap-2 cursor-pointer">
+                                    <UploadCloud className="w-4 h-4 text-green-400" /> Upload Arquivo
+                                    <input type="file" className="hidden" onChange={handleUpload} />
+                                </label>
+                            </div>
+                        )}
+                    </div>
                 </div>
             )}
         </div>
@@ -219,7 +234,7 @@ export function DriveApp() {
                 </div>
             ) : files.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full text-zinc-500">
-                    <div className="w-20 h-20 bg-zinc-800 rounded-full flex items-center justify-center mb-4">
+                    <div className="w-20 h-20 bg-zinc-800 rounded-full flex items-center justify-center mb-4 border-2 border-dashed border-zinc-700">
                         <FolderPlus className="w-8 h-8 opacity-20" />
                     </div>
                     <p>Pasta vazia.</p>
@@ -240,14 +255,17 @@ export function DriveApp() {
                                 onClick={(e) => { e.stopPropagation(); toggleSelection(file.id, e.ctrlKey); }}
                                 onDoubleClick={(e) => { e.stopPropagation(); handleFileAction(file); }}
                                 className={cn(
-                                    "flex items-center px-2 py-2 rounded hover:bg-zinc-800 cursor-pointer text-xs group",
+                                    "flex items-center px-2 py-2 rounded hover:bg-zinc-800 cursor-pointer text-xs group transition-colors",
                                     selectedFileIds.has(file.id) ? "bg-blue-500/20 text-blue-100" : "text-zinc-300"
                                 )}
                              >
                                  <div className="w-8">
                                      <input type="checkbox" checked={selectedFileIds.has(file.id)} readOnly className="pointer-events-none" />
                                  </div>
-                                 <div className="flex-1 truncate font-medium">{file.name}</div>
+                                 <div className="flex-1 truncate font-medium flex items-center gap-2">
+                                     {file.is_folder && <FolderPlus className="w-3.5 h-3.5 text-yellow-500" />}
+                                     {file.name}
+                                 </div>
                                  <div className="w-24 text-zinc-500">{file.is_folder ? '-' : formatBytes(file.size || 0)}</div>
                                  <div className="w-24 text-zinc-500 truncate">{file.is_folder ? 'Pasta' : file.mime_type.split('/').pop()}</div>
                              </div>
@@ -257,9 +275,9 @@ export function DriveApp() {
                     <div 
                         className={cn(
                             "grid gap-2 content-start",
-                            viewMode === 'grid-sm' ? "grid-cols-[repeat(auto-fill,minmax(80px,1fr))]" :
-                            viewMode === 'grid-md' ? "grid-cols-[repeat(auto-fill,minmax(110px,1fr))]" :
-                            "grid-cols-[repeat(auto-fill,minmax(140px,1fr))]"
+                            viewMode === 'grid-sm' ? "grid-cols-[repeat(auto-fill,minmax(90px,1fr))]" :
+                            viewMode === 'grid-md' ? "grid-cols-[repeat(auto-fill,minmax(120px,1fr))]" :
+                            "grid-cols-[repeat(auto-fill,minmax(160px,1fr))]"
                         )}
                     >
                         {files.map(file => (

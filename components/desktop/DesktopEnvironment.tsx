@@ -98,27 +98,26 @@ export function DesktopEnvironment() {
   const handleCreateTrashFolder = async () => {
       setIsCreatingTrash(true);
       try {
-          await createFolder('Lixeira Wancora'); // Cria direto no root
+          await createFolder('Lixeira Wancora'); // Backend agora retorna o folder e faz cache imediato
           
-          // Pequeno delay para propagar
-          await new Promise(r => setTimeout(r, 1000));
+          addToast({ type: 'success', title: 'Sucesso', message: 'Lixeira configurada.' });
           
-          // Re-check
-          const { data: trashFolder } = await supabase
+          // Delay de segurança e abre
+          setTimeout(async () => {
+             const { data: trashFolder } = await supabase
               .from('drive_cache')
               .select('google_id')
               .eq('company_id', user?.company_id)
               .eq('name', 'Lixeira Wancora')
               .eq('is_folder', true)
-              .maybeSingle();
+              .single();
+              
+             if (trashFolder) {
+                 setShowTrashModal(false);
+                 openWindow('drive', 'Lixeira', { folderId: trashFolder.google_id });
+             }
+          }, 1500);
 
-          if (trashFolder) {
-              setShowTrashModal(false);
-              openWindow('drive', 'Lixeira', { folderId: trashFolder.google_id });
-              addToast({ type: 'success', title: 'Sucesso', message: 'Pasta Lixeira criada.' });
-          } else {
-              addToast({ type: 'error', title: 'Erro', message: 'Não foi possível verificar a pasta.' });
-          }
       } catch(e) {
           addToast({ type: 'error', title: 'Erro', message: 'Falha ao criar pasta.' });
       } finally {
