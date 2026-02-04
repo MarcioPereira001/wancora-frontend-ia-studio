@@ -3,9 +3,11 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useDesktopStore } from '@/store/useDesktopStore';
+import { useCloudStore } from '@/store/useCloudStore';
 import { WindowFrame } from './WindowFrame';
 import { DriveApp } from './apps/DriveApp';
 import { EditorApp } from './apps/EditorApp';
+import { PreviewApp } from './apps/PreviewApp';
 import { Taskbar } from './Taskbar'; 
 import { Cloud, Key, FileText, Trash2, FolderPlus, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -40,6 +42,7 @@ const DesktopIcon = ({ label, icon: Icon, onOpen, onSelect, color = "text-blue-5
 
 export function DesktopEnvironment() {
   const { windows, openWindow } = useDesktopStore();
+  const { createFolder, fetchFiles } = useCloudStore();
   const { user } = useAuthStore();
   const supabase = createClient();
   const { addToast } = useToast();
@@ -92,12 +95,13 @@ export function DesktopEnvironment() {
       }
   };
 
-  const createTrashFolder = async () => {
+  const handleCreateTrashFolder = async () => {
       setIsCreatingTrash(true);
       try {
-          // Sync forçado para ver se apareceu
-          await api.post('/cloud/google/sync', { companyId: user?.company_id });
-          addToast({ type: 'info', title: 'Sincronizado', message: 'Verificando pastas...' });
+          await createFolder('Lixeira Wancora'); // Cria direto no root
+          
+          // Pequeno delay para propagar
+          await new Promise(r => setTimeout(r, 1000));
           
           // Re-check
           const { data: trashFolder } = await supabase
@@ -111,11 +115,12 @@ export function DesktopEnvironment() {
           if (trashFolder) {
               setShowTrashModal(false);
               openWindow('drive', 'Lixeira', { folderId: trashFolder.google_id });
+              addToast({ type: 'success', title: 'Sucesso', message: 'Pasta Lixeira criada.' });
           } else {
-              addToast({ type: 'warning', title: 'Não encontrada', message: 'Crie uma pasta chamada "Lixeira Wancora" no seu Google Drive.' });
+              addToast({ type: 'error', title: 'Erro', message: 'Não foi possível verificar a pasta.' });
           }
       } catch(e) {
-          addToast({ type: 'error', title: 'Erro', message: 'Falha ao sincronizar.' });
+          addToast({ type: 'error', title: 'Erro', message: 'Falha ao criar pasta.' });
       } finally {
           setIsCreatingTrash(false);
       }
@@ -131,7 +136,7 @@ export function DesktopEnvironment() {
   return (
     <div 
         ref={desktopConstraintsRef}
-        className="relative w-full h-full overflow-hidden bg-cover bg-center select-none"
+        className="absolute inset-0 w-full h-full overflow-hidden bg-cover bg-center select-none"
         style={{ 
             backgroundImage: 'url(https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=2564&auto=format&fit=crop)',
             backgroundSize: 'cover',
@@ -185,11 +190,7 @@ export function DesktopEnvironment() {
                     <WindowFrame window={win} constraintsRef={desktopConstraintsRef}>
                         {win.type === 'drive' && <DriveApp />}
                         {win.type === 'editor' && <EditorApp windowId={win.id} />}
-                        {win.type === 'preview' && (
-                            <div className="flex items-center justify-center h-full bg-black">
-                                <img src={win.data?.url} alt="Preview" className="max-w-full max-h-full object-contain" />
-                            </div>
-                        )}
+                        {win.type === 'preview' && <PreviewApp data={win.data} />}
                     </WindowFrame>
                 </div>
             ))}
@@ -215,23 +216,20 @@ export function DesktopEnvironment() {
         </Modal>
 
         {/* Trash Modal */}
-        <Modal isOpen={showTrashModal} onClose={() => setShowTrashModal(false)} title="Configurar Lixeira" maxWidth="sm">
+        <Modal isOpen={showTrashModal} onClose={() => setShowTrashModal(false)} title="Lixeira do Sistema" maxWidth="sm">
             <div className="flex flex-col items-center text-center p-4 space-y-4">
                 <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mb-2 border border-red-500/30">
                     <FolderPlus className="w-8 h-8 text-red-500" />
                 </div>
                 <div>
-                    <h3 className="text-lg font-bold text-white">Pasta não encontrada</h3>
+                    <h3 className="text-lg font-bold text-white">Lixeira não encontrada</h3>
                     <p className="text-sm text-zinc-400 mt-2">
-                        O Wancora usa uma pasta específica chamada <strong>"Lixeira Wancora"</strong> no seu Google Drive para armazenar arquivos temporários.
-                    </p>
-                    <p className="text-xs text-zinc-500 mt-2 bg-zinc-900 p-2 rounded">
-                        Por favor, crie uma pasta com esse nome exato no seu Drive e clique em Verificar.
+                        O sistema precisa de uma pasta chamada <strong>"Lixeira Wancora"</strong> na raiz do seu Google Drive.
                     </p>
                 </div>
-                <Button onClick={createTrashFolder} disabled={isCreatingTrash} className="w-full">
-                    {isCreatingTrash ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-                    Verificar Pasta
+                <Button onClick={handleCreateTrashFolder} disabled={isCreatingTrash} className="w-full bg-green-600 hover:bg-green-500 text-white">
+                    {isCreatingTrash ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <FolderPlus className="w-4 h-4 mr-2" />}
+                    Criar Pasta Agora
                 </Button>
             </div>
         </Modal>

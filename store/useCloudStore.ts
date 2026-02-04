@@ -1,9 +1,11 @@
 
 import { create } from 'zustand';
 import { DriveFile } from '@/types';
-import { api } from '@/services/api'; // Este wrapper usa fetch, precisamos bypassar para FormData
+import { api } from '@/services/api'; 
 import { useAuthStore } from './useAuthStore';
 import { BACKEND_URL } from '../config';
+
+export type ViewMode = 'list' | 'grid-sm' | 'grid-md' | 'grid-lg';
 
 interface CloudState {
   currentFolderId: string | null;
@@ -12,14 +14,25 @@ interface CloudState {
   isLoading: boolean;
   selectedFileIds: Set<string>;
   clipboard: { op: 'copy' | 'cut', files: DriveFile[] } | null;
+  
+  viewMode: ViewMode;
+  storageQuota: { usage: number, limit: number } | null;
 
   // Actions
   navigateTo: (folderId: string | null, folderName: string) => void;
   navigateUp: () => void;
   fetchFiles: (folderId?: string | null) => Promise<void>;
   toggleSelection: (id: string, multi: boolean) => void;
+  selectAll: () => void;
   clearSelection: () => void;
   uploadFile: (file: File) => Promise<void>;
+  
+  // New Actions
+  fetchQuota: () => Promise<void>;
+  createFolder: (name: string) => Promise<void>;
+  deleteSelected: () => Promise<void>;
+  setViewMode: (mode: ViewMode) => void;
+  syncNow: () => Promise<void>;
 }
 
 export const useCloudStore = create<CloudState>((set, get) => ({
@@ -29,6 +42,8 @@ export const useCloudStore = create<CloudState>((set, get) => ({
   isLoading: false,
   selectedFileIds: new Set(),
   clipboard: null,
+  viewMode: 'grid-md',
+  storageQuota: null,
 
   navigateTo: (folderId, folderName) => {
       const history = get().folderHistory;
@@ -82,9 +97,15 @@ export const useCloudStore = create<CloudState>((set, get) => ({
           if (multi) current.delete(id);
           else current.clear();
       } else {
+          if (!multi) current.clear();
           current.add(id);
       }
       set({ selectedFileIds: current });
+  },
+
+  selectAll: () => {
+      const allIds = new Set(get().files.map(f => f.id));
+      set({ selectedFileIds: allIds });
   },
 
   clearSelection: () => set({ selectedFileIds: new Set() }),
@@ -98,12 +119,9 @@ export const useCloudStore = create<CloudState>((set, get) => ({
       formData.append('companyId', companyId);
       formData.append('name', file.name);
       formData.append('mimeType', file.type);
-      // FormData transforma null em "null" string, tratamos isso no backend
       formData.append('folderId', get().currentFolderId || 'null');
 
-      // Fazendo fetch direto para suportar FormData (o api wrapper do projeto força Content-Type: json)
       const token = (await import('@/utils/supabase/client')).createClient().auth.getSession().then(({data}) => data.session?.access_token);
-      
       const headers: Record<string, string> = {};
       if(token) headers['Authorization'] = `Bearer ${await token}`;
 
@@ -111,7 +129,7 @@ export const useCloudStore = create<CloudState>((set, get) => ({
       
       const response = await fetch(`${baseUrl}/cloud/google/upload`, {
           method: 'POST',
-          headers, // Não seta Content-Type, o browser faz isso para multipart com boundary
+          headers,
           body: formData
       });
 
@@ -120,7 +138,59 @@ export const useCloudStore = create<CloudState>((set, get) => ({
           throw new Error(`Erro no upload: ${err}`);
       }
 
-      // Refresh após upload
       get().fetchFiles();
-  }
+      get().fetchQuota();
+  },
+
+  fetchQuota: async () => {
+      const companyId = useAuthStore.getState().user?.company_id;
+      if (!companyId) return;
+      try {
+          const res = await api.post('/cloud/google/quota', { companyId });
+          if(res.quota) {
+              set({ storageQuota: { usage: parseInt(res.quota.usage || '0'), limit: parseInt(res.quota.limit || '0') } });
+          }
+      } catch (e) {}
+  },
+
+  createFolder: async (name) => {
+      const companyId = useAuthStore.getState().user?.company_id;
+      if (!companyId) return;
+      
+      await api.post('/cloud/google/create-folder', {
+          companyId,
+          name,
+          parentId: get().currentFolderId
+      });
+      get().fetchFiles();
+  },
+
+  deleteSelected: async () => {
+      const companyId = useAuthStore.getState().user?.company_id;
+      const ids = Array.from(get().selectedFileIds);
+      if (!companyId || ids.length === 0) return;
+
+      // Pega os google_ids reais dos arquivos selecionados
+      const filesToDelete = get().files.filter(f => ids.includes(f.id));
+      const googleIds = filesToDelete.map(f => f.google_id);
+
+      await api.post('/cloud/google/delete', {
+          companyId,
+          fileIds: googleIds
+      });
+      
+      set({ selectedFileIds: new Set() });
+      get().fetchFiles();
+      get().fetchQuota();
+  },
+
+  syncNow: async () => {
+      const companyId = useAuthStore.getState().user?.company_id;
+      if (!companyId) return;
+      await api.post('/cloud/google/sync', { companyId });
+      get().fetchFiles();
+      get().fetchQuota();
+  },
+
+  setViewMode: (mode) => set({ viewMode: mode })
 }));

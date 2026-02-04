@@ -17,9 +17,8 @@ export interface WindowFrameProps {
 
 export const WindowFrame: React.FC<WindowFrameProps> = ({ window: win, children, constraintsRef }) => {
   const { closeWindow, focusWindow, toggleMinimize, toggleMaximize, updateWindowPosition } = useDesktopStore();
-  const dragControls = useDragControls(); // Hook para controlar o arraste programaticamente
+  const dragControls = useDragControls();
   
-  // Estado local para confirmação de fechamento
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
 
   const handleCloseRequest = (e: React.MouseEvent) => {
@@ -36,7 +35,6 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({ window: win, children,
       setShowCloseConfirm(false);
   };
 
-  // Handler para iniciar o arraste apenas ao clicar no Header
   const startDrag = (event: React.PointerEvent) => {
       if (!win.isMaximized) {
           dragControls.start(event);
@@ -48,51 +46,48 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({ window: win, children,
   return (
     <>
     <motion.div
-      drag={!win.isMaximized} // Só permite drag se não estiver maximizada
-      dragControls={dragControls} // Controle manual pelo Header
-      dragListener={false} // Desativa o listener automático no corpo da janela
-      dragMomentum={false} // Sem inércia para parar exatamente onde soltar
-      dragElastic={0} // Sem efeito elástico nas bordas (Hard Stop)
-      dragConstraints={constraintsRef} // Limita ao container pai (DesktopEnvironment)
+      drag={!win.isMaximized}
+      dragControls={dragControls}
+      dragListener={false} 
+      dragMomentum={false} 
+      dragElastic={0}
+      dragConstraints={constraintsRef}
       
+      // CRÍTICO: Sincroniza a posição visual final com o estado do React
+      // O Framer mantém o offset transform. Precisamos usar o layout absolute top/left
       onDragEnd={(_, info) => {
-          // Só atualiza o estado global quando o usuário soltar a janela
-          // Isso evita o loop de renderização que causava o travamento
           const newX = win.position.x + info.offset.x;
           const newY = win.position.y + info.offset.y;
           updateWindowPosition(win.id, newX, newY);
       }}
 
-      initial={{ scale: 0.9, opacity: 0 }}
-      animate={{ 
-        scale: 1, 
-        opacity: 1,
-        // Mantém a posição visual sincronizada
-        x: 0, 
-        y: 0 
-      }}
-      
+      // CRÍTICO: Sempre reseta o transform x/y para 0, pois controlamos via Top/Left
+      // Isso impede que o Framer some o offset anterior com a nova posição absoluta
       style={{ 
         zIndex: win.zIndex,
         position: 'absolute',
-        // Usa as coordenadas do estado global como base
         top: win.isMaximized ? 0 : win.position.y,
         left: win.isMaximized ? 0 : win.position.x,
-        width: win.isMaximized ? '100%' : win.size.width,
-        height: win.isMaximized ? '100%' : win.size.height,
+        width: win.isMaximized ? '100vw' : win.size.width,
+        height: win.isMaximized ? 'calc(100vh - 48px)' : win.size.height, // Desconta Taskbar
+        x: 0,
+        y: 0
       }}
       
       className={cn(
-        "flex flex-col bg-[#0f0f11] border border-zinc-800 shadow-2xl overflow-hidden backdrop-blur-xl transition-shadow",
-        win.isMaximized ? "rounded-none fixed inset-0" : "rounded-lg",
-        useDesktopStore.getState().activeWindowId === win.id ? "shadow-[0_0_30px_rgba(0,0,0,0.5)] border-zinc-700" : "opacity-90"
+        "flex flex-col bg-[#1e1e20] border border-zinc-800 shadow-2xl overflow-hidden transition-shadow",
+        win.isMaximized ? "rounded-none fixed top-0 left-0 right-0 border-0" : "rounded-lg",
+        useDesktopStore.getState().activeWindowId === win.id ? "shadow-[0_0_40px_rgba(0,0,0,0.6)] border-zinc-600" : "opacity-95"
       )}
       onMouseDown={() => focusWindow(win.id)}
     >
-      {/* Title Bar (Drag Handle) */}
+      {/* Title Bar */}
       <div 
-        className="h-10 bg-zinc-900/90 border-b border-zinc-800 flex items-center justify-between px-3 select-none shrink-0 cursor-default active:cursor-grabbing"
-        onPointerDown={startDrag} // Inicia o arraste
+        className={cn(
+            "h-9 flex items-center justify-between px-3 select-none shrink-0 cursor-default",
+            win.isMaximized ? "bg-zinc-900" : "bg-zinc-800/80"
+        )}
+        onPointerDown={startDrag} 
         onDoubleClick={() => toggleMaximize(win.id)}
       >
         <div className="flex items-center gap-2" onPointerDown={(e) => e.stopPropagation()}>
@@ -107,20 +102,19 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({ window: win, children,
             </div>
         </div>
         
-        <div className="text-xs font-bold text-zinc-400 flex items-center gap-2 pointer-events-none">
+        <div className="text-xs font-medium text-zinc-400 flex items-center gap-2 pointer-events-none truncate px-4">
             {win.title} {win.isDirty && <span className="text-yellow-500">*</span>}
         </div>
         
-        <div className="w-14" /> {/* Spacer */}
+        <div className="w-14" /> 
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-hidden relative bg-zinc-950">
+      <div className="flex-1 overflow-hidden relative bg-[#121212]">
         {children}
       </div>
     </motion.div>
 
-    {/* Modal de Confirmação de Fechamento */}
     <Modal isOpen={showCloseConfirm} onClose={() => setShowCloseConfirm(false)} title="Alterações não salvas" maxWidth="sm">
         <div className="space-y-4">
             <p className="text-zinc-400 text-sm">
