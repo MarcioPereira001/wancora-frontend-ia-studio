@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -31,7 +30,7 @@ export function EditorApp({ windowId }: { windowId: string }) {
   const [filename, setFilename] = useState(initialState.filename || (data.title || 'Novo Documento'));
   const [isSaving, setIsSaving] = useState(false);
   const [isLoadingFile, setIsLoadingFile] = useState(false);
-  const debounceRef = useRef<NodeJS.Timeout | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Carrega arquivo existente (Se data.fileId estiver presente)
   useEffect(() => {
