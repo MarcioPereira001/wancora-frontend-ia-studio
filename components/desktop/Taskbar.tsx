@@ -1,30 +1,52 @@
 
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useDesktopStore } from '@/store/useDesktopStore';
 import { cn } from '@/lib/utils';
-import { Zap, Cloud, FileText, Monitor, ChevronUp } from 'lucide-react';
+import { Zap, Cloud, FileText, Monitor, X, Minus, Save, Maximize2 } from 'lucide-react';
 import { useAuthStore } from '@/store/useAuthStore';
 
 export function Taskbar() {
-  const { windows, activeWindowId, focusWindow, toggleMinimize, openWindow } = useDesktopStore();
+  const { windows, activeWindowId, focusWindow, toggleMinimize, closeWindow, openWindow } = useDesktopStore();
   const { user } = useAuthStore();
   const [time, setTime] = useState(new Date());
   const [startMenuOpen, setStartMenuOpen] = useState(false);
+  
+  // Context Menu State
+  const [contextMenu, setContextMenu] = useState<{id: string, x: number, y: number} | null>(null);
+  const contextMenuRef = useRef<HTMLDivElement>(null);
 
-  // Relógio
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
 
+  // Fecha menu de contexto ao clicar fora
+  useEffect(() => {
+      const handleClick = (e: MouseEvent) => {
+          if (contextMenuRef.current && !contextMenuRef.current.contains(e.target as Node)) {
+              setContextMenu(null);
+          }
+      };
+      document.addEventListener('click', handleClick);
+      return () => document.removeEventListener('click', handleClick);
+  }, []);
+
   const handleWindowClick = (id: string, isMinimized: boolean, isActive: boolean) => {
-      if (isActive && !isMinimized) {
-          toggleMinimize(id); // Se já está focado, minimiza
+      if (isMinimized) {
+          toggleMinimize(id); // Restaura
+          focusWindow(id);    // Traz pra frente
+      } else if (isActive) {
+          toggleMinimize(id); // Minimiza se já ativo
       } else {
-          focusWindow(id); // Se está minimizado ou em 2º plano, foca
+          focusWindow(id); // Foca se está atrás
       }
+  };
+
+  const handleContextMenu = (e: React.MouseEvent, id: string) => {
+      e.preventDefault();
+      setContextMenu({ id, x: e.clientX, y: e.clientY - 120 }); // Posiciona acima da barra
   };
 
   const getIcon = (type: string) => {
@@ -38,7 +60,7 @@ export function Taskbar() {
 
   return (
     <>
-        {/* Start Menu (Simples) */}
+        {/* Start Menu */}
         {startMenuOpen && (
             <div className="absolute bottom-12 left-2 w-64 bg-[#0f0f11]/90 backdrop-blur-xl border border-zinc-800 rounded-lg shadow-2xl p-2 z-[9999] animate-in slide-in-from-bottom-2">
                 <div className="p-3 border-b border-zinc-800 mb-2 flex items-center gap-3">
@@ -61,8 +83,28 @@ export function Taskbar() {
             </div>
         )}
 
+        {/* Taskbar Context Menu */}
+        {contextMenu && (
+            <div 
+                ref={contextMenuRef}
+                className="fixed z-[10000] bg-[#1e1e20] border border-zinc-700 rounded-lg shadow-xl w-40 py-1 animate-in fade-in zoom-in-95"
+                style={{ top: contextMenu.y, left: contextMenu.x }}
+            >
+                <button onClick={() => { toggleMinimize(contextMenu.id); setContextMenu(null); }} className="w-full text-left px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-700 flex items-center gap-2">
+                    <Minus className="w-3 h-3" /> Minimizar/Restaurar
+                </button>
+                <button onClick={() => { focusWindow(contextMenu.id); setContextMenu(null); }} className="w-full text-left px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-700 flex items-center gap-2">
+                    <Maximize2 className="w-3 h-3" /> Focar
+                </button>
+                <div className="h-px bg-zinc-700 my-1" />
+                <button onClick={() => { closeWindow(contextMenu.id); setContextMenu(null); }} className="w-full text-left px-3 py-2 text-xs text-red-400 hover:bg-red-900/20 flex items-center gap-2">
+                    <X className="w-3 h-3" /> Fechar
+                </button>
+            </div>
+        )}
+
         {/* Taskbar Bar */}
-        <div className="h-12 bg-[#09090b]/80 backdrop-blur-md border-t border-white/5 flex items-center px-2 justify-between z-[9990] absolute bottom-0 w-full select-none">
+        <div className="h-12 bg-[#09090b]/90 backdrop-blur-xl border-t border-white/10 flex items-center px-2 justify-between z-[9990] absolute bottom-0 w-full select-none shadow-2xl">
             
             <div className="flex items-center gap-2">
                 {/* Start Button */}
@@ -81,21 +123,23 @@ export function Taskbar() {
                 {/* Open Windows */}
                 <div className="flex items-center gap-1">
                     {windows.map((win) => {
-                        const isActive = activeWindowId === win.id;
+                        const isActive = activeWindowId === win.id && !win.isMinimized;
                         return (
-                            <button
+                            <div
                                 key={win.id}
-                                onClick={() => handleWindowClick(win.id, win.isMinimized, isActive)}
+                                onClick={() => handleWindowClick(win.id, win.isMinimized, activeWindowId === win.id)}
+                                onContextMenu={(e) => handleContextMenu(e, win.id)}
                                 className={cn(
-                                    "flex items-center gap-2 px-3 h-9 rounded border transition-all max-w-[160px]",
-                                    isActive && !win.isMinimized
-                                        ? "bg-zinc-800/80 border-zinc-700 text-white shadow-sm" 
-                                        : "bg-transparent border-transparent text-zinc-400 hover:bg-white/5"
+                                    "flex items-center gap-2 px-3 h-9 rounded border transition-all max-w-[180px] cursor-pointer group relative",
+                                    isActive
+                                        ? "bg-zinc-800/80 border-zinc-600 text-white shadow-sm" 
+                                        : "bg-transparent border-transparent text-zinc-400 hover:bg-white/5 hover:border-white/5"
                                 )}
                             >
                                 {getIcon(win.type)}
-                                <span className="text-xs truncate hidden md:block">{win.title}</span>
-                            </button>
+                                <span className="text-xs truncate hidden md:block select-none">{win.title}</span>
+                                {win.isDirty && <div className="w-1.5 h-1.5 rounded-full bg-yellow-500 absolute top-1 right-1" title="Não salvo" />}
+                            </div>
                         )
                     })}
                 </div>

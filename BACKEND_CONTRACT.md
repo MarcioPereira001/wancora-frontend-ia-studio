@@ -260,6 +260,21 @@ Gerencia configurações e metadados.
       "participants": ["jid1"] // Apenas para ações de membros
     }
     ```
+#### `POST /management/group/metadata`
+Busca os dados técnicos do grupo em tempo real (incluindo lista de participantes atualizada e descrição), direto do socket do WhatsApp.
+* **Body:** `{ "sessionId": "string", "groupId": "123@g.us" }`
+* **Response:**
+  ```json
+  {
+    "success": true,
+    "metadata": {
+      "id": "...",
+      "subject": "Nome do Grupo",
+      "desc": "Descrição...",
+      "participants": [ { "id": "...", "admin": "admin" | null }, ... ]
+    }
+  }
+```
 #### `POST /management/community/create`
 Cria uma Comunidade (Grupo Pai) para aninhamento de subgrupos.
 * **Body:** `{ "sessionId": "string", "companyId": "uuid", "subject": "Nome da Comunidade", "description": "Descrição" }`

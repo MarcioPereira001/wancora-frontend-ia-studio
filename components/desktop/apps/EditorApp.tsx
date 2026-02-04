@@ -1,42 +1,60 @@
 
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Save, Download, FileText, ChevronLeft } from 'lucide-react';
+import { Save, Download, FileText } from 'lucide-react';
 import { useToast } from '@/hooks/useToast';
 import { useCloudStore } from '@/store/useCloudStore';
 import { useAuthStore } from '@/store/useAuthStore';
-// REMOVIDO: import htmlToDocx from 'html-to-docx'; (Causa erro de fs no build)
+import { useDesktopStore } from '@/store/useDesktopStore';
 import { jsPDF } from 'jspdf';
-
-// Carrega react-quill-new dinamicamente
-const ReactQuill = dynamic(() => import('react-quill-new'), { ssr: false });
-// FIXED: Importação CSS via CDN no layout.tsx para evitar erro de build "Module not found"
-// import 'react-quill-new/dist/quill.snow.css';
-
-// Estilos customizados
 import './editor.css';
+
+const ReactQuill = dynamic(() => import('react-quill-new'), { ssr: false });
 
 export function EditorApp({ windowId }: { windowId: string }) {
   const { user } = useAuthStore();
-  const { uploadFile, currentFolderId } = useCloudStore();
+  const { uploadFile } = useCloudStore();
+  const { setWindowState, setWindowDirty, windows } = useDesktopStore();
   const { addToast } = useToast();
+  
+  // Recupera estado inicial se existir (Persistência ao minimizar)
+  const windowInstance = windows.find(w => w.id === windowId);
+  const initialState = windowInstance?.internalState || {};
 
-  const [content, setContent] = useState('');
-  const [filename, setFilename] = useState('Novo Documento');
+  const [content, setContent] = useState(initialState.content || '');
+  const [filename, setFilename] = useState(initialState.filename || 'Novo Documento');
   const [isSaving, setIsSaving] = useState(false);
+  const debounceRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Atualiza store global (Persistência & Dirty State)
+  useEffect(() => {
+      // Evita updates excessivos na store
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      
+      debounceRef.current = setTimeout(() => {
+          const isDirty = content !== (initialState.content || '') || filename !== (initialState.filename || 'Novo Documento');
+          
+          setWindowState(windowId, { content, filename });
+          
+          // Só marca dirty se tiver conteúdo real e for diferente do inicial (ou se já foi salvo uma vez e mudou)
+          // Simplificação: Se tem conteudo, tá dirty até salvar no drive
+          if (content.length > 0) {
+              setWindowDirty(windowId, true);
+          }
+      }, 500);
+
+      return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [content, filename, windowId]);
 
   const handleSaveDocx = async () => {
       if (!content.trim()) return;
       setIsSaving(true);
       try {
-          // IMPORTAÇÃO DINÂMICA: O Pulo do Gato 🐱
-          // Isso garante que o 'fs' só seja exigido sob demanda, permitindo que o Webpack ignore-o no bundle principal
           const htmlToDocx = (await import('html-to-docx')).default;
-
           const blob = await htmlToDocx(content, null, {
               table: { row: { cantSplit: true } },
               footer: true,
@@ -47,6 +65,12 @@ export function EditorApp({ windowId }: { windowId: string }) {
           await uploadFile(file);
           
           addToast({ type: 'success', title: 'Salvo', message: 'Documento salvo no Drive.' });
+          
+          // Reset Dirty State após salvar com sucesso
+          setWindowDirty(windowId, false);
+          // Atualiza o estado "base" para o atual
+          setWindowState(windowId, { content, filename }); 
+
       } catch (e: any) {
           addToast({ type: 'error', title: 'Erro', message: e.message });
       } finally {

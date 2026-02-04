@@ -92,6 +92,11 @@ A entidade de negócio principal.
 * `reactions`: jsonb (Default: '[]')
 * `poll_votes`: jsonb (Default: '[]')
 *   **Constraint de Integridade:** `UNIQUE (company_id, phone)` - Impede fisicamente a criação de dois leads com o mesmo número na mesma empresa, forçando o Backend a tratar a duplicidade antes da inserção.
+*   **Regra de Exclusão (Lead Guard):** O Trigger de banco `auto_create_lead_on_message` agora bloqueia *fisicamente* a criação de leads para:
+    * Grupos (`@g.us`)
+    * Newsletters (`@newsletter`)
+    * Broadcasts de Status (`status@broadcast`)
+    * Mensagens enviadas por mim (`from_me = true`)
 
 ### `lead_activities` (Logs & Timeline) [NOVO]
 Registro de interações e auditoria.
@@ -127,18 +132,19 @@ Histórico de mensagens.
 * `id`: uuid (PK)
 * `company_id`: uuid (FK)
 * `session_id`: text
-* `remote_jid`: text
+* `remote_jid`: text (O Chat ID - Grupo ou Pessoa)
+* `participant`: text (Nullable) <- [NOVO] O ID real de quem enviou a mensagem (Vital para Grupos).
 * `whatsapp_id`: text (Unique Index composto com remote_jid)
 * `from_me`: boolean
 * `content`: text (Para Cards, armazena o JSON com título/descrição/link)
-* `transcription`: text (Nullable) <- [NOVO] Transcrição de áudio via IA
-* `message_type`: text ('text', 'image', 'audio', 'video', 'document', 'poll', 'location', 'sticker', 'contact', 'pix', 'card') <- [ATUALIZADO]
+* `transcription`: text (Nullable)
+* `message_type`: text
 * `media_url`: text
 * `created_at`: timestamptz
 * `delivered_at`: timestamptz
 * `read_at`: timestamptz
-* `reactions`: jsonb (Default: '[]') - Array de reações `{ text: "👍", actor: "jid", ts: 123 }`.
-* `poll_votes`: jsonb (Default: '[]') - Array de votos `{ voterJid: "...", selectedOptions: [...] }`.
+* `reactions`: jsonb
+* `poll_votes`: jsonb
 
 ### `products` (Catálogo) [NOVO]
 Cache dos produtos sincronizados do WhatsApp Business.
