@@ -38,6 +38,7 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({ window: win, children,
   const startDrag = (event: React.PointerEvent) => {
       if (!win.isMaximized) {
           dragControls.start(event);
+          focusWindow(win.id);
       }
   };
 
@@ -50,28 +51,29 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({ window: win, children,
       dragControls={dragControls}
       dragListener={false} 
       dragMomentum={false} 
-      dragElastic={0}
-      dragConstraints={constraintsRef}
+      dragElastic={0} // Impede o efeito elástico que causa pulos
+      dragConstraints={constraintsRef} // Limita ao container pai (papel de parede)
       
-      // CRÍTICO: Sincroniza a posição visual final com o estado do React
-      // O Framer mantém o offset transform. Precisamos usar o layout absolute top/left
+      // CRÍTICO: Atualiza o estado React ao final do arraste
       onDragEnd={(_, info) => {
-          const newX = win.position.x + info.offset.x;
-          const newY = win.position.y + info.offset.y;
-          updateWindowPosition(win.id, newX, newY);
+          if (!win.isMaximized) {
+             const newX = win.position.x + info.offset.x;
+             const newY = win.position.y + info.offset.y;
+             updateWindowPosition(win.id, newX, newY);
+          }
       }}
 
-      // CRÍTICO: Sempre reseta o transform x/y para 0, pois controlamos via Top/Left
-      // Isso impede que o Framer some o offset anterior com a nova posição absoluta
+      // CRÍTICO: Reseta a posição visual para bater com o estado absoluto
       style={{ 
         zIndex: win.zIndex,
         position: 'absolute',
         top: win.isMaximized ? 0 : win.position.y,
         left: win.isMaximized ? 0 : win.position.x,
         width: win.isMaximized ? '100vw' : win.size.width,
-        height: win.isMaximized ? 'calc(100vh - 48px)' : win.size.height, // Desconta Taskbar
+        height: win.isMaximized ? 'calc(100vh - 48px)' : win.size.height,
+        // Força o reset do transform para evitar o "Double Jump"
         x: 0,
-        y: 0
+        y: 0 
       }}
       
       className={cn(

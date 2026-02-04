@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/useToast';
 import { cn } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
+import { ImportDriveModal } from './ImportDriveModal';
 
 export function DriveApp() {
   const { 
@@ -27,6 +28,8 @@ export function DriveApp() {
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false); // Modal de Importação
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -54,7 +57,6 @@ export function DriveApp() {
           await createFolder(newFolderName);
           setIsCreatingFolder(false);
           setNewFolderName('');
-          // Delay para garantir propagação
           setTimeout(() => fetchFiles(currentFolderId), 500);
       } catch(e) {
           addToast({ type: 'error', title: 'Erro', message: 'Falha ao criar pasta.' });
@@ -74,27 +76,18 @@ export function DriveApp() {
       }
   };
 
-  const handleSync = async () => {
-      addToast({ type: 'info', title: 'Sincronizando', message: 'Buscando todos os arquivos do Drive...' });
-      await syncNow();
-      addToast({ type: 'success', title: 'Pronto', message: 'Arquivos atualizados.' });
-  };
-
   const handleFileAction = (file: any) => {
       if (file.is_folder) {
           navigateTo(file.google_id, file.name);
       } else {
           const mime = file.mime_type || '';
-          
-          // IMAGEM / VÍDEO / PDF -> PreviewApp
           if (mime.includes('image') || mime.includes('video') || mime.includes('pdf')) {
               openWindow('preview', file.name, { url: file.web_view_link, type: mime, id: file.google_id });
           } 
-          // DOCX / GOOGLE DOCS -> EditorApp (Carrega conteúdo para edição)
           else if (mime.includes('word') || mime.includes('document')) {
+               // Abre editor com ID para conversão backend
                openWindow('editor', file.name, { fileId: file.google_id, mimeType: mime });
           }
-          // OUTROS -> Link Externo (Download no Google)
           else if (file.web_view_link) {
               window.open(file.web_view_link, '_blank');
           }
@@ -120,10 +113,7 @@ export function DriveApp() {
                     <span>{formatBytes(storageQuota.usage)} usados de {formatBytes(storageQuota.limit)}</span>
                 </div>
                 <div className="w-24 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
-                    <div 
-                        className="h-full bg-blue-500" 
-                        style={{ width: `${(storageQuota.usage / storageQuota.limit) * 100}%` }} 
-                    />
+                    <div className="h-full bg-blue-500" style={{ width: `${(storageQuota.usage / storageQuota.limit) * 100}%` }} />
                 </div>
             </div>
         )}
@@ -139,17 +129,13 @@ export function DriveApp() {
                 </Button>
             </div>
 
-            {/* Breadcrumb Path */}
             <div className="flex-1 bg-zinc-900 border border-zinc-700 rounded px-3 py-1.5 text-xs flex items-center overflow-hidden">
                 <Cloud className="w-3 h-3 text-green-500 mr-2 shrink-0" />
                 <div className="flex items-center gap-1 overflow-x-auto whitespace-nowrap custom-scrollbar">
                     {folderHistory.map((f, i) => (
                         <React.Fragment key={i}>
                             {i > 0 && <span className="text-zinc-600">/</span>}
-                            <button 
-                                onClick={(e) => { e.stopPropagation(); if(f.id !== currentFolderId) navigateTo(f.id, f.name); }}
-                                className="hover:text-white hover:underline truncate max-w-[100px]"
-                            >
+                            <button onClick={(e) => { e.stopPropagation(); if(f.id !== currentFolderId) navigateTo(f.id, f.name); }} className="hover:text-white hover:underline truncate max-w-[100px]">
                                 {f.name}
                             </button>
                         </React.Fragment>
@@ -157,14 +143,12 @@ export function DriveApp() {
                 </div>
             </div>
             
-            {/* View Toggles */}
             <div className="flex bg-zinc-900 rounded-lg p-0.5 border border-zinc-700">
                  <button onClick={() => setViewMode('list')} className={cn("p-1.5 rounded", viewMode === 'list' ? "bg-zinc-700 text-white" : "text-zinc-500 hover:text-zinc-300")}><List className="w-3.5 h-3.5" /></button>
                  <button onClick={() => setViewMode('grid-md')} className={cn("p-1.5 rounded", viewMode === 'grid-md' ? "bg-zinc-700 text-white" : "text-zinc-500 hover:text-zinc-300")}><LayoutGrid className="w-3.5 h-3.5" /></button>
                  <button onClick={() => setViewMode('grid-lg')} className={cn("p-1.5 rounded", viewMode === 'grid-lg' ? "bg-zinc-700 text-white" : "text-zinc-500 hover:text-zinc-300")}><Grid className="w-3.5 h-3.5" /></button>
             </div>
 
-            {/* Actions */}
             {selectedFileIds.size > 0 ? (
                 <div className="flex gap-2 animate-in fade-in">
                     <Button size="sm" variant="destructive" onClick={handleDelete} disabled={isDeleting} className="h-8 text-xs">
@@ -176,7 +160,7 @@ export function DriveApp() {
                 </div>
             ) : (
                 <div className="flex gap-2">
-                     <Button size="sm" variant="secondary" onClick={handleSync} className="h-8 text-xs bg-zinc-700 hover:bg-zinc-600 text-white gap-1 border border-zinc-600" title="Importar tudo do Google Drive para o Sistema">
+                     <Button size="sm" variant="secondary" onClick={() => setShowImportModal(true)} className="h-8 text-xs bg-zinc-700 hover:bg-zinc-600 text-white gap-1 border border-zinc-600" title="Buscar arquivos no Google Drive">
                         <DownloadCloud className="w-3.5 h-3.5" /> <span className="hidden lg:inline">Buscar Existentes</span>
                     </Button>
 
@@ -205,27 +189,15 @@ export function DriveApp() {
             )}
         </div>
 
-        {/* Create Folder Inline */}
         {isCreatingFolder && (
             <div className="p-2 bg-zinc-800 border-b border-zinc-700 flex gap-2 animate-in slide-in-from-top-2">
-                <Input 
-                    value={newFolderName} 
-                    onChange={e => setNewFolderName(e.target.value)} 
-                    placeholder="Nome da pasta..." 
-                    className="h-8 text-xs bg-zinc-900 border-zinc-600"
-                    autoFocus
-                    onKeyDown={e => e.key === 'Enter' && handleCreateFolder()}
-                />
+                <Input value={newFolderName} onChange={e => setNewFolderName(e.target.value)} placeholder="Nome da pasta..." className="h-8 text-xs bg-zinc-900 border-zinc-600" autoFocus onKeyDown={e => e.key === 'Enter' && handleCreateFolder()}/>
                 <Button size="sm" onClick={handleCreateFolder} className="h-8 bg-green-600 hover:bg-green-500">Criar</Button>
                 <Button size="sm" variant="ghost" onClick={() => setIsCreatingFolder(false)} className="h-8">Cancelar</Button>
             </div>
         )}
 
-        {/* File Grid */}
-        <div 
-            className="flex-1 overflow-y-auto p-4 custom-scrollbar relative"
-            onClick={() => clearSelection()}
-        >
+        <div className="flex-1 overflow-y-auto p-4 custom-scrollbar relative" onClick={() => clearSelection()}>
             {isLoading && files.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full text-zinc-500">
                     <Loader2 className="w-8 h-8 animate-spin mb-2" />
@@ -253,32 +225,17 @@ export function DriveApp() {
                                 key={file.id}
                                 onClick={(e) => { e.stopPropagation(); toggleSelection(file.id, e.ctrlKey); }}
                                 onDoubleClick={(e) => { e.stopPropagation(); handleFileAction(file); }}
-                                className={cn(
-                                    "flex items-center px-2 py-2 rounded hover:bg-zinc-800 cursor-pointer text-xs group transition-colors",
-                                    selectedFileIds.has(file.id) ? "bg-blue-500/20 text-blue-100" : "text-zinc-300"
-                                )}
+                                className={cn("flex items-center px-2 py-2 rounded hover:bg-zinc-800 cursor-pointer text-xs group transition-colors", selectedFileIds.has(file.id) ? "bg-blue-500/20 text-blue-100" : "text-zinc-300")}
                              >
-                                 <div className="w-8">
-                                     <input type="checkbox" checked={selectedFileIds.has(file.id)} readOnly className="pointer-events-none" />
-                                 </div>
-                                 <div className="flex-1 truncate font-medium flex items-center gap-2">
-                                     {file.is_folder && <FolderPlus className="w-3.5 h-3.5 text-yellow-500" />}
-                                     {file.name}
-                                 </div>
+                                 <div className="w-8"><input type="checkbox" checked={selectedFileIds.has(file.id)} readOnly className="pointer-events-none" /></div>
+                                 <div className="flex-1 truncate font-medium flex items-center gap-2">{file.is_folder && <FolderPlus className="w-3.5 h-3.5 text-yellow-500" />}{file.name}</div>
                                  <div className="w-24 text-zinc-500">{file.is_folder ? '-' : formatBytes(file.size || 0)}</div>
                                  <div className="w-24 text-zinc-500 truncate">{file.is_folder ? 'Pasta' : file.mime_type.split('/').pop()}</div>
                              </div>
                          ))}
                      </div>
                 ) : (
-                    <div 
-                        className={cn(
-                            "grid gap-2 content-start",
-                            viewMode === 'grid-sm' ? "grid-cols-[repeat(auto-fill,minmax(90px,1fr))]" :
-                            viewMode === 'grid-md' ? "grid-cols-[repeat(auto-fill,minmax(120px,1fr))]" :
-                            "grid-cols-[repeat(auto-fill,minmax(160px,1fr))]"
-                        )}
-                    >
+                    <div className={cn("grid gap-2 content-start", viewMode === 'grid-sm' ? "grid-cols-[repeat(auto-fill,minmax(90px,1fr))]" : viewMode === 'grid-md' ? "grid-cols-[repeat(auto-fill,minmax(120px,1fr))]" : "grid-cols-[repeat(auto-fill,minmax(160px,1fr))]" )}>
                         {files.map(file => (
                             <FileIcon 
                                 key={file.id} 
@@ -294,12 +251,18 @@ export function DriveApp() {
                 </>
             )}
         </div>
-
-        {/* Footer Info */}
+        
         <div className="h-6 bg-zinc-800 border-t border-zinc-700 flex items-center px-3 text-[10px] text-zinc-400 justify-between shrink-0">
              <span>{files.length} itens {selectedFileIds.size > 0 && `(${selectedFileIds.size} selecionados)`}</span>
              <span>Conectado ao Google Drive</span>
         </div>
+
+        {/* Modal de Importação */}
+        <ImportDriveModal 
+            isOpen={showImportModal} 
+            onClose={() => setShowImportModal(false)} 
+            onImportSuccess={() => fetchFiles(currentFolderId)}
+        />
     </div>
   );
 }

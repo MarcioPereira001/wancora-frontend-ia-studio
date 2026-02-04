@@ -29,7 +29,6 @@ interface DesktopState {
   toggleMaximize: (id: string) => void;
   updateWindowPosition: (id: string, x: number, y: number) => void;
   
-  // New Actions
   setWindowState: (id: string, state: any) => void;
   setWindowDirty: (id: string, isDirty: boolean) => void;
 }
@@ -42,11 +41,21 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
   openWindow: (type, title, data) => {
     const currentWindows = get().windows;
 
-    // Limite de Editores (Performance & UX)
+    // 1. REGRA SINGLETON: Drive e Lixeira
+    // Se já houver uma janela de Drive aberta (exceto se for folder diferente, mas simplificamos para 1 app de arquivos)
+    if (type === 'drive') {
+        const existingDrive = currentWindows.find(w => w.type === 'drive' && w.title === title);
+        if (existingDrive) {
+            get().focusWindow(existingDrive.id);
+            return;
+        }
+    }
+
+    // 2. Limite de Editores (Performance)
     if (type === 'editor') {
         const editors = currentWindows.filter(w => w.type === 'editor');
         if (editors.length >= 3) {
-            alert("Muitos editores abertos. Feche um para abrir outro.");
+            alert("Limite de 3 editores simultâneos atingido.");
             return;
         }
     }
@@ -59,8 +68,8 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
       isMinimized: false,
       isMaximized: false,
       zIndex: get().nextZIndex + 1,
-      // Posição inicial em cascata para não sobrepor totalmente
-      position: { x: 50 + (currentWindows.length * 30), y: 50 + (currentWindows.length * 30) },
+      // Posição inicial centralizada com leve aleatoriedade
+      position: { x: 100 + (currentWindows.length * 20), y: 50 + (currentWindows.length * 20) },
       size: { width: 900, height: 600 },
       data,
       internalState: null,

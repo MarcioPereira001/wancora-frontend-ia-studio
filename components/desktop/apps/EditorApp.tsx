@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -21,7 +22,6 @@ export function EditorApp({ windowId }: { windowId: string }) {
   const { setWindowState, setWindowDirty, windows } = useDesktopStore();
   const { addToast } = useToast();
   
-  // Recupera estado inicial e dados passados na abertura da janela
   const windowInstance = windows.find(w => w.id === windowId);
   const initialState = windowInstance?.internalState || {};
   const data = windowInstance?.data || {};
@@ -32,27 +32,32 @@ export function EditorApp({ windowId }: { windowId: string }) {
   const [isLoadingFile, setIsLoadingFile] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Carrega arquivo existente (Se data.fileId estiver presente)
+  // Carrega arquivo existente via API de Conversão do Backend
   useEffect(() => {
       const loadFile = async () => {
-          if (!data.fileId || initialState.content) return; // Se já tem content carregado, ignora
+          if (!data.fileId || initialState.content) return;
           
           setIsLoadingFile(true);
           try {
-              // Importa mammoth dinamicamente para não pesar o bundle
-              const mammoth = (await import('mammoth')).default;
+              if (user?.company_id) {
+                  // Chama endpoint do backend para converter DOCX -> HTML
+                  const response = await api.post('/cloud/convert/docx', {
+                      companyId: user.company_id,
+                      fileId: data.fileId
+                  });
 
-              // Como o conteúdo binário fica no backend e não temos rota direta GET binária pública com auth do Google
-              // Vamos simular a edição apenas se o usuário tiver criado agora, ou avisar.
-              
-              // Mas, como prometido na análise, vamos tentar usar a rota send-to-whatsapp logic mas adaptada
-              // Na prática, em produção, precisaríamos de uma rota `GET /cloud/download/:fileId`
-              
-              addToast({ type: 'info', title: 'Edição', message: 'Iniciando documento em branco. Importação de DOCX legado requer rota de download binário.' });
-              
-          } catch (e) {
+                  if (response.html) {
+                      setContent(response.html);
+                      setFilename(response.filename || filename);
+                      addToast({ type: 'success', title: 'Carregado', message: 'Documento convertido com sucesso.' });
+                  } else {
+                      throw new Error("Conteúdo vazio.");
+                  }
+              }
+          } catch (e: any) {
               console.error(e);
-              addToast({ type: 'error', title: 'Erro', message: 'Não foi possível carregar o conteúdo original.' });
+              addToast({ type: 'error', title: 'Erro', message: 'Não foi possível converter o documento. Verifique se é um DOCX válido.' });
+              setContent('<p>Erro ao carregar documento.</p>');
           } finally {
               setIsLoadingFile(false);
           }
@@ -61,12 +66,10 @@ export function EditorApp({ windowId }: { windowId: string }) {
       loadFile();
   }, [data.fileId]);
 
-  // Atualiza store global (Persistência & Dirty State)
   useEffect(() => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
       
       debounceRef.current = setTimeout(() => {
-          const isDirty = content !== (initialState.content || '');
           setWindowState(windowId, { content, filename });
           if (content.length > 0) setWindowDirty(windowId, true);
       }, 500);
@@ -78,6 +81,7 @@ export function EditorApp({ windowId }: { windowId: string }) {
       if (!content.trim()) return;
       setIsSaving(true);
       try {
+          // Import dinâmico apenas do html-to-docx que é JS puro e funciona bem no browser
           const htmlToDocx = (await import('html-to-docx')).default;
           const blob = await htmlToDocx(content, null, {
               table: { row: { cantSplit: true } },
@@ -85,7 +89,6 @@ export function EditorApp({ windowId }: { windowId: string }) {
               pageNumber: true,
           });
           
-          // Adiciona .docx se não tiver
           let finalName = filename;
           if (!finalName.endsWith('.docx')) finalName += '.docx';
 
@@ -94,8 +97,6 @@ export function EditorApp({ windowId }: { windowId: string }) {
           
           addToast({ type: 'success', title: 'Salvo', message: 'Documento salvo no Drive.' });
           setWindowDirty(windowId, false);
-          setWindowState(windowId, { content, filename }); 
-
       } catch (e: any) {
           addToast({ type: 'error', title: 'Erro', message: e.message });
       } finally {
@@ -130,7 +131,6 @@ export function EditorApp({ windowId }: { windowId: string }) {
 
   return (
     <div className="flex flex-col h-full bg-white text-black">
-        {/* Toolbar Superior */}
         <div className="h-14 bg-zinc-100 border-b border-zinc-200 flex items-center justify-between px-4 shrink-0">
             <div className="flex items-center gap-2">
                 <FileText className="w-5 h-5 text-blue-600" />
@@ -150,7 +150,6 @@ export function EditorApp({ windowId }: { windowId: string }) {
             </div>
         </div>
 
-        {/* Editor */}
         <div className="flex-1 overflow-hidden flex flex-col relative">
             <ReactQuill 
                 theme="snow" 
