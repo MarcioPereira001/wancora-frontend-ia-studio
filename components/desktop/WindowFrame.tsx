@@ -1,8 +1,8 @@
 
 'use client';
 
-import React, { useRef, useState } from 'react';
-import { motion } from 'framer-motion';
+import React, { useState } from 'react';
+import { motion, useDragControls } from 'framer-motion';
 import { X, Minus, Square, Maximize2 } from 'lucide-react';
 import { useDesktopStore, WindowInstance } from '@/store/useDesktopStore';
 import { cn } from '@/lib/utils';
@@ -12,11 +12,12 @@ import { Button } from '@/components/ui/button';
 export interface WindowFrameProps {
   window: WindowInstance;
   children: React.ReactNode;
+  constraintsRef?: React.RefObject<HTMLDivElement | null>;
 }
 
-export const WindowFrame: React.FC<WindowFrameProps> = ({ window: win, children }) => {
+export const WindowFrame: React.FC<WindowFrameProps> = ({ window: win, children, constraintsRef }) => {
   const { closeWindow, focusWindow, toggleMinimize, toggleMaximize, updateWindowPosition } = useDesktopStore();
-  const constraintsRef = useRef<HTMLDivElement>(null);
+  const dragControls = useDragControls(); // Hook para controlar o arraste programaticamente
   
   // Estado local para confirmação de fechamento
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
@@ -35,46 +36,52 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({ window: win, children 
       setShowCloseConfirm(false);
   };
 
-  if (win.isMinimized) return null;
+  // Handler para iniciar o arraste apenas ao clicar no Header
+  const startDrag = (event: React.PointerEvent) => {
+      if (!win.isMaximized) {
+          dragControls.start(event);
+      }
+  };
 
-  // Safe window dimensions for SSR
-  const screenWidth = typeof window !== 'undefined' ? window.innerWidth : 1000;
-  const screenHeight = typeof window !== 'undefined' ? window.innerHeight : 800;
+  if (win.isMinimized) return null;
 
   return (
     <>
     <motion.div
-      drag={!win.isMaximized}
-      dragMomentum={false}
-      dragElastic={0} // Sem efeito elástico para não sair da tela
-      dragControls={undefined} // Controle automático pelo dragHandle
-      dragListener={false} // Desativa arraste no corpo inteiro
-      dragConstraints={{ left: 0, top: 0, right: screenWidth - 100, bottom: screenHeight - 100 }} // Limites básicos
+      drag={!win.isMaximized} // Só permite drag se não estiver maximizada
+      dragControls={dragControls} // Controle manual pelo Header
+      dragListener={false} // Desativa o listener automático no corpo da janela
+      dragMomentum={false} // Sem inércia para parar exatamente onde soltar
+      dragElastic={0} // Sem efeito elástico nas bordas (Hard Stop)
+      dragConstraints={constraintsRef} // Limita ao container pai (DesktopEnvironment)
+      
       onDragEnd={(_, info) => {
-          // Atualiza posição final na store
+          // Só atualiza o estado global quando o usuário soltar a janela
+          // Isso evita o loop de renderização que causava o travamento
           const newX = win.position.x + info.offset.x;
           const newY = win.position.y + info.offset.y;
-          // Não atualizamos store em tempo real durante drag para performance, apenas no final
-          // Mas como o framer controla o visual, só precisamos garantir que a próxima renderização saiba onde está
-          // O ideal seria usar updateWindowPosition, mas o framer mantém o offset.
-          // Para simplificar: deixamos o framer controlar o visual do drag.
+          updateWindowPosition(win.id, newX, newY);
       }}
+
       initial={{ scale: 0.9, opacity: 0 }}
       animate={{ 
         scale: 1, 
         opacity: 1,
-        // Se maximizado, trava em 0,0. Se não, usa posição.
-        // Nota: Framer Motion usa transform, então x/y são offsets se não forem definidos como absolutos.
-        // Aqui estamos usando style absolute no pai, então controlamos left/top
+        // Mantém a posição visual sincronizada
+        x: 0, 
+        y: 0 
       }}
+      
       style={{ 
         zIndex: win.zIndex,
         position: 'absolute',
+        // Usa as coordenadas do estado global como base
         top: win.isMaximized ? 0 : win.position.y,
         left: win.isMaximized ? 0 : win.position.x,
         width: win.isMaximized ? '100%' : win.size.width,
         height: win.isMaximized ? '100%' : win.size.height,
       }}
+      
       className={cn(
         "flex flex-col bg-[#0f0f11] border border-zinc-800 shadow-2xl overflow-hidden backdrop-blur-xl transition-shadow",
         win.isMaximized ? "rounded-none fixed inset-0" : "rounded-lg",
@@ -83,16 +90,12 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({ window: win, children 
       onMouseDown={() => focusWindow(win.id)}
     >
       {/* Title Bar (Drag Handle) */}
-      <motion.div 
-        className="h-10 bg-zinc-900/90 border-b border-zinc-800 flex items-center justify-between px-3 cursor-default select-none shrink-0"
-        onPan={(e, info) => {
-            if(!win.isMaximized) {
-               updateWindowPosition(win.id, win.position.x + info.delta.x, win.position.y + info.delta.y);
-            }
-        }}
+      <div 
+        className="h-10 bg-zinc-900/90 border-b border-zinc-800 flex items-center justify-between px-3 select-none shrink-0 cursor-default active:cursor-grabbing"
+        onPointerDown={startDrag} // Inicia o arraste
         onDoubleClick={() => toggleMaximize(win.id)}
       >
-        <div className="flex items-center gap-2" onMouseDown={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-2" onPointerDown={(e) => e.stopPropagation()}>
             <div className="w-3 h-3 rounded-full bg-red-500 hover:bg-red-600 cursor-pointer flex items-center justify-center group" onClick={handleCloseRequest}>
                 <X className="w-2 h-2 text-black opacity-0 group-hover:opacity-100" />
             </div>
@@ -109,7 +112,7 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({ window: win, children 
         </div>
         
         <div className="w-14" /> {/* Spacer */}
-      </motion.div>
+      </div>
 
       {/* Content */}
       <div className="flex-1 overflow-hidden relative bg-zinc-950">

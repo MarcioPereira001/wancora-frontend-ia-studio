@@ -1,7 +1,7 @@
 
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useDesktopStore } from '@/store/useDesktopStore';
 import { WindowFrame } from './WindowFrame';
 import { DriveApp } from './apps/DriveApp';
@@ -43,6 +43,9 @@ export function DesktopEnvironment() {
   const { user } = useAuthStore();
   const supabase = createClient();
   const { addToast } = useToast();
+  
+  // Ref para limitar o arraste das janelas
+  const desktopConstraintsRef = useRef<HTMLDivElement>(null);
   
   const [hasIntegration, setHasIntegration] = useState<boolean | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
@@ -90,13 +93,6 @@ export function DesktopEnvironment() {
   };
 
   const createTrashFolder = async () => {
-      // Mock de criação (na verdade precisamos de um endpoint para mkdir se não existir, mas aqui usamos o fluxo de upload com metadados)
-      // Como não temos endpoint mkdir, usamos o modal para explicar
-      // Para MVP: Vamos redirecionar para o Drive ou assumir que o usuário deve criar
-      // Melhoria: Implementar endpoint backend/mkdir. Por enquanto, usamos api.post('/cloud/google/upload') com dummy file para criar pasta? Não.
-      // Solução: Vamos apenas simular um sync e pedir pro usuário criar.
-      // OU melhor: Usamos o endpoint de sync para tentar achar de novo.
-      
       setIsCreatingTrash(true);
       try {
           // Sync forçado para ver se apareceu
@@ -134,6 +130,7 @@ export function DesktopEnvironment() {
 
   return (
     <div 
+        ref={desktopConstraintsRef}
         className="relative w-full h-full overflow-hidden bg-cover bg-center select-none"
         style={{ 
             backgroundImage: 'url(https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=2564&auto=format&fit=crop)',
@@ -185,7 +182,7 @@ export function DesktopEnvironment() {
         <div className="absolute inset-0 pb-12 pointer-events-none overflow-hidden"> 
             {windows.map((win) => (
                 <div key={win.id} className="pointer-events-auto">
-                    <WindowFrame window={win}>
+                    <WindowFrame window={win} constraintsRef={desktopConstraintsRef}>
                         {win.type === 'drive' && <DriveApp />}
                         {win.type === 'editor' && <EditorApp windowId={win.id} />}
                         {win.type === 'preview' && (
