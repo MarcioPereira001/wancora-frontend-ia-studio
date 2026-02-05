@@ -2,12 +2,12 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { useCloudStore, ViewMode } from '@/store/useCloudStore';
+import { useCloudStore } from '@/store/useCloudStore';
 import { useDesktopStore } from '@/store/useDesktopStore';
 import { FileIcon } from '../FileIcon';
 import { 
     Loader2, ArrowLeft, Cloud, UploadCloud, RefreshCw, Plus, FileText, FolderPlus, 
-    Trash2, LayoutGrid, List, Grid, HardDrive, CheckSquare, X, DownloadCloud, AlertTriangle 
+    Trash2, LayoutGrid, List, Grid, HardDrive, CheckSquare, X, DownloadCloud 
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/useToast';
@@ -19,7 +19,7 @@ export function DriveApp() {
   const { 
       currentFolderId, folderHistory, files, isLoading, selectedFileIds, storageQuota, viewMode, isTrashView,
       fetchFiles, fetchQuota, navigateTo, navigateUp, toggleSelection, clearSelection, 
-      uploadFile, createFolder, deleteSelected, setViewMode, syncNow, selectAll, emptyTrash
+      uploadFile, createFolder, deleteSelected, setViewMode, selectAll, emptyTrash
   } = useCloudStore();
   const { openWindow } = useDesktopStore();
   const { addToast } = useToast();
@@ -90,7 +90,7 @@ export function DriveApp() {
   };
 
   const handleFileAction = (file: any) => {
-      if (isTrashView) return; // Não abre arquivos na lixeira
+      if (isTrashView) return; // Bloqueia navegação na lixeira
 
       if (file.is_folder) {
           navigateTo(file.google_id, file.name);
@@ -119,7 +119,7 @@ export function DriveApp() {
   return (
     <div className="flex flex-col h-full bg-[#1e1e20] text-zinc-200" onClick={() => { setShowNewMenu(false); }}>
         
-        {/* Info Bar (Storage) */}
+        {/* Info Bar (Escondida na Lixeira) */}
         {storageQuota && !isTrashView && (
             <div className="h-8 bg-zinc-900 border-b border-zinc-800 flex items-center justify-between px-3 text-[10px] text-zinc-400 shrink-0">
                 <div className="flex items-center gap-2">
@@ -135,24 +135,28 @@ export function DriveApp() {
         {/* Banner Lixeira */}
         {isTrashView && (
             <div className="h-8 bg-red-900/20 border-b border-red-900/50 flex items-center justify-center px-3 text-[10px] text-red-200 font-bold uppercase tracking-wider shrink-0">
-                <Trash2 className="w-3 h-3 mr-2" /> Modo Lixeira - Arquivos aqui serão apagados em 30 dias
+                <Trash2 className="w-3 h-3 mr-2" /> Lixeira do Google Drive
             </div>
         )}
 
         {/* Toolbar */}
         <div className="h-12 border-b border-zinc-700 bg-zinc-800/50 flex items-center px-3 gap-3 shrink-0">
-            <div className="flex items-center gap-1">
-                <Button variant="ghost" size="icon" onClick={navigateUp} disabled={folderHistory.length <= 1 || isTrashView} className="h-8 w-8 text-zinc-400 hover:text-white disabled:opacity-30">
-                    <ArrowLeft className="w-4 h-4" />
-                </Button>
-                <Button variant="ghost" size="icon" onClick={() => fetchFiles(currentFolderId)} className="h-8 w-8 text-zinc-400 hover:text-white" title="Atualizar Pasta">
-                    <RefreshCw className={cn("w-4 h-4", isLoading && "animate-spin")} />
-                </Button>
-            </div>
+            {/* Navegação (Escondida na Lixeira) */}
+            {!isTrashView && (
+                <div className="flex items-center gap-1">
+                    <Button variant="ghost" size="icon" onClick={navigateUp} disabled={folderHistory.length <= 1} className="h-8 w-8 text-zinc-400 hover:text-white disabled:opacity-30">
+                        <ArrowLeft className="w-4 h-4" />
+                    </Button>
+                    <Button variant="ghost" size="icon" onClick={() => fetchFiles(currentFolderId)} className="h-8 w-8 text-zinc-400 hover:text-white" title="Atualizar Pasta">
+                        <RefreshCw className={cn("w-4 h-4", isLoading && "animate-spin")} />
+                    </Button>
+                </div>
+            )}
 
+            {/* Breadcrumb / Título */}
             <div className="flex-1 bg-zinc-900 border border-zinc-700 rounded px-3 py-1.5 text-xs flex items-center overflow-hidden">
                 {isTrashView ? (
-                    <span className="text-red-400 font-bold flex items-center gap-2"><Trash2 className="w-3 h-3" /> Lixeira</span>
+                    <span className="text-red-400 font-bold flex items-center gap-2"><Trash2 className="w-3 h-3" /> Arquivos Excluídos</span>
                 ) : (
                     <>
                     <Cloud className="w-3 h-3 text-green-500 mr-2 shrink-0" />
@@ -170,31 +174,42 @@ export function DriveApp() {
                 )}
             </div>
             
+            {/* View Toggle */}
             <div className="flex bg-zinc-900 rounded-lg p-0.5 border border-zinc-700">
                  <button onClick={() => setViewMode('list')} className={cn("p-1.5 rounded", viewMode === 'list' ? "bg-zinc-700 text-white" : "text-zinc-500 hover:text-zinc-300")}><List className="w-3.5 h-3.5" /></button>
                  <button onClick={() => setViewMode('grid-md')} className={cn("p-1.5 rounded", viewMode === 'grid-md' ? "bg-zinc-700 text-white" : "text-zinc-500 hover:text-zinc-300")}><LayoutGrid className="w-3.5 h-3.5" /></button>
-                 <button onClick={() => setViewMode('grid-lg')} className={cn("p-1.5 rounded", viewMode === 'grid-lg' ? "bg-zinc-700 text-white" : "text-zinc-500 hover:text-zinc-300")}><Grid className="w-3.5 h-3.5" /></button>
             </div>
 
-            {selectedFileIds.size > 0 ? (
-                <div className="flex gap-2 animate-in fade-in">
-                    {!isTrashView && (
-                        <Button size="sm" variant="destructive" onClick={handleDelete} disabled={isDeleting} className="h-8 text-xs">
-                             <Trash2 className="w-3 h-3 mr-1" /> Excluir ({selectedFileIds.size})
+            {/* Ações Dinâmicas */}
+            {isTrashView ? (
+                // MODO LIXEIRA: Apenas limpar e selecionar
+                <div className="flex gap-2">
+                     <Button size="sm" variant="ghost" onClick={selectAll} className="h-8 text-xs text-zinc-400 border border-zinc-700">
+                         Selecionar Todos
+                     </Button>
+                     {selectedFileIds.size > 0 && (
+                        <Button size="sm" variant="ghost" onClick={clearSelection} className="h-8 text-xs text-zinc-400">
+                             <X className="w-3 h-3" />
                         </Button>
-                    )}
-                    <Button size="sm" variant="ghost" onClick={clearSelection} className="h-8 text-xs text-zinc-400">
-                         <X className="w-3 h-3" />
+                     )}
+                     <Button size="sm" variant="destructive" onClick={handleEmptyTrash} disabled={isEmptyingTrash} className="h-8 text-xs bg-red-600 hover:bg-red-500 text-white gap-1 shadow-lg shadow-red-500/20">
+                        {isEmptyingTrash ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                        Esvaziar
                     </Button>
                 </div>
             ) : (
+                // MODO NORMAL
                 <div className="flex gap-2">
-                    {isTrashView ? (
-                        <Button size="sm" variant="destructive" onClick={handleEmptyTrash} disabled={isEmptyingTrash} className="h-8 text-xs bg-red-600 hover:bg-red-500 text-white gap-1 shadow-lg shadow-red-500/20">
-                            {isEmptyingTrash ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
-                            Limpar Lixeira
-                        </Button>
-                    ) : (
+                     {selectedFileIds.size > 0 ? (
+                        <div className="flex gap-2 animate-in fade-in">
+                            <Button size="sm" variant="destructive" onClick={handleDelete} disabled={isDeleting} className="h-8 text-xs">
+                                 <Trash2 className="w-3 h-3 mr-1" /> Excluir ({selectedFileIds.size})
+                            </Button>
+                            <Button size="sm" variant="ghost" onClick={clearSelection} className="h-8 text-xs text-zinc-400">
+                                 <X className="w-3 h-3" />
+                            </Button>
+                        </div>
+                     ) : (
                         <>
                         <Button size="sm" variant="secondary" onClick={() => setShowImportModal(true)} className="h-8 text-xs bg-zinc-700 hover:bg-zinc-600 text-white gap-1 border border-zinc-600" title="Buscar arquivos no Google Drive">
                             <DownloadCloud className="w-3.5 h-3.5" /> <span className="hidden lg:inline">Adicionar Existentes</span>
@@ -222,7 +237,7 @@ export function DriveApp() {
                             )}
                         </div>
                         </>
-                    )}
+                     )}
                 </div>
             )}
         </div>
@@ -303,7 +318,7 @@ export function DriveApp() {
         
         <div className="h-6 bg-zinc-800 border-t border-zinc-700 flex items-center px-3 text-[10px] text-zinc-400 justify-between shrink-0">
              <span>{files.length} itens {selectedFileIds.size > 0 && `(${selectedFileIds.size} selecionados)`}</span>
-             {isTrashView ? <span className="text-red-400 font-bold">LIXEIRA</span> : <span>Conectado ao Google Drive</span>}
+             {isTrashView ? <span className="text-red-400 font-bold">MODO LIXEIRA</span> : <span>Conectado ao Google Drive</span>}
         </div>
 
         {/* Modal de Importação */}

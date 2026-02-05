@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { useAuthStore } from '@/store/useAuthStore';
 import { api } from '@/services/api';
 import { useToast } from '@/hooks/useToast';
+import { useCloudStore } from '@/store/useCloudStore';
 import { Loader2, Search, FileText, Folder, CheckCircle, DownloadCloud } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -19,6 +20,7 @@ interface ImportDriveModalProps {
 
 export function ImportDriveModal({ isOpen, onClose, onImportSuccess }: ImportDriveModalProps) {
   const { user } = useAuthStore();
+  const { currentFolderId } = useCloudStore(); // Pega a pasta atual
   const { addToast } = useToast();
   
   const [query, setQuery] = useState('');
@@ -58,9 +60,10 @@ export function ImportDriveModal({ isOpen, onClose, onImportSuccess }: ImportDri
       try {
           const res = await api.post('/cloud/google/import', {
               companyId: user.company_id,
-              files: selectedFiles
+              files: selectedFiles,
+              currentFolderId: currentFolderId || 'null' // Passa ID da pasta atual
           });
-          addToast({ type: 'success', title: 'Importado', message: `${res.count} arquivos adicionados ao Meu Drive.` });
+          addToast({ type: 'success', title: 'Importado', message: `${res.count} arquivos adicionados nesta pasta.` });
           onImportSuccess();
           onClose();
           setResults([]);
