@@ -2,12 +2,12 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { useCloudStore } from '@/store/useCloudStore';
+import { useCloudStore, ViewMode } from '@/store/useCloudStore';
 import { useDesktopStore } from '@/store/useDesktopStore';
 import { FileIcon } from '../FileIcon';
 import { 
     Loader2, ArrowLeft, Cloud, UploadCloud, RefreshCw, Plus, FileText, FolderPlus, 
-    Trash2, LayoutGrid, List, Grid, HardDrive, CheckSquare, X, DownloadCloud 
+    Trash2, LayoutGrid, List, Grid, HardDrive, CheckSquare, X, DownloadCloud, AlertTriangle, CornerUpLeft 
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/useToast';
@@ -19,7 +19,7 @@ export function DriveApp() {
   const { 
       currentFolderId, folderHistory, files, isLoading, selectedFileIds, storageQuota, viewMode, isTrashView,
       fetchFiles, fetchQuota, navigateTo, navigateUp, toggleSelection, clearSelection, 
-      uploadFile, createFolder, deleteSelected, setViewMode, selectAll, emptyTrash
+      uploadFile, createFolder, deleteSelected, setViewMode, syncNow, selectAll, emptyTrash
   } = useCloudStore();
   const { openWindow } = useDesktopStore();
   const { addToast } = useToast();
@@ -90,7 +90,7 @@ export function DriveApp() {
   };
 
   const handleFileAction = (file: any) => {
-      if (isTrashView) return; // Bloqueia navegação na lixeira
+      if (isTrashView) return; // Não abre arquivos na lixeira
 
       if (file.is_folder) {
           navigateTo(file.google_id, file.name);
@@ -119,7 +119,7 @@ export function DriveApp() {
   return (
     <div className="flex flex-col h-full bg-[#1e1e20] text-zinc-200" onClick={() => { setShowNewMenu(false); }}>
         
-        {/* Info Bar (Escondida na Lixeira) */}
+        {/* Info Bar (Storage) */}
         {storageQuota && !isTrashView && (
             <div className="h-8 bg-zinc-900 border-b border-zinc-800 flex items-center justify-between px-3 text-[10px] text-zinc-400 shrink-0">
                 <div className="flex items-center gap-2">
@@ -135,7 +135,7 @@ export function DriveApp() {
         {/* Banner Lixeira */}
         {isTrashView && (
             <div className="h-8 bg-red-900/20 border-b border-red-900/50 flex items-center justify-center px-3 text-[10px] text-red-200 font-bold uppercase tracking-wider shrink-0">
-                <Trash2 className="w-3 h-3 mr-2" /> Lixeira do Google Drive
+                <Trash2 className="w-3 h-3 mr-2" /> Pasta "Lixeira Wancora" (Gerenciada)
             </div>
         )}
 
@@ -156,7 +156,7 @@ export function DriveApp() {
             {/* Breadcrumb / Título */}
             <div className="flex-1 bg-zinc-900 border border-zinc-700 rounded px-3 py-1.5 text-xs flex items-center overflow-hidden">
                 {isTrashView ? (
-                    <span className="text-red-400 font-bold flex items-center gap-2"><Trash2 className="w-3 h-3" /> Arquivos Excluídos</span>
+                    <span className="text-red-400 font-bold flex items-center gap-2"><Trash2 className="w-3 h-3" /> Lixeira Wancora</span>
                 ) : (
                     <>
                     <Cloud className="w-3 h-3 text-green-500 mr-2 shrink-0" />
@@ -178,11 +178,12 @@ export function DriveApp() {
             <div className="flex bg-zinc-900 rounded-lg p-0.5 border border-zinc-700">
                  <button onClick={() => setViewMode('list')} className={cn("p-1.5 rounded", viewMode === 'list' ? "bg-zinc-700 text-white" : "text-zinc-500 hover:text-zinc-300")}><List className="w-3.5 h-3.5" /></button>
                  <button onClick={() => setViewMode('grid-md')} className={cn("p-1.5 rounded", viewMode === 'grid-md' ? "bg-zinc-700 text-white" : "text-zinc-500 hover:text-zinc-300")}><LayoutGrid className="w-3.5 h-3.5" /></button>
+                 <button onClick={() => setViewMode('grid-lg')} className={cn("p-1.5 rounded", viewMode === 'grid-lg' ? "bg-zinc-700 text-white" : "text-zinc-500 hover:text-zinc-300")}><Grid className="w-3.5 h-3.5" /></button>
             </div>
 
             {/* Ações Dinâmicas */}
             {isTrashView ? (
-                // MODO LIXEIRA: Apenas limpar e selecionar
+                // MODO LIXEIRA
                 <div className="flex gap-2">
                      <Button size="sm" variant="ghost" onClick={selectAll} className="h-8 text-xs text-zinc-400 border border-zinc-700">
                          Selecionar Todos
@@ -278,7 +279,18 @@ export function DriveApp() {
                 <>
                 {viewMode === 'list' ? (
                      <div className="space-y-1">
-                         <div className="flex items-center text-xs text-zinc-500 px-2 pb-2 uppercase font-bold">
+                         {/* Item de "Voltar" (..) se não estiver na raiz e não for lixeira */}
+                         {currentFolderId && !isTrashView && (
+                             <div 
+                                onClick={(e) => { e.stopPropagation(); navigateUp(); }}
+                                className="flex items-center px-2 py-2 rounded hover:bg-zinc-800 cursor-pointer text-xs text-zinc-400 hover:text-white"
+                             >
+                                 <div className="w-8 flex justify-center"><CornerUpLeft className="w-4 h-4" /></div>
+                                 <div className="font-bold">...</div>
+                             </div>
+                         )}
+
+                         <div className="flex items-center text-xs text-zinc-500 px-2 pb-2 uppercase font-bold border-b border-zinc-800 mb-1">
                             <div className="w-8"><CheckSquare className="w-3 h-3 cursor-pointer hover:text-white" onClick={(e) => { e.stopPropagation(); selectAll(); }} /></div>
                             <div className="flex-1">Nome</div>
                             <div className="w-24">Tamanho</div>
@@ -300,6 +312,17 @@ export function DriveApp() {
                      </div>
                 ) : (
                     <div className={cn("grid gap-2 content-start", viewMode === 'grid-sm' ? "grid-cols-[repeat(auto-fill,minmax(90px,1fr))]" : viewMode === 'grid-md' ? "grid-cols-[repeat(auto-fill,minmax(120px,1fr))]" : "grid-cols-[repeat(auto-fill,minmax(160px,1fr))]" )}>
+                        {/* Item de "Voltar" (..) Grid */}
+                        {currentFolderId && !isTrashView && (
+                             <div 
+                                onClick={(e) => { e.stopPropagation(); navigateUp(); }}
+                                className="flex flex-col items-center justify-center p-2 rounded-lg border border-zinc-800 hover:bg-zinc-800 cursor-pointer h-[120px]"
+                             >
+                                 <CornerUpLeft className="w-10 h-10 text-zinc-500" />
+                                 <span className="text-xs font-bold text-zinc-400 mt-2">Voltar</span>
+                             </div>
+                        )}
+
                         {files.map(file => (
                             <FileIcon 
                                 key={file.id} 
@@ -318,7 +341,7 @@ export function DriveApp() {
         
         <div className="h-6 bg-zinc-800 border-t border-zinc-700 flex items-center px-3 text-[10px] text-zinc-400 justify-between shrink-0">
              <span>{files.length} itens {selectedFileIds.size > 0 && `(${selectedFileIds.size} selecionados)`}</span>
-             {isTrashView ? <span className="text-red-400 font-bold">MODO LIXEIRA</span> : <span>Conectado ao Google Drive</span>}
+             {isTrashView ? <span className="text-red-400 font-bold">LIXEIRA WANCORA</span> : <span>Conectado ao Google Drive</span>}
         </div>
 
         {/* Modal de Importação */}

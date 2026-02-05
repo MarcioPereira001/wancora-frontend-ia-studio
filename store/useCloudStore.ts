@@ -50,12 +50,14 @@ export const useCloudStore = create<CloudState>((set, get) => ({
   isTrashView: false,
 
   setTrashView: (isTrash) => {
+      // Se entrar na lixeira, reseta histórico para travar navegação
       set({ 
           isTrashView: isTrash, 
           currentFolderId: null, 
-          folderHistory: [{ id: null, name: isTrash ? 'Lixeira' : 'Meu Drive' }],
+          folderHistory: [{ id: null, name: isTrash ? 'Lixeira Wancora' : 'Meu Drive' }],
           selectedFileIds: new Set()
       });
+      // Busca arquivos (se for lixeira, o backend trata de buscar a pasta correta)
       get().fetchFiles(null);
   },
 
