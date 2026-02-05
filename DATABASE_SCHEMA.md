@@ -13,6 +13,7 @@ Tabela mestre das organizações.
 * `status`: text
 * `ai_config`: jsonb (Default: '{}') - Armazena configurações de IA por empresa.
  * Estrutura: `{ "provider": "gemini", "apiKey": "...", "model": "gemini-3-flash-preview" }`
+* `storage_retention_days`: integer (Default: 30) - [NOVO] Ciclo de vida da mídia. Arquivos no Supabase mais antigos que isso são movidos para o Google Drive e deletados do bucket.
 
 ### `instances` (Conexões)
 Gerencia o estado físico da conexão com o WhatsApp.

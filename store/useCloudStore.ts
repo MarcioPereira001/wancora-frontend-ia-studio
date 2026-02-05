@@ -17,7 +17,7 @@ interface CloudState {
   
   viewMode: ViewMode;
   storageQuota: { usage: number, limit: number } | null;
-  isTrashView: boolean; // NOVO: Flag para saber se está na lixeira
+  isTrashView: boolean;
 
   // Actions
   navigateTo: (folderId: string | null, folderName: string) => void;
@@ -32,6 +32,7 @@ interface CloudState {
   fetchQuota: () => Promise<void>;
   createFolder: (name: string) => Promise<void>;
   deleteSelected: () => Promise<void>;
+  emptyTrash: () => Promise<void>; // NOVO
   setViewMode: (mode: ViewMode) => void;
   syncNow: () => Promise<void>;
   setTrashView: (isTrash: boolean) => void;
@@ -59,6 +60,9 @@ export const useCloudStore = create<CloudState>((set, get) => ({
   },
 
   navigateTo: (folderId, folderName) => {
+      // Bloqueia navegação na lixeira
+      if (get().isTrashView) return;
+
       const history = get().folderHistory;
       if (folderId === get().currentFolderId) return;
       
@@ -71,6 +75,8 @@ export const useCloudStore = create<CloudState>((set, get) => ({
   },
 
   navigateUp: () => {
+      if (get().isTrashView) return; // Bloqueia navegação na lixeira
+
       const history = get().folderHistory;
       if (history.length <= 1) return;
 
@@ -197,6 +203,13 @@ export const useCloudStore = create<CloudState>((set, get) => ({
       set({ selectedFileIds: new Set() });
       get().fetchFiles();
       get().fetchQuota();
+  },
+
+  emptyTrash: async () => {
+      const companyId = useAuthStore.getState().user?.company_id;
+      if (!companyId) return;
+      await api.post('/cloud/google/empty-trash', { companyId });
+      get().fetchFiles();
   },
 
   syncNow: async () => {

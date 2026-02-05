@@ -23,6 +23,7 @@ O Wancora CRM é um Sistema Operacional de Vendas para WhatsApp. Diferente de fe
 
 ### A. O Frontend (Next.js 15 + React 19)
 Atualizado para a arquitetura mais moderna e segura do React.
+* **Stack:** Next.js 15.5.12 (Security Patch Applied).
 * **AI Security:** As chaves de API configuradas no Frontend são salvas diretamente no banco (`companies.ai_config`) e **nunca** expostas em variáveis de ambiente do navegador. O Backend consome essas chaves de forma segura server-side.
 * **Framework:** Next.js 15.1.3 (App Router).
 * **UI Library:** React 19 + TailwindCSS + Shadcn/UI.
@@ -315,7 +316,9 @@ Um sistema operacional completo dentro do navegador para gestão de arquivos e p
 * **Drive App (Híbrido):** 
     * Explorador de arquivos integrado ao Google Drive.
     * **Busca Ao Vivo:** Modal dedicado para encontrar e importar arquivos que já existem no Google Drive da empresa mas não estão no cache.
-    * **Lixeira Real:** Visualização direta da lixeira do Google Drive (sem cache local) para garantir dados frescos.
+    * **Lixeira Blindada:** A lixeira lê diretamente da API do Google (sem cache), bloqueia navegação em subpastas e permite esvaziamento total.
+* **Ciclo de Vida (Retention Policy):** Mídias de chat antigas (>30 dias) são movidas automaticamente do Storage rápido (Supabase) para o Armazenamento frio (Google Drive) para economizar custos.
+* **Apps:** Editor (Word-like), Planilha (Excel-like) e Visualizador de Mídia.
 * **Editor App (Word-like):** 
     * Editor de texto rico (Rich Text) baseado em Quill.
     * **Conversão Server-Side:** Capacidade de abrir arquivos `.docx` e Google Docs convertendo-os para HTML via Backend (`mammoth`), preservando a formatação original.

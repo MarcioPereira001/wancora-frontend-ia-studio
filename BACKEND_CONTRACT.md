@@ -388,6 +388,10 @@ Faz streaming do arquivo do Drive diretamente para o WhatsApp sem salvar em disc
     "caption": "Aqui está o arquivo solicitado." 
   }
   ```
+#### `POST /cloud/google/empty-trash`
+Esvazia permanentemente a lixeira do Google Drive da empresa conectada.
+* **Body:** `{ "companyId": "uuid" }`
+* **Response:** `{ "success": true }`
 
 ---
 
@@ -490,6 +494,16 @@ O backend atua como um proxy de tradução para eventos de JID.
    * Se mapeado: Substitui o `remote_jid` pelo telefone real (`@s.whatsapp.net`) antes de processar.
    * Se não mapeado: Bloqueia a criação de chats fantasmas no Frontend.
 3. **Aprendizado:** O vínculo é salvo/atualizado automaticamente sempre que um evento `contacts.upsert` traz o par `{ id: phone, lid: lid }`.
+
+### 4.10. Retention Worker (Lifecycle Management)
+Worker responsável pela economia de custos de armazenamento e backup de longo prazo.
+* **Frequência:** Diária (03:00 AM).
+* **Lógica:**
+    1. Varre mensagens com mídia (`media_url`) armazenadas no Supabase Storage.
+    2. Filtra arquivos criados há mais de `storage_retention_days` (Configurado na empresa, padrão 30 dias).
+    3. **Migração:** Faz upload do arquivo para o Google Drive na pasta "Lixeira Wancora (Arquivos Antigos)".
+    4. **Limpeza:** Deleta o arquivo do Supabase Storage (liberando espaço).
+    5. **Atualização:** Atualiza a mensagem com o novo Link do Drive e um aviso de arquivamento.
 
 ---
 

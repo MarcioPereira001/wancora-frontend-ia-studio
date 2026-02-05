@@ -7,7 +7,7 @@ import { useDesktopStore } from '@/store/useDesktopStore';
 import { FileIcon } from '../FileIcon';
 import { 
     Loader2, ArrowLeft, Cloud, UploadCloud, RefreshCw, Plus, FileText, FolderPlus, 
-    Trash2, LayoutGrid, List, Grid, HardDrive, CheckSquare, X, DownloadCloud 
+    Trash2, LayoutGrid, List, Grid, HardDrive, CheckSquare, X, DownloadCloud, AlertTriangle 
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/useToast';
@@ -17,9 +17,9 @@ import { ImportDriveModal } from './ImportDriveModal';
 
 export function DriveApp() {
   const { 
-      currentFolderId, folderHistory, files, isLoading, selectedFileIds, storageQuota, viewMode,
+      currentFolderId, folderHistory, files, isLoading, selectedFileIds, storageQuota, viewMode, isTrashView,
       fetchFiles, fetchQuota, navigateTo, navigateUp, toggleSelection, clearSelection, 
-      uploadFile, createFolder, deleteSelected, setViewMode, syncNow, selectAll
+      uploadFile, createFolder, deleteSelected, setViewMode, syncNow, selectAll, emptyTrash
   } = useCloudStore();
   const { openWindow } = useDesktopStore();
   const { addToast } = useToast();
@@ -28,14 +28,15 @@ export function DriveApp() {
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
-  const [showImportModal, setShowImportModal] = useState(false); // Modal de Importação
+  const [isEmptyingTrash, setIsEmptyingTrash] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false); 
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
       fetchFiles(currentFolderId);
       fetchQuota();
-  }, [currentFolderId]);
+  }, [currentFolderId, isTrashView]);
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
@@ -57,7 +58,6 @@ export function DriveApp() {
           await createFolder(newFolderName);
           setIsCreatingFolder(false);
           setNewFolderName('');
-          setTimeout(() => fetchFiles(currentFolderId), 500);
       } catch(e) {
           addToast({ type: 'error', title: 'Erro', message: 'Falha ao criar pasta.' });
       }
@@ -76,7 +76,22 @@ export function DriveApp() {
       }
   };
 
+  const handleEmptyTrash = async () => {
+      if(!confirm("Atenção: Isso apagará TODOS os arquivos da lixeira permanentemente. Continuar?")) return;
+      setIsEmptyingTrash(true);
+      try {
+          await emptyTrash();
+          addToast({ type: 'success', title: 'Limpo', message: 'Lixeira esvaziada.' });
+      } catch(e) {
+          addToast({ type: 'error', title: 'Erro', message: 'Falha ao esvaziar lixeira.' });
+      } finally {
+          setIsEmptyingTrash(false);
+      }
+  };
+
   const handleFileAction = (file: any) => {
+      if (isTrashView) return; // Não abre arquivos na lixeira
+
       if (file.is_folder) {
           navigateTo(file.google_id, file.name);
       } else {
@@ -85,7 +100,6 @@ export function DriveApp() {
               openWindow('preview', file.name, { url: file.web_view_link, type: mime, id: file.google_id });
           } 
           else if (mime.includes('word') || mime.includes('document')) {
-               // Abre editor com ID para conversão backend
                openWindow('editor', file.name, { fileId: file.google_id, mimeType: mime });
           }
           else if (file.web_view_link) {
@@ -106,7 +120,7 @@ export function DriveApp() {
     <div className="flex flex-col h-full bg-[#1e1e20] text-zinc-200" onClick={() => { setShowNewMenu(false); }}>
         
         {/* Info Bar (Storage) */}
-        {storageQuota && (
+        {storageQuota && !isTrashView && (
             <div className="h-8 bg-zinc-900 border-b border-zinc-800 flex items-center justify-between px-3 text-[10px] text-zinc-400 shrink-0">
                 <div className="flex items-center gap-2">
                     <HardDrive className="w-3 h-3 text-zinc-500" />
@@ -117,11 +131,18 @@ export function DriveApp() {
                 </div>
             </div>
         )}
+        
+        {/* Banner Lixeira */}
+        {isTrashView && (
+            <div className="h-8 bg-red-900/20 border-b border-red-900/50 flex items-center justify-center px-3 text-[10px] text-red-200 font-bold uppercase tracking-wider shrink-0">
+                <Trash2 className="w-3 h-3 mr-2" /> Modo Lixeira - Arquivos aqui serão apagados em 30 dias
+            </div>
+        )}
 
         {/* Toolbar */}
         <div className="h-12 border-b border-zinc-700 bg-zinc-800/50 flex items-center px-3 gap-3 shrink-0">
             <div className="flex items-center gap-1">
-                <Button variant="ghost" size="icon" onClick={navigateUp} disabled={folderHistory.length <= 1} className="h-8 w-8 text-zinc-400 hover:text-white">
+                <Button variant="ghost" size="icon" onClick={navigateUp} disabled={folderHistory.length <= 1 || isTrashView} className="h-8 w-8 text-zinc-400 hover:text-white disabled:opacity-30">
                     <ArrowLeft className="w-4 h-4" />
                 </Button>
                 <Button variant="ghost" size="icon" onClick={() => fetchFiles(currentFolderId)} className="h-8 w-8 text-zinc-400 hover:text-white" title="Atualizar Pasta">
@@ -130,17 +151,23 @@ export function DriveApp() {
             </div>
 
             <div className="flex-1 bg-zinc-900 border border-zinc-700 rounded px-3 py-1.5 text-xs flex items-center overflow-hidden">
-                <Cloud className="w-3 h-3 text-green-500 mr-2 shrink-0" />
-                <div className="flex items-center gap-1 overflow-x-auto whitespace-nowrap custom-scrollbar">
-                    {folderHistory.map((f, i) => (
-                        <React.Fragment key={i}>
-                            {i > 0 && <span className="text-zinc-600">/</span>}
-                            <button onClick={(e) => { e.stopPropagation(); if(f.id !== currentFolderId) navigateTo(f.id, f.name); }} className="hover:text-white hover:underline truncate max-w-[100px]">
-                                {f.name}
-                            </button>
-                        </React.Fragment>
-                    ))}
-                </div>
+                {isTrashView ? (
+                    <span className="text-red-400 font-bold flex items-center gap-2"><Trash2 className="w-3 h-3" /> Lixeira</span>
+                ) : (
+                    <>
+                    <Cloud className="w-3 h-3 text-green-500 mr-2 shrink-0" />
+                    <div className="flex items-center gap-1 overflow-x-auto whitespace-nowrap custom-scrollbar">
+                        {folderHistory.map((f, i) => (
+                            <React.Fragment key={i}>
+                                {i > 0 && <span className="text-zinc-600">/</span>}
+                                <button onClick={(e) => { e.stopPropagation(); if(f.id !== currentFolderId) navigateTo(f.id, f.name); }} className="hover:text-white hover:underline truncate max-w-[100px]">
+                                    {f.name}
+                                </button>
+                            </React.Fragment>
+                        ))}
+                    </div>
+                    </>
+                )}
             </div>
             
             <div className="flex bg-zinc-900 rounded-lg p-0.5 border border-zinc-700">
@@ -151,45 +178,56 @@ export function DriveApp() {
 
             {selectedFileIds.size > 0 ? (
                 <div className="flex gap-2 animate-in fade-in">
-                    <Button size="sm" variant="destructive" onClick={handleDelete} disabled={isDeleting} className="h-8 text-xs">
-                         <Trash2 className="w-3 h-3 mr-1" /> Excluir ({selectedFileIds.size})
-                    </Button>
+                    {!isTrashView && (
+                        <Button size="sm" variant="destructive" onClick={handleDelete} disabled={isDeleting} className="h-8 text-xs">
+                             <Trash2 className="w-3 h-3 mr-1" /> Excluir ({selectedFileIds.size})
+                        </Button>
+                    )}
                     <Button size="sm" variant="ghost" onClick={clearSelection} className="h-8 text-xs text-zinc-400">
                          <X className="w-3 h-3" />
                     </Button>
                 </div>
             ) : (
                 <div className="flex gap-2">
-                     <Button size="sm" variant="secondary" onClick={() => setShowImportModal(true)} className="h-8 text-xs bg-zinc-700 hover:bg-zinc-600 text-white gap-1 border border-zinc-600" title="Buscar arquivos no Google Drive">
-                        <DownloadCloud className="w-3.5 h-3.5" /> <span className="hidden lg:inline">Buscar Existentes</span>
-                    </Button>
-
-                    <div className="relative">
-                        <Button size="sm" onClick={(e) => { e.stopPropagation(); setShowNewMenu(!showNewMenu); }} className="h-8 bg-blue-600 hover:bg-blue-500 text-white gap-1 shadow-lg shadow-blue-500/20">
-                            <Plus className="w-4 h-4" /> Novo
+                    {isTrashView ? (
+                        <Button size="sm" variant="destructive" onClick={handleEmptyTrash} disabled={isEmptyingTrash} className="h-8 text-xs bg-red-600 hover:bg-red-500 text-white gap-1 shadow-lg shadow-red-500/20">
+                            {isEmptyingTrash ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                            Limpar Lixeira
                         </Button>
-                        
-                        {showNewMenu && (
-                            <div className="absolute right-0 top-10 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl w-48 py-1 z-50 animate-in zoom-in-95">
-                                <button onClick={() => { setIsCreatingFolder(true); setShowNewMenu(false); }} className="w-full text-left px-3 py-2 text-sm hover:bg-zinc-700 flex items-center gap-2">
-                                    <FolderPlus className="w-4 h-4 text-yellow-400" /> Nova Pasta
-                                </button>
-                                <button onClick={() => openWindow('editor', 'Novo Documento')} className="w-full text-left px-3 py-2 text-sm hover:bg-zinc-700 flex items-center gap-2">
-                                    <FileText className="w-4 h-4 text-blue-400" /> Documento Texto
-                                </button>
-                                <div className="h-px bg-zinc-700 my-1" />
-                                <label className="w-full text-left px-3 py-2 text-sm hover:bg-zinc-700 flex items-center gap-2 cursor-pointer">
-                                    <UploadCloud className="w-4 h-4 text-green-400" /> Upload Arquivo
-                                    <input type="file" className="hidden" onChange={handleUpload} />
-                                </label>
-                            </div>
-                        )}
-                    </div>
+                    ) : (
+                        <>
+                        <Button size="sm" variant="secondary" onClick={() => setShowImportModal(true)} className="h-8 text-xs bg-zinc-700 hover:bg-zinc-600 text-white gap-1 border border-zinc-600" title="Buscar arquivos no Google Drive">
+                            <DownloadCloud className="w-3.5 h-3.5" /> <span className="hidden lg:inline">Adicionar Existentes</span>
+                        </Button>
+
+                        <div className="relative">
+                            <Button size="sm" onClick={(e) => { e.stopPropagation(); setShowNewMenu(!showNewMenu); }} className="h-8 bg-blue-600 hover:bg-blue-500 text-white gap-1 shadow-lg shadow-blue-500/20">
+                                <Plus className="w-4 h-4" /> Novo
+                            </Button>
+                            
+                            {showNewMenu && (
+                                <div className="absolute right-0 top-10 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl w-48 py-1 z-50 animate-in zoom-in-95">
+                                    <button onClick={() => { setIsCreatingFolder(true); setShowNewMenu(false); }} className="w-full text-left px-3 py-2 text-sm hover:bg-zinc-700 flex items-center gap-2">
+                                        <FolderPlus className="w-4 h-4 text-yellow-400" /> Nova Pasta
+                                    </button>
+                                    <button onClick={() => openWindow('editor', 'Novo Documento')} className="w-full text-left px-3 py-2 text-sm hover:bg-zinc-700 flex items-center gap-2">
+                                        <FileText className="w-4 h-4 text-blue-400" /> Documento Texto
+                                    </button>
+                                    <div className="h-px bg-zinc-700 my-1" />
+                                    <label className="w-full text-left px-3 py-2 text-sm hover:bg-zinc-700 flex items-center gap-2 cursor-pointer">
+                                        <UploadCloud className="w-4 h-4 text-green-400" /> Upload Arquivo
+                                        <input type="file" className="hidden" onChange={handleUpload} />
+                                    </label>
+                                </div>
+                            )}
+                        </div>
+                        </>
+                    )}
                 </div>
             )}
         </div>
 
-        {isCreatingFolder && (
+        {isCreatingFolder && !isTrashView && (
             <div className="p-2 bg-zinc-800 border-b border-zinc-700 flex gap-2 animate-in slide-in-from-top-2">
                 <Input value={newFolderName} onChange={e => setNewFolderName(e.target.value)} placeholder="Nome da pasta..." className="h-8 text-xs bg-zinc-900 border-zinc-600" autoFocus onKeyDown={e => e.key === 'Enter' && handleCreateFolder()}/>
                 <Button size="sm" onClick={handleCreateFolder} className="h-8 bg-green-600 hover:bg-green-500">Criar</Button>
@@ -205,10 +243,21 @@ export function DriveApp() {
                 </div>
             ) : files.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full text-zinc-500">
-                    <div className="w-20 h-20 bg-zinc-800 rounded-full flex items-center justify-center mb-4 border-2 border-dashed border-zinc-700">
-                        <FolderPlus className="w-8 h-8 opacity-20" />
-                    </div>
-                    <p>Pasta vazia.</p>
+                    {isTrashView ? (
+                        <>
+                            <div className="w-20 h-20 bg-zinc-800/50 rounded-full flex items-center justify-center mb-4 border-2 border-dashed border-zinc-700">
+                                <Trash2 className="w-8 h-8 opacity-20" />
+                            </div>
+                            <p>Lixeira vazia.</p>
+                        </>
+                    ) : (
+                        <>
+                            <div className="w-20 h-20 bg-zinc-800/50 rounded-full flex items-center justify-center mb-4 border-2 border-dashed border-zinc-700">
+                                <FolderPlus className="w-8 h-8 opacity-20" />
+                            </div>
+                            <p>Pasta vazia.</p>
+                        </>
+                    )}
                 </div>
             ) : (
                 <>
@@ -254,7 +303,7 @@ export function DriveApp() {
         
         <div className="h-6 bg-zinc-800 border-t border-zinc-700 flex items-center px-3 text-[10px] text-zinc-400 justify-between shrink-0">
              <span>{files.length} itens {selectedFileIds.size > 0 && `(${selectedFileIds.size} selecionados)`}</span>
-             <span>Conectado ao Google Drive</span>
+             {isTrashView ? <span className="text-red-400 font-bold">LIXEIRA</span> : <span>Conectado ao Google Drive</span>}
         </div>
 
         {/* Modal de Importação */}
