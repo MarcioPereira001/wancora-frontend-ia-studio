@@ -31,11 +31,14 @@ export const FileIcon: React.FC<FileIconProps> = ({ file, selected, onSelect, on
 
   const renderIcon = () => {
       const mime = (file.mime_type || '').toLowerCase();
+      const name = (file.name || '').toLowerCase();
       const s = getIconSize();
 
       if (file.is_folder) {
           return <Folder className={cn(s, "text-yellow-400 fill-yellow-400/20 drop-shadow-sm")} />;
       }
+      
+      // Atalhos
       if (mime.includes('shortcut')) {
           return (
               <div className="relative">
@@ -46,39 +49,91 @@ export const FileIcon: React.FC<FileIconProps> = ({ file, selected, onSelect, on
               </div>
           );
       }
-      if (mime.includes('image')) {
-          return <ImageIcon className={cn(s, "text-purple-500 fill-purple-100")} />;
-      }
-      if (mime.includes('pdf')) {
-          return (
-              <div className="relative flex items-center justify-center">
-                  <File className={cn(s, "text-red-100 fill-red-500")} />
-                  <span className="absolute text-[8px] font-bold text-white mb-1">PDF</span>
-              </div>
-          );
-      }
-      if (mime.includes('word') || mime.includes('document')) {
-          return (
-              <div className="relative flex items-center justify-center">
-                  <FileText className={cn(s, "text-blue-100 fill-blue-600")} />
-                  <span className="absolute text-[8px] font-bold text-white mb-2">DOC</span>
-              </div>
-          );
-      }
-      // Detecção de Planilha (Excel, Spreadsheet, CSV)
-      if (mime.includes('spreadsheet') || mime.includes('excel') || mime.includes('csv')) {
+
+      // PLANILHAS (Excel, CSV, Google Sheets, ODS, Numbers)
+      if (
+          mime.includes('spreadsheet') || 
+          mime.includes('excel') || 
+          mime.includes('csv') || 
+          mime.includes('sheet') ||
+          name.endsWith('.xlsx') || 
+          name.endsWith('.xls') || 
+          name.endsWith('.csv') ||
+          name.endsWith('.ods') ||
+          name.endsWith('.numbers')
+      ) {
           return <FileSpreadsheet className={cn(s, "text-green-600 fill-green-100")} />;
       }
-      if (mime.includes('video')) {
+
+      // DOCUMENTOS (Word, Docs, TXT, RTF)
+      if (
+          mime.includes('document') || 
+          mime.includes('word') || 
+          name.endsWith('.docx') || 
+          name.endsWith('.doc') || 
+          name.endsWith('.txt') ||
+          name.endsWith('.rtf') ||
+          name.endsWith('.odt')
+      ) {
+          return (
+              <div className="relative flex items-center justify-center">
+                  <FileText className={cn(s, "text-blue-600 fill-blue-100")} />
+                  {(name.endsWith('.doc') || name.endsWith('.docx')) && (
+                      <span className="absolute text-[8px] font-bold text-white mb-2 shadow-sm">DOC</span>
+                  )}
+              </div>
+          );
+      }
+
+      // APRESENTAÇÕES (PowerPoint, Slides)
+      if (
+          mime.includes('presentation') || 
+          mime.includes('powerpoint') || 
+          name.endsWith('.pptx') || 
+          name.endsWith('.ppt') ||
+          name.endsWith('.odp') ||
+          name.endsWith('.key')
+      ) {
+          return <LayoutTemplate className={cn(s, "text-orange-500 fill-orange-100")} />;
+      }
+
+      // PDF
+      if (mime.includes('pdf') || name.endsWith('.pdf')) {
+          return (
+              <div className="relative flex items-center justify-center">
+                  <File className={cn(s, "text-red-500 fill-red-100")} />
+                  <span className="absolute text-[8px] font-bold text-white mb-1 shadow-sm">PDF</span>
+              </div>
+          );
+      }
+
+      // Imagens
+      if (mime.includes('image') || name.endsWith('.jpg') || name.endsWith('.png') || name.endsWith('.jpeg') || name.endsWith('.gif')) {
+          return <ImageIcon className={cn(s, "text-purple-500 fill-purple-100")} />;
+      }
+
+      // Vídeos
+      if (mime.includes('video') || name.endsWith('.mp4') || name.endsWith('.mov') || name.endsWith('.avi')) {
           return <Film className={cn(s, "text-pink-500 fill-pink-100")} />;
       }
-      if (mime.includes('audio')) {
+
+      // Áudio
+      if (mime.includes('audio') || name.endsWith('.mp3') || name.endsWith('.wav') || name.endsWith('.ogg')) {
           return <Music className={cn(s, "text-yellow-500 fill-yellow-100")} />;
       }
-      if (mime.includes('zip') || mime.includes('compressed')) {
-          return <FileArchive className={cn(s, "text-orange-500 fill-orange-100")} />;
+
+      // Arquivos Comprimidos
+      if (mime.includes('zip') || mime.includes('compressed') || name.endsWith('.zip') || name.endsWith('.rar') || name.endsWith('.7z')) {
+          return <FileArchive className={cn(s, "text-zinc-600 fill-zinc-200")} />;
       }
-      return <File className={cn(s, "text-zinc-300")} />;
+
+      // Código
+      if (name.endsWith('.js') || name.endsWith('.ts') || name.endsWith('.html') || name.endsWith('.css') || name.endsWith('.json')) {
+          return <FileCode className={cn(s, "text-slate-600 fill-slate-200")} />;
+      }
+
+      // Genérico
+      return <File className={cn(s, "text-zinc-400 fill-zinc-100")} />;
   };
 
   const handleClick = (e: React.MouseEvent) => {
@@ -90,6 +145,15 @@ export const FileIcon: React.FC<FileIconProps> = ({ file, selected, onSelect, on
       e.stopPropagation();
       onNavigate();
   };
+
+  // Verifica se deve mostrar thumbnail (apenas imagens e vídeos reais)
+  // Bloqueia thumbnail para planilhas e docs para forçar o ícone
+  const shouldShowThumbnail = file.thumbnail_link && !file.is_folder && 
+      !file.mime_type.includes('spreadsheet') && 
+      !file.mime_type.includes('document') && 
+      !file.mime_type.includes('presentation') &&
+      !file.name.endsWith('.csv') &&
+      !file.name.endsWith('.xlsx');
 
   return (
     <div 
@@ -111,8 +175,7 @@ export const FileIcon: React.FC<FileIconProps> = ({ file, selected, onSelect, on
         )}
 
         <div className="flex-1 flex items-center justify-center relative w-full overflow-hidden mb-1">
-            {/* Tenta mostrar thumbnail real se existir e não for pasta */}
-            {file.thumbnail_link && !file.is_folder && !file.mime_type.includes('spreadsheet') && !file.mime_type.includes('document') && !file.mime_type.includes('shortcut') ? (
+            {shouldShowThumbnail ? (
                 <div className="relative shadow-md rounded overflow-hidden bg-white/5">
                      <img 
                         src={file.thumbnail_link} 
@@ -122,7 +185,7 @@ export const FileIcon: React.FC<FileIconProps> = ({ file, selected, onSelect, on
                     />
                 </div>
             ) : (
-                <div className="drop-shadow-lg filter">
+                <div className="drop-shadow-lg filter transition-transform group-hover:scale-110 duration-200">
                     {renderIcon()}
                 </div>
             )}

@@ -480,7 +480,7 @@ export function SheetApp({ windowId }: { windowId: string }) {
               excelCell.value = cell.computed as any;
           }
 
-          // Estilos Completos
+          // Estilos Completos (CORRIGIDO PARA SALVAR FORMATAÇÃO)
           if (cell.style) {
               const style = cell.style;
               
