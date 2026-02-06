@@ -16,7 +16,7 @@ import { SheetToolbar } from './sheet/SheetToolbar';
 import { SheetGrid } from './sheet/SheetGrid';
 import { SheetContextMenu } from './sheet/SheetContextMenu';
 import { SheetSaveModal } from './sheet/SheetSaveModal';
-import { ImportDriveModal } from '../ImportDriveModal'; 
+import { ImportDriveModal } from './ImportDriveModal'; // FIX: Caminho relativo corrigido
 import { CellData, SheetState, SelectionRange, CellStyle } from './sheet/types';
 import { DEFAULT_COLS, DEFAULT_ROWS, DEFAULT_CELL_WIDTH, DEFAULT_CELL_HEIGHT, getCellId, evaluateFormula, getColName } from './sheet/utils';
 
