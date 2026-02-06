@@ -2,7 +2,6 @@
 import { create } from 'zustand';
 import { createClient } from '@/utils/supabase/client';
 import { Appointment } from '@/types';
-import type { RealtimeChannel } from '@supabase/supabase-js';
 
 interface CalendarState {
   appointments: Appointment[];
@@ -22,7 +21,7 @@ interface CalendarState {
 }
 
 export const useCalendarStore = create<CalendarState>((set, get) => {
-  let channel: RealtimeChannel | null = null;
+  let channel: any = null;
 
   return {
     appointments: [],

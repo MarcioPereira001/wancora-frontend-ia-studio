@@ -2,7 +2,6 @@
 import { create } from 'zustand';
 import { createClient } from '@/utils/supabase/client';
 import { Lead, PipelineStage } from '@/types';
-import type { RealtimeChannel } from '@supabase/supabase-js';
 
 interface CRMState {
   isInitialized: boolean;
@@ -16,7 +15,7 @@ interface CRMState {
 }
 
 export const useCRMStore = create<CRMState>((set, get) => {
-  let channel: RealtimeChannel | null = null;
+  let channel: any = null;
   const supabase = createClient();
 
   return {

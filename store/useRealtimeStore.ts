@@ -1,7 +1,6 @@
 
 import { create } from 'zustand';
 import { createClient } from '@/utils/supabase/client';
-import type { RealtimeChannel } from '@supabase/supabase-js';
 import { Instance } from '@/types';
 
 interface RealtimeState {
@@ -28,7 +27,7 @@ interface RealtimeState {
 }
 
 export const useRealtimeStore = create<RealtimeState>((set, get) => {
-  let channel: RealtimeChannel | null = null;
+  let channel: any = null;
 
   return {
     isConnected: false,
