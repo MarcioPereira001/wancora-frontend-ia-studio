@@ -56,6 +56,13 @@ export function ImportDriveModal({ isOpen, onClose, onImportSuccess }: ImportDri
 
   const handleImport = async () => {
       if (selectedFiles.length === 0 || !user?.company_id) return;
+      
+      console.log("📤 [IMPORT] Enviando para backend:", {
+          companyId: user.company_id,
+          files: selectedFiles,
+          currentFolderId: currentFolderId || 'null'
+      });
+
       setImporting(true);
       try {
           const res = await api.post('/cloud/google/import', {
