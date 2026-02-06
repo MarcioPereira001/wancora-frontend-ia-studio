@@ -32,7 +32,8 @@ interface CloudState {
   fetchQuota: () => Promise<void>;
   createFolder: (name: string) => Promise<void>;
   deleteSelected: () => Promise<void>;
-  emptyTrash: () => Promise<void>; // NOVO
+  removeImport: () => Promise<void>; // NOVO
+  emptyTrash: () => Promise<void>; 
   setViewMode: (mode: ViewMode) => void;
   syncNow: () => Promise<void>;
   setTrashView: (isTrash: boolean) => void;
@@ -205,6 +206,23 @@ export const useCloudStore = create<CloudState>((set, get) => ({
       set({ selectedFileIds: new Set() });
       get().fetchFiles();
       get().fetchQuota();
+  },
+
+  removeImport: async () => {
+      const companyId = useAuthStore.getState().user?.company_id;
+      const ids = Array.from(get().selectedFileIds);
+      if (!companyId || ids.length === 0) return;
+
+      const filesToRemove = get().files.filter(f => ids.includes(f.id));
+      const googleIds = filesToRemove.map(f => f.google_id);
+
+      await api.post('/cloud/google/remove-import', {
+          companyId,
+          fileIds: googleIds
+      });
+      
+      set({ selectedFileIds: new Set() });
+      get().fetchFiles();
   },
 
   emptyTrash: async () => {

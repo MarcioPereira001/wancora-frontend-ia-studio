@@ -7,7 +7,7 @@ import { useDesktopStore } from '@/store/useDesktopStore';
 import { FileIcon } from '../FileIcon';
 import { 
     Loader2, ArrowLeft, Cloud, UploadCloud, RefreshCw, Plus, FileText, FolderPlus, 
-    Trash2, LayoutGrid, List, Grid, HardDrive, CheckSquare, X, DownloadCloud, AlertTriangle, CornerUpLeft 
+    Trash2, LayoutGrid, List, Grid, HardDrive, CheckSquare, X, DownloadCloud, AlertTriangle, CornerUpLeft, Unplug 
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/useToast';
@@ -19,7 +19,7 @@ export function DriveApp() {
   const { 
       currentFolderId, folderHistory, files, isLoading, selectedFileIds, storageQuota, viewMode, isTrashView,
       fetchFiles, fetchQuota, navigateTo, navigateUp, toggleSelection, clearSelection, 
-      uploadFile, createFolder, deleteSelected, setViewMode, syncNow, selectAll, emptyTrash
+      uploadFile, createFolder, deleteSelected, removeImport, setViewMode, syncNow, selectAll, emptyTrash
   } = useCloudStore();
   const { openWindow } = useDesktopStore();
   const { addToast } = useToast();
@@ -28,6 +28,7 @@ export function DriveApp() {
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isRemoving, setIsRemoving] = useState(false);
   const [isEmptyingTrash, setIsEmptyingTrash] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false); 
 
@@ -64,7 +65,7 @@ export function DriveApp() {
   };
 
   const handleDelete = async () => {
-      if(!confirm(`Excluir ${selectedFileIds.size} itens permanentemente do Drive?`)) return;
+      if(!confirm(`Excluir ${selectedFileIds.size} itens permanentemente do Drive? Isso enviará para a lixeira do Google.`)) return;
       setIsDeleting(true);
       try {
           await deleteSelected();
@@ -73,6 +74,19 @@ export function DriveApp() {
           addToast({ type: 'error', title: 'Erro', message: 'Falha ao excluir.' });
       } finally {
           setIsDeleting(false);
+      }
+  };
+
+  const handleRemoveImport = async () => {
+      if(!confirm(`Remover ${selectedFileIds.size} itens do Wancora? Os arquivos continuarão existindo no seu Google Drive.`)) return;
+      setIsRemoving(true);
+      try {
+          await removeImport();
+          addToast({ type: 'success', title: 'Removido', message: 'Importação removida do cache.' });
+      } catch(e) {
+          addToast({ type: 'error', title: 'Erro', message: 'Falha ao remover importação.' });
+      } finally {
+          setIsRemoving(false);
       }
   };
 
@@ -203,6 +217,11 @@ export function DriveApp() {
                 <div className="flex gap-2">
                      {selectedFileIds.size > 0 ? (
                         <div className="flex gap-2 animate-in fade-in">
+                            <Button size="sm" variant="secondary" onClick={handleRemoveImport} disabled={isRemoving} className="h-8 text-xs bg-zinc-700 border border-zinc-600 text-zinc-300 hover:text-white">
+                                 {isRemoving ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Unplug className="w-3 h-3 mr-1" />}
+                                 Remover Importação
+                            </Button>
+
                             <Button size="sm" variant="destructive" onClick={handleDelete} disabled={isDeleting} className="h-8 text-xs">
                                  <Trash2 className="w-3 h-3 mr-1" /> Excluir ({selectedFileIds.size})
                             </Button>
