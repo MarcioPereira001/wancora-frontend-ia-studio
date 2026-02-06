@@ -20,7 +20,7 @@ interface ImportDriveModalProps {
 
 export function ImportDriveModal({ isOpen, onClose, onImportSuccess }: ImportDriveModalProps) {
   const { user } = useAuthStore();
-  const { currentFolderId } = useCloudStore(); // Pega a pasta atual
+  const { currentFolderId } = useCloudStore(); 
   const { addToast } = useToast();
   
   const [query, setQuery] = useState('');
@@ -57,18 +57,12 @@ export function ImportDriveModal({ isOpen, onClose, onImportSuccess }: ImportDri
   const handleImport = async () => {
       if (selectedFiles.length === 0 || !user?.company_id) return;
       
-      console.log("📤 [IMPORT] Enviando para backend:", {
-          companyId: user.company_id,
-          files: selectedFiles,
-          currentFolderId: currentFolderId || 'null'
-      });
-
       setImporting(true);
       try {
           const res = await api.post('/cloud/google/import', {
               companyId: user.company_id,
               files: selectedFiles,
-              currentFolderId: currentFolderId || 'null' // Passa ID da pasta atual
+              currentFolderId: currentFolderId || 'null' 
           });
           addToast({ type: 'success', title: 'Importado', message: `${res.count} arquivos adicionados nesta pasta.` });
           onImportSuccess();
