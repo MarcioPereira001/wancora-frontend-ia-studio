@@ -3,7 +3,7 @@ import React from 'react';
 import { DriveFile } from '@/types';
 import { 
     Folder, FileText, Image as ImageIcon, Film, Music, FileCode, File, 
-    CheckCircle2, FileSpreadsheet, FileArchive, LayoutTemplate 
+    CheckCircle2, FileSpreadsheet, FileArchive, LayoutTemplate, CornerUpRight 
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -35,6 +35,16 @@ export const FileIcon: React.FC<FileIconProps> = ({ file, selected, onSelect, on
 
       if (file.is_folder) {
           return <Folder className={cn(s, "text-yellow-400 fill-yellow-400/20 drop-shadow-sm")} />;
+      }
+      if (mime.includes('shortcut')) {
+          return (
+              <div className="relative">
+                  <File className={cn(s, "text-blue-200 fill-blue-500/20")} />
+                  <div className="absolute -bottom-1 -right-1 bg-white rounded-full p-0.5 border shadow-sm">
+                      <CornerUpRight className="w-3 h-3 text-blue-500" />
+                  </div>
+              </div>
+          );
       }
       if (mime.includes('image')) {
           return <ImageIcon className={cn(s, "text-purple-500 fill-purple-100")} />;
@@ -101,7 +111,7 @@ export const FileIcon: React.FC<FileIconProps> = ({ file, selected, onSelect, on
 
         <div className="flex-1 flex items-center justify-center relative w-full overflow-hidden mb-1">
             {/* Tenta mostrar thumbnail real se existir e não for pasta */}
-            {file.thumbnail_link && !file.is_folder && !file.mime_type.includes('spreadsheet') && !file.mime_type.includes('document') ? (
+            {file.thumbnail_link && !file.is_folder && !file.mime_type.includes('spreadsheet') && !file.mime_type.includes('document') && !file.mime_type.includes('shortcut') ? (
                 <div className="relative shadow-md rounded overflow-hidden bg-white/5">
                      <img 
                         src={file.thumbnail_link} 
