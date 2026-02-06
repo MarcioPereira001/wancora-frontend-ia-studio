@@ -1,8 +1,8 @@
 
-import React, { useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { cn } from '@/lib/utils';
 import { CellData, SelectionRange } from './types';
-import { DEFAULT_COLS, DEFAULT_ROWS, DEFAULT_CELL_WIDTH, DEFAULT_CELL_HEIGHT, getColName, getCellId } from './utils';
+import { DEFAULT_COLS, DEFAULT_ROWS, DEFAULT_CELL_WIDTH, DEFAULT_CELL_HEIGHT, getColName, getCellId, formatCellValue } from './utils';
 import { Grid } from 'lucide-react';
 
 interface SheetGridProps {
@@ -11,17 +11,21 @@ interface SheetGridProps {
     rowHeights: Record<number, number>;
     selections: SelectionRange[];
     activeCell: { r: number, c: number } | null;
+    editingCell: { r: number, c: number } | null; // Estado de quem está sendo editado
     onMouseDown: (e: React.MouseEvent, r: number, c: number) => void;
     onMouseEnter: (r: number, c: number) => void;
     onResizeStart: (e: React.MouseEvent, type: 'col' | 'row', index: number) => void;
     onHeaderClick: (index: number, type: 'col' | 'row') => void;
     onFillHandleDown: (e: React.MouseEvent) => void;
     onContextMenu: (e: React.MouseEvent, r: number, c: number) => void;
+    onDoubleClick: (r: number, c: number) => void; // Trigger edit
+    onCellCommit: (r: number, c: number, val: string) => void; // Commit edit
 }
 
 export const SheetGrid = ({
-    cells, colWidths, rowHeights, selections, activeCell,
-    onMouseDown, onMouseEnter, onResizeStart, onHeaderClick, onFillHandleDown, onContextMenu
+    cells, colWidths, rowHeights, selections, activeCell, editingCell,
+    onMouseDown, onMouseEnter, onResizeStart, onHeaderClick, onFillHandleDown, 
+    onContextMenu, onDoubleClick, onCellCommit
 }: SheetGridProps) => {
     
     // Helpers de Renderização
@@ -97,7 +101,13 @@ export const SheetGrid = ({
                         const cell = cells[id];
                         const selected = isSelected(r, c);
                         const active = activeCell?.r === r && activeCell?.c === c;
-                        
+                        const isEditing = editingCell?.r === r && editingCell?.c === c;
+
+                        // Valor para exibição (formatado)
+                        const displayValue = cell?.computed !== undefined && cell?.computed !== null 
+                            ? formatCellValue(cell.computed, cell.style?.format) 
+                            : (cell?.value ?? '');
+
                         return (
                             <div
                                 key={id}
@@ -119,14 +129,21 @@ export const SheetGrid = ({
                                 onMouseDown={(e) => onMouseDown(e, r, c)}
                                 onMouseEnter={() => onMouseEnter(r, c)}
                                 onContextMenu={(e) => onContextMenu(e, r, c)}
+                                onDoubleClick={() => onDoubleClick(r, c)}
                             >
-                                <div className="w-full h-full flex items-center overflow-hidden pointer-events-none">
-                                    {/* Correção de render: prioriza computed, mas aceita value se computed for nulo. E trata 0 como string. */}
-                                    {cell?.computed !== undefined && cell?.computed !== null ? cell.computed : (cell?.value ?? '')}
-                                </div>
+                                {isEditing ? (
+                                    <CellInput 
+                                        initialValue={cell?.value || ''} 
+                                        onCommit={(val) => onCellCommit(r, c, val)} 
+                                    />
+                                ) : (
+                                    <div className="w-full h-full flex items-center overflow-hidden pointer-events-none">
+                                        {displayValue}
+                                    </div>
+                                )}
                                 
-                                {/* FILL HANDLE (O "quadradinho" mágico) */}
-                                {active && selections.length > 0 && 
+                                {/* FILL HANDLE */}
+                                {active && !isEditing && selections.length > 0 && 
                                     r === Math.max(selections[selections.length-1].start.r, selections[selections.length-1].end.r) &&
                                     c === Math.max(selections[selections.length-1].start.c, selections[selections.length-1].end.c) && (
                                     <div 
@@ -140,5 +157,37 @@ export const SheetGrid = ({
                 </div>
             ))}
         </div>
+    );
+};
+
+// Subcomponente de Input Isolado para performance e foco
+const CellInput = ({ initialValue, onCommit }: { initialValue: string, onCommit: (val: string) => void }) => {
+    const [val, setVal] = useState(initialValue);
+    const inputRef = useRef<HTMLInputElement>(null);
+
+    useEffect(() => {
+        if(inputRef.current) inputRef.current.focus();
+    }, []);
+
+    const handleBlur = () => {
+        onCommit(val);
+    };
+
+    const handleKeyDown = (e: React.KeyboardEvent) => {
+        if (e.key === 'Enter') {
+            e.preventDefault(); // Impede newline em formulários se houver
+            inputRef.current?.blur();
+        }
+    };
+
+    return (
+        <input 
+            ref={inputRef}
+            className="w-full h-full border-none outline-none bg-white p-0 m-0 text-xs font-normal text-black absolute inset-0 z-20"
+            value={val}
+            onChange={(e) => setVal(e.target.value)}
+            onBlur={handleBlur}
+            onKeyDown={handleKeyDown}
+        />
     );
 };

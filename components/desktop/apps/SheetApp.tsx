@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
@@ -8,13 +9,14 @@ import { useToast } from '@/hooks/useToast';
 import { useCloudStore } from '@/store/useCloudStore';
 import { useDesktopStore } from '@/store/useDesktopStore';
 import ExcelJS from 'exceljs';
+import jsPDF from 'jspdf'; // Import direto
 
 // Imports Modulares
 import { SheetToolbar } from './sheet/SheetToolbar';
 import { SheetGrid } from './sheet/SheetGrid';
 import { SheetContextMenu } from './sheet/SheetContextMenu';
 import { CellData, SheetState, SelectionRange, CellStyle } from './sheet/types';
-import { DEFAULT_COLS, DEFAULT_ROWS, DEFAULT_CELL_WIDTH, DEFAULT_CELL_HEIGHT, getCellId, evaluateFormula } from './sheet/utils';
+import { DEFAULT_COLS, DEFAULT_ROWS, DEFAULT_CELL_WIDTH, DEFAULT_CELL_HEIGHT, getCellId, evaluateFormula, getColName } from './sheet/utils';
 
 export function SheetApp({ windowId }: { windowId: string }) {
   const { uploadFile } = useCloudStore();
@@ -37,6 +39,7 @@ export function SheetApp({ windowId }: { windowId: string }) {
 
   // --- SELECTION & INTERACTION ---
   const [activeCell, setActiveCell] = useState<{r: number, c: number} | null>(null);
+  const [editingCell, setEditingCell] = useState<{r: number, c: number} | null>(null); // New: Inline Edit State
   const [selections, setSelections] = useState<SelectionRange[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [isFillDragging, setIsFillDragging] = useState(false);
@@ -45,7 +48,8 @@ export function SheetApp({ windowId }: { windowId: string }) {
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, r: number, c: number } | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
-  // Refs
+  // Input file oculto para importação
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const resizeRef = useRef<{ type: 'col'|'row', index: number, start: number, startSize: number } | null>(null);
@@ -116,6 +120,7 @@ export function SheetApp({ windowId }: { windowId: string }) {
           const computed = recalculateAll(newCells);
           setCells(computed);
           saveToHistory();
+          setEditingCell(null); // Sai do modo edição
       } else {
           setCells(newCells);
       }
@@ -123,9 +128,11 @@ export function SheetApp({ windowId }: { windowId: string }) {
 
   // --- MOUSE HANDLERS (Selection) ---
   const handleMouseDown = (e: React.MouseEvent, r: number, c: number) => {
+      // Se estiver editando, não muda seleção no clique, a menos que clique fora
+      if (editingCell) return;
+
       if (e.button === 2) { // Right Click
            e.preventDefault();
-           // Se clicou fora da seleção atual, seleciona a célula
            if (!selections.some(s => r >= Math.min(s.start.r, s.end.r) && r <= Math.max(s.start.r, s.end.r) && c >= Math.min(s.start.c, s.end.c) && c <= Math.max(s.start.c, s.end.c))) {
                 setActiveCell({ r, c });
                 setSelections([{ start: { r, c }, end: { r, c } }]);
@@ -164,7 +171,6 @@ export function SheetApp({ windowId }: { windowId: string }) {
       e.stopPropagation();
       e.preventDefault();
       setIsFillDragging(true);
-      // Logic for fill drag start... (Reuse existing selection for visualization)
       setIsDragging(true);
   };
 
@@ -186,7 +192,7 @@ export function SheetApp({ windowId }: { windowId: string }) {
                   for(let c = minC; c <= maxC; c++) {
                       const targetId = getCellId(r, c);
                       if (targetId !== sourceId) {
-                          newCells[targetId] = { ...sourceData }; // Clone value & style
+                          newCells[targetId] = { ...sourceData }; 
                       }
                   }
               }
@@ -227,7 +233,7 @@ export function SheetApp({ windowId }: { windowId: string }) {
           window.removeEventListener('mouseup', handleGlobalMouseUp);
           window.removeEventListener('mousemove', handleGlobalMouseMove);
       };
-  }, [isFillDragging, activeCell, selections]); // Deps needed for fill logic closure
+  }, [isFillDragging, activeCell, selections]); 
 
   // --- TOOLBAR ACTIONS ---
   const applyFormat = (style: Partial<CellStyle>) => {
@@ -257,7 +263,6 @@ export function SheetApp({ windowId }: { windowId: string }) {
   };
 
   const handleFormatTable = () => {
-      // Zebra Striping + Header
       if (selections.length === 0) return;
       const range = selections[0];
       const newCells = { ...cells };
@@ -312,7 +317,6 @@ export function SheetApp({ windowId }: { windowId: string }) {
           navigator.clipboard.writeText(text);
           addToast({ type: 'success', title: 'Copiado', message: 'Células copiadas.' });
       } else if (action === 'delete_row') {
-          // Simplificado: Apaga dados das linhas selecionadas
           for(let r=minR; r<=maxR; r++) {
               for(let c=0; c<DEFAULT_COLS; c++) delete newCells[getCellId(r, c)];
           }
@@ -321,6 +325,145 @@ export function SheetApp({ windowId }: { windowId: string }) {
       } else if (action === 'format_table') {
           handleFormatTable();
       }
+  };
+
+  // --- FILE OPERATIONS (SAVE / IMPORT / EXPORT) ---
+
+  const handleSaveDrive = async () => {
+      setIsSaving(true);
+      try {
+          const buffer = await generateXLSXBuffer();
+          const file = new File([buffer], `${filename}.xlsx`, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+          await uploadFile(file);
+          addToast({ type: 'success', title: 'Salvo', message: 'Planilha salva no Drive.' });
+          setWindowDirty(windowId, false);
+      } catch (e: any) {
+          addToast({ type: 'error', title: 'Erro', message: e.message });
+      } finally {
+          setIsSaving(false);
+      }
+  };
+
+  const generateXLSXBuffer = async () => {
+      const workbook = new ExcelJS.Workbook();
+      const sheet = workbook.addWorksheet('Planilha 1');
+      
+      // Colunas
+      const cols = [];
+      for(let i=0; i<DEFAULT_COLS; i++) {
+          if(colWidths[i]) cols.push({ width: colWidths[i] / 7 });
+      }
+      if(cols.length) sheet.columns = cols;
+
+      Object.entries(cells).forEach(([key, rawCell]) => {
+          const cell = rawCell as CellData;
+          const excelCell = sheet.getCell(key);
+          const val = cell.value || '';
+          if (val.startsWith('=')) {
+              excelCell.value = { formula: val.substring(1), result: cell.computed as any };
+          } else {
+              excelCell.value = cell.computed as any;
+          }
+          if (cell.style) {
+              if (cell.style.bold) excelCell.font = { ...excelCell.font, bold: true };
+              if (cell.style.italic) excelCell.font = { ...excelCell.font, italic: true };
+              if (cell.style.bg) excelCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: cell.style.bg.replace('#', '') } };
+          }
+      });
+      return await workbook.xlsx.writeBuffer();
+  };
+
+  const handleExport = async (type: 'xlsx' | 'csv' | 'pdf') => {
+      if (type === 'xlsx') {
+          const buffer = await generateXLSXBuffer();
+          const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+          downloadBlob(blob, `${filename}.xlsx`);
+      } else if (type === 'csv') {
+          const workbook = new ExcelJS.Workbook();
+          const sheet = workbook.addWorksheet('Sheet1');
+          Object.entries(cells).forEach(([key, d]) => { sheet.getCell(key).value = (d as CellData).computed as any; });
+          const buffer = await workbook.csv.writeBuffer();
+          const blob = new Blob([buffer], { type: 'text/csv' });
+          downloadBlob(blob, `${filename}.csv`);
+      } else if (type === 'pdf') {
+          const doc = new jsPDF();
+          doc.text(filename, 10, 10);
+          
+          // Renderiza texto simples das células preenchidas (MVP de PDF)
+          let y = 20;
+          const sortedKeys = Object.keys(cells).sort(); // A1, A2... (Simples)
+          
+          sortedKeys.forEach(key => {
+              const val = (cells[key] as CellData).computed;
+              if (val) {
+                  doc.text(`${key}: ${val}`, 10, y);
+                  y += 7;
+                  if(y > 280) { doc.addPage(); y = 20; }
+              }
+          });
+          
+          doc.save(`${filename}.pdf`);
+      }
+  };
+
+  const downloadBlob = (blob: Blob, name: string) => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = name;
+      a.click();
+      URL.revokeObjectURL(url);
+  };
+
+  const handleImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = async (evt) => {
+          try {
+              const buffer = evt.target?.result as ArrayBuffer;
+              const workbook = new ExcelJS.Workbook();
+              await workbook.xlsx.load(buffer);
+              const worksheet = workbook.getWorksheet(1);
+              
+              if (worksheet) {
+                  const newCells: Record<string, CellData> = {};
+                  worksheet.eachRow((row, rowNumber) => {
+                      row.eachCell((cell, colNumber) => {
+                          const id = getCellId(rowNumber - 1, colNumber - 1);
+                          let val = cell.value;
+                          let computed: any = val;
+
+                          // Se for objeto (fórmula ou rich text), simplifica
+                          if (typeof val === 'object' && val !== null) {
+                              if ('formula' in val) {
+                                  val = `=${val.formula}`;
+                                  computed = val.result;
+                              } else if ('richText' in val) {
+                                  val = val.richText.map(r => r.text).join('');
+                                  computed = val;
+                              }
+                          }
+                          
+                          newCells[id] = { 
+                              value: String(val),
+                              computed: computed
+                          };
+                      });
+                  });
+                  setCells(newCells);
+                  setFilename(file.name.replace('.xlsx', ''));
+                  saveToHistory();
+                  addToast({ type: 'success', title: 'Importado', message: 'Planilha carregada.' });
+              }
+          } catch (error) {
+              addToast({ type: 'error', title: 'Erro', message: 'Falha ao ler arquivo XLSX.' });
+          }
+      };
+      reader.readAsArrayBuffer(file);
+      // Limpa input
+      if(fileInputRef.current) fileInputRef.current.value = '';
   };
 
   // --- SYNC FORMULA BAR ---
@@ -333,46 +476,10 @@ export function SheetApp({ windowId }: { windowId: string }) {
       }
   }, [activeCell, cells]);
 
-  // --- SAVE ---
-  const handleSave = async () => {
-      setIsSaving(true);
-      try {
-          const workbook = new ExcelJS.Workbook();
-          const sheet = workbook.addWorksheet('Planilha 1');
-          
-          Object.entries(cells).forEach(([key, rawCell]) => {
-              const cell = rawCell as CellData; // Cast seguro para evitar erro 'unknown'
-              const excelCell = sheet.getCell(key);
-              
-              const val = cell.value || '';
-              if (val.startsWith('=')) {
-                  excelCell.value = { formula: val.substring(1), result: cell.computed as any };
-              } else {
-                  excelCell.value = cell.computed as any;
-              }
-              
-              if (cell.style) {
-                  if (cell.style.bold) excelCell.font = { ...excelCell.font, bold: true };
-                  if (cell.style.bg) excelCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: cell.style.bg.replace('#', '') } };
-              }
-          });
-          
-          const buffer = await workbook.xlsx.writeBuffer();
-          const file = new File([buffer], `${filename}.xlsx`, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-          await uploadFile(file);
-          
-          addToast({ type: 'success', title: 'Salvo', message: 'Planilha salva no Drive.' });
-          setWindowDirty(windowId, false);
-      } catch (e: any) {
-          addToast({ type: 'error', title: 'Erro', message: e.message });
-      } finally {
-          setIsSaving(false);
-      }
-  };
-
   return (
     <div className="flex flex-col h-full bg-[#f8f9fa] text-black select-none" onClick={() => setContextMenu(null)}>
-        
+        <input type="file" ref={fileInputRef} className="hidden" accept=".xlsx" onChange={handleImportFile} />
+
         {/* HEADER */}
         <div className="h-10 flex items-center justify-between px-3 border-b border-zinc-300 bg-white shrink-0">
              <div className="flex items-center gap-2">
@@ -383,14 +490,21 @@ export function SheetApp({ windowId }: { windowId: string }) {
                  <Button size="icon" variant="ghost" onClick={undo} disabled={historyIndex <= 0} className="h-7 w-7"><Undo2 className="w-4 h-4" /></Button>
                  <Button size="icon" variant="ghost" onClick={redo} disabled={historyIndex >= history.length - 1} className="h-7 w-7"><Redo2 className="w-4 h-4" /></Button>
                  <div className="w-px h-4 bg-zinc-300 mx-1 self-center" />
-                 <Button size="sm" onClick={handleSave} disabled={isSaving} className="h-7 bg-green-600 hover:bg-green-700 text-white gap-2">
+                 <Button size="sm" onClick={handleSaveDrive} disabled={isSaving} className="h-7 bg-green-600 hover:bg-green-700 text-white gap-2">
                     {isSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />} Salvar
                  </Button>
              </div>
         </div>
 
         {/* TOOLBAR */}
-        <SheetToolbar onApplyFormat={applyFormat} onFormatTable={handleFormatTable} onClear={() => handleContextAction('clear')} />
+        <SheetToolbar 
+            onApplyFormat={applyFormat} 
+            onFormatTable={handleFormatTable} 
+            onClear={() => handleContextAction('clear')}
+            onSaveDrive={handleSaveDrive}
+            onExport={handleExport}
+            onImportClick={() => fileInputRef.current?.click()}
+        />
 
         {/* FORMULA BAR */}
         <div className="flex items-center px-2 py-1 gap-2 bg-white border-b border-zinc-300 shrink-0">
@@ -427,6 +541,7 @@ export function SheetApp({ windowId }: { windowId: string }) {
                 rowHeights={rowHeights}
                 selections={selections}
                 activeCell={activeCell}
+                editingCell={editingCell} // Passa estado de edição
                 onMouseDown={handleMouseDown}
                 onMouseEnter={handleMouseEnter}
                 onResizeStart={handleResizeStart}
@@ -443,6 +558,14 @@ export function SheetApp({ windowId }: { windowId: string }) {
                          setSelections([{ start: { r, c }, end: { r, c } }]);
                     }
                     setContextMenu({ x: e.clientX, y: e.clientY, r, c });
+                }}
+                onDoubleClick={(r, c) => {
+                    setActiveCell({ r, c });
+                    setEditingCell({ r, c });
+                }}
+                onCellCommit={(r, c, val) => {
+                    // Update cell and close edit mode
+                    updateCell(r, c, val, true);
                 }}
             />
         </div>

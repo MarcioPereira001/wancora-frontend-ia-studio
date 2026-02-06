@@ -7,11 +7,12 @@ export interface CellStyle {
     bg?: string;
     color?: string;
     fontSize?: number;
+    format?: 'text' | 'number' | 'currency' | 'percent' | 'date'; // Novo campo
 }
 
 export interface CellData {
-    value: string;
-    computed?: string | number | null;
+    value: string; // Valor bruto (ex: "=SUM(A1:B1)" ou "10.5")
+    computed?: string | number | null; // Valor calculado (ex: 200)
     style?: CellStyle;
 }
 
