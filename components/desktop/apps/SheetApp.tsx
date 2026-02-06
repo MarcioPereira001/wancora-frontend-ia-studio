@@ -450,25 +450,77 @@ export function SheetApp({ windowId }: { windowId: string }) {
   const generateXLSXBuffer = async () => {
       const workbook = new ExcelJS.Workbook();
       const sheet = workbook.addWorksheet('Planilha 1');
-      const cols = [];
-      for(let i=0; i<DEFAULT_COLS; i++) if(colWidths[i]) cols.push({ width: colWidths[i] / 7 });
-      if(cols.length) sheet.columns = cols;
+      
+      // 1. Definição de Colunas e Larguras
+      const columns = [];
+      for(let i=0; i<DEFAULT_COLS; i++) {
+          // ExcelJS width é aproximado por caractere. Default do grid é pixel.
+          // Uma aproximação razoável é pixels / 7.
+          const width = colWidths[i] ? Number(colWidths[i]) / 7 : DEFAULT_CELL_WIDTH / 7;
+          columns.push({ header: '', key: getColName(i), width: width });
+      }
+      sheet.columns = columns;
 
+      // 2. Altura das Linhas
+      Object.entries(rowHeights).forEach(([rowIdx, height]) => {
+          const row = sheet.getRow(Number(rowIdx) + 1);
+          if (row) row.height = Number(height) * 0.75; // Conversão aproximada px -> points
+      });
+
+      // 3. Células e Estilos
       Object.entries(cells).forEach(([key, rawCell]) => {
           const cell = rawCell as CellData;
           const excelCell = sheet.getCell(key);
           const val = cell.value || '';
+          
+          // Valor e Fórmula
           if (val.startsWith('=')) {
               excelCell.value = { formula: val.substring(1), result: cell.computed as any };
           } else {
               excelCell.value = cell.computed as any;
           }
+
+          // Estilos Completos
           if (cell.style) {
-              if (cell.style.bold) excelCell.font = { ...excelCell.font, bold: true };
-              if (cell.style.italic) excelCell.font = { ...excelCell.font, italic: true };
-              if (cell.style.bg) excelCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: cell.style.bg.replace('#', '') } };
+              const style = cell.style;
+              
+              // Fonte
+              excelCell.font = {
+                  name: 'Calibri',
+                  bold: style.bold,
+                  italic: style.italic,
+                  underline: style.underline,
+                  color: style.color ? { argb: style.color.replace('#', '') } : undefined,
+                  size: style.fontSize || 11
+              };
+
+              // Preenchimento (Background)
+              if (style.bg) {
+                  excelCell.fill = {
+                      type: 'pattern',
+                      pattern: 'solid',
+                      fgColor: { argb: style.bg.replace('#', '') }
+                  };
+              }
+
+              // Alinhamento
+              if (style.align) {
+                  excelCell.alignment = {
+                      horizontal: style.align,
+                      vertical: 'middle' // Padrão
+                  };
+              }
+
+              // Formatação Numérica
+              if (style.format) {
+                  if (style.format === 'currency') excelCell.numFmt = '"R$"#,##0.00';
+                  else if (style.format === 'percent') excelCell.numFmt = '0.00%';
+                  else if (style.format === 'date') excelCell.numFmt = 'dd/mm/yyyy';
+                  else if (style.format === 'number') excelCell.numFmt = '#,##0.00';
+              }
           }
       });
+
       return await workbook.xlsx.writeBuffer();
   };
 

@@ -30,7 +30,7 @@ export const FileIcon: React.FC<FileIconProps> = ({ file, selected, onSelect, on
   }
 
   const renderIcon = () => {
-      const mime = file.mime_type;
+      const mime = (file.mime_type || '').toLowerCase();
       const s = getIconSize();
 
       if (file.is_folder) {
@@ -65,8 +65,9 @@ export const FileIcon: React.FC<FileIconProps> = ({ file, selected, onSelect, on
               </div>
           );
       }
-      if (mime.includes('spreadsheet') || mime.includes('excel')) {
-          return <FileSpreadsheet className={cn(s, "text-green-100 fill-green-600")} />;
+      // Detecção de Planilha (Excel, Spreadsheet, CSV)
+      if (mime.includes('spreadsheet') || mime.includes('excel') || mime.includes('csv')) {
+          return <FileSpreadsheet className={cn(s, "text-green-600 fill-green-100")} />;
       }
       if (mime.includes('video')) {
           return <Film className={cn(s, "text-pink-500 fill-pink-100")} />;
