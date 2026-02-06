@@ -9,12 +9,14 @@ import { useToast } from '@/hooks/useToast';
 import { useCloudStore } from '@/store/useCloudStore';
 import { useDesktopStore } from '@/store/useDesktopStore';
 import ExcelJS from 'exceljs';
-import jsPDF from 'jspdf'; // Import direto
+import jsPDF from 'jspdf'; 
 
 // Imports Modulares
 import { SheetToolbar } from './sheet/SheetToolbar';
 import { SheetGrid } from './sheet/SheetGrid';
 import { SheetContextMenu } from './sheet/SheetContextMenu';
+import { SheetSaveModal } from './sheet/SheetSaveModal';
+import { ImportDriveModal } from '../ImportDriveModal'; 
 import { CellData, SheetState, SelectionRange, CellStyle } from './sheet/types';
 import { DEFAULT_COLS, DEFAULT_ROWS, DEFAULT_CELL_WIDTH, DEFAULT_CELL_HEIGHT, getCellId, evaluateFormula, getColName } from './sheet/utils';
 
@@ -39,7 +41,7 @@ export function SheetApp({ windowId }: { windowId: string }) {
 
   // --- SELECTION & INTERACTION ---
   const [activeCell, setActiveCell] = useState<{r: number, c: number} | null>(null);
-  const [editingCell, setEditingCell] = useState<{r: number, c: number} | null>(null); // New: Inline Edit State
+  const [editingCell, setEditingCell] = useState<{r: number, c: number} | null>(null);
   const [selections, setSelections] = useState<SelectionRange[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [isFillDragging, setIsFillDragging] = useState(false);
@@ -47,6 +49,10 @@ export function SheetApp({ windowId }: { windowId: string }) {
   
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, r: number, c: number } | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+
+  // --- MODALS ---
+  const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
+  const [isImportDriveOpen, setIsImportDriveOpen] = useState(false);
 
   // Input file oculto para importação
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -91,7 +97,7 @@ export function SheetApp({ windowId }: { windowId: string }) {
       if (history.length === 0) saveToHistory();
   }, []);
 
-  // --- CORE LOGIC: Recalculate ---
+  // --- RECALCULATE ---
   const recalculateAll = (currentCells: Record<string, CellData>) => {
       const nextCells = { ...currentCells };
       Object.keys(nextCells).forEach(key => {
@@ -99,7 +105,6 @@ export function SheetApp({ windowId }: { windowId: string }) {
           if(cell.value && cell.value.toString().startsWith('=')) {
               cell.computed = evaluateFormula(cell.value, nextCells);
           } else {
-              // Correção BUG DO 0: Se string vazia, computed = vazio.
               const val = cell.value;
               if (val === '' || val === null || val === undefined) {
                   cell.computed = '';
@@ -120,18 +125,41 @@ export function SheetApp({ windowId }: { windowId: string }) {
           const computed = recalculateAll(newCells);
           setCells(computed);
           saveToHistory();
-          setEditingCell(null); // Sai do modo edição
+          setEditingCell(null); 
       } else {
           setCells(newCells);
       }
   };
 
+  // --- SHORTCUTS ---
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+        if (editingCell) return; // Se estiver editando célula, não dispara atalhos de formatação
+
+        // Formatação
+        if ((e.ctrlKey || e.metaKey)) {
+            if (e.key === 'b') { e.preventDefault(); applyFormat({ bold: true }); return; }
+            if (e.key === 'i') { e.preventDefault(); applyFormat({ italic: true }); return; }
+            if (e.key === 'u') { e.preventDefault(); applyFormat({ underline: true }); return; }
+            if (e.key === 'z') { e.preventDefault(); undo(); return; }
+            if (e.key === 'y') { e.preventDefault(); redo(); return; }
+            
+            if (e.shiftKey) {
+                if (e.key === '$') { e.preventDefault(); applyFormat({ format: 'currency' }); return; }
+                if (e.key === '%') { e.preventDefault(); applyFormat({ format: 'percent' }); return; }
+            }
+        }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [selections, editingCell, cells, historyIndex]);
+
   // --- MOUSE HANDLERS (Selection) ---
   const handleMouseDown = (e: React.MouseEvent, r: number, c: number) => {
-      // Se estiver editando, não muda seleção no clique, a menos que clique fora
       if (editingCell) return;
 
-      if (e.button === 2) { // Right Click
+      if (e.button === 2) { 
            e.preventDefault();
            if (!selections.some(s => r >= Math.min(s.start.r, s.end.r) && r <= Math.max(s.start.r, s.end.r) && c >= Math.min(s.start.c, s.end.c) && c <= Math.max(s.start.c, s.end.c))) {
                 setActiveCell({ r, c });
@@ -176,7 +204,6 @@ export function SheetApp({ windowId }: { windowId: string }) {
 
   const handleGlobalMouseUp = () => {
       if (isFillDragging && activeCell && selections.length > 0) {
-          // AUTO-FILL LOGIC
           const range = selections[selections.length - 1];
           const sourceId = getCellId(activeCell.r, activeCell.c);
           const sourceData = cells[sourceId];
@@ -206,7 +233,6 @@ export function SheetApp({ windowId }: { windowId: string }) {
       resizeRef.current = null;
   };
 
-  // --- RESIZE LOGIC ---
   const handleResizeStart = (e: React.MouseEvent, type: 'col' | 'row', index: number) => {
       e.stopPropagation();
       e.preventDefault();
@@ -250,7 +276,16 @@ export function SheetApp({ windowId }: { windowId: string }) {
               for(let c=minC; c<=maxC; c++) {
                   const id = getCellId(r, c);
                   if(!newCells[id]) newCells[id] = { value: '' };
-                  newCells[id] = { ...newCells[id], style: { ...newCells[id].style, ...style } };
+                  
+                  // Toggle logic for boolean styles
+                  const currentStyle = newCells[id].style || {};
+                  const nextStyle = { ...currentStyle, ...style };
+                  
+                  if (style.bold !== undefined && currentStyle.bold) nextStyle.bold = false;
+                  if (style.italic !== undefined && currentStyle.italic) nextStyle.italic = false;
+                  if (style.underline !== undefined && currentStyle.underline) nextStyle.underline = false;
+
+                  newCells[id] = { ...newCells[id], style: nextStyle };
                   changed = true;
               }
           }
@@ -290,7 +325,6 @@ export function SheetApp({ windowId }: { windowId: string }) {
       saveToHistory();
   };
 
-  // --- CONTEXT ACTIONS ---
   const handleContextAction = (action: string) => {
       setContextMenu(null);
       if (selections.length === 0) return;
@@ -327,32 +361,12 @@ export function SheetApp({ windowId }: { windowId: string }) {
       }
   };
 
-  // --- FILE OPERATIONS (SAVE / IMPORT / EXPORT) ---
-
-  const handleSaveDrive = async () => {
-      setIsSaving(true);
-      try {
-          const buffer = await generateXLSXBuffer();
-          const file = new File([buffer], `${filename}.xlsx`, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-          await uploadFile(file);
-          addToast({ type: 'success', title: 'Salvo', message: 'Planilha salva no Drive.' });
-          setWindowDirty(windowId, false);
-      } catch (e: any) {
-          addToast({ type: 'error', title: 'Erro', message: e.message });
-      } finally {
-          setIsSaving(false);
-      }
-  };
-
+  // --- SAVE / EXPORT ---
   const generateXLSXBuffer = async () => {
       const workbook = new ExcelJS.Workbook();
       const sheet = workbook.addWorksheet('Planilha 1');
-      
-      // Colunas
       const cols = [];
-      for(let i=0; i<DEFAULT_COLS; i++) {
-          if(colWidths[i]) cols.push({ width: colWidths[i] / 7 });
-      }
+      for(let i=0; i<DEFAULT_COLS; i++) if(colWidths[i]) cols.push({ width: colWidths[i] / 7 });
       if(cols.length) sheet.columns = cols;
 
       Object.entries(cells).forEach(([key, rawCell]) => {
@@ -373,46 +387,76 @@ export function SheetApp({ windowId }: { windowId: string }) {
       return await workbook.xlsx.writeBuffer();
   };
 
-  const handleExport = async (type: 'xlsx' | 'csv' | 'pdf') => {
-      if (type === 'xlsx') {
-          const buffer = await generateXLSXBuffer();
-          const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-          downloadBlob(blob, `${filename}.xlsx`);
-      } else if (type === 'csv') {
-          const workbook = new ExcelJS.Workbook();
-          const sheet = workbook.addWorksheet('Sheet1');
-          Object.entries(cells).forEach(([key, d]) => { sheet.getCell(key).value = (d as CellData).computed as any; });
-          const buffer = await workbook.csv.writeBuffer();
-          const blob = new Blob([buffer], { type: 'text/csv' });
-          downloadBlob(blob, `${filename}.csv`);
-      } else if (type === 'pdf') {
-          const doc = new jsPDF();
-          doc.text(filename, 10, 10);
-          
-          // Renderiza texto simples das células preenchidas (MVP de PDF)
-          let y = 20;
-          const sortedKeys = Object.keys(cells).sort(); // A1, A2... (Simples)
-          
-          sortedKeys.forEach(key => {
-              const val = (cells[key] as CellData).computed;
-              if (val) {
-                  doc.text(`${key}: ${val}`, 10, y);
-                  y += 7;
-                  if(y > 280) { doc.addPage(); y = 20; }
+  const handleConfirmSave = async (target: 'drive' | 'local', format: 'xlsx' | 'csv' | 'pdf', newName: string) => {
+      setFilename(newName);
+      setIsSaveModalOpen(false);
+      setIsSaving(true);
+      
+      try {
+          if (format === 'xlsx') {
+              const buffer = await generateXLSXBuffer();
+              const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+              
+              if (target === 'local') {
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `${newName}.xlsx`;
+                  a.click();
+              } else {
+                  const file = new File([blob], `${newName}.xlsx`, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+                  await uploadFile(file);
+                  setWindowDirty(windowId, false);
               }
-          });
-          
-          doc.save(`${filename}.pdf`);
-      }
-  };
+          } 
+          else if (format === 'csv') {
+              const workbook = new ExcelJS.Workbook();
+              const sheet = workbook.addWorksheet('Sheet1');
+              Object.entries(cells).forEach(([key, d]) => { sheet.getCell(key).value = (d as CellData).computed as any; });
+              const buffer = await workbook.csv.writeBuffer();
+              const blob = new Blob([buffer], { type: 'text/csv' });
+              
+              if (target === 'local') {
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `${newName}.csv`;
+                  a.click();
+              } else {
+                  const file = new File([blob], `${newName}.csv`, { type: 'text/csv' });
+                  await uploadFile(file);
+              }
+          }
+          else if (format === 'pdf') {
+             const doc = new jsPDF();
+             doc.text(newName, 10, 10);
+             let y = 20;
+             const sortedKeys = Object.keys(cells).sort(); 
+             sortedKeys.forEach(key => {
+                 const val = (cells[key] as CellData).computed;
+                 if (val) {
+                     doc.text(`${key}: ${val}`, 10, y);
+                     y += 7;
+                     if(y > 280) { doc.addPage(); y = 20; }
+                 }
+             });
+             
+             if (target === 'local') {
+                 doc.save(`${newName}.pdf`);
+             } else {
+                 const blob = doc.output('blob');
+                 const file = new File([blob], `${newName}.pdf`, { type: 'application/pdf' });
+                 await uploadFile(file);
+             }
+          }
 
-  const downloadBlob = (blob: Blob, name: string) => {
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = name;
-      a.click();
-      URL.revokeObjectURL(url);
+          if(target === 'drive') addToast({ type: 'success', title: 'Salvo', message: 'Arquivo salvo no Drive.' });
+
+      } catch(e: any) {
+          addToast({ type: 'error', title: 'Erro', message: e.message });
+      } finally {
+          setIsSaving(false);
+      }
   };
 
   const handleImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -435,7 +479,6 @@ export function SheetApp({ windowId }: { windowId: string }) {
                           let val = cell.value;
                           let computed: any = val;
 
-                          // Se for objeto (fórmula ou rich text), simplifica
                           if (typeof val === 'object' && val !== null) {
                               if ('formula' in val) {
                                   val = `=${val.formula}`;
@@ -445,11 +488,7 @@ export function SheetApp({ windowId }: { windowId: string }) {
                                   computed = val;
                               }
                           }
-                          
-                          newCells[id] = { 
-                              value: String(val),
-                              computed: computed
-                          };
+                          newCells[id] = { value: String(val), computed: computed };
                       });
                   });
                   setCells(newCells);
@@ -462,7 +501,6 @@ export function SheetApp({ windowId }: { windowId: string }) {
           }
       };
       reader.readAsArrayBuffer(file);
-      // Limpa input
       if(fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -484,15 +522,17 @@ export function SheetApp({ windowId }: { windowId: string }) {
         <div className="h-10 flex items-center justify-between px-3 border-b border-zinc-300 bg-white shrink-0">
              <div className="flex items-center gap-2">
                  <div className="p-1 bg-green-600 rounded text-white"><FileSpreadsheet className="w-4 h-4" /></div>
-                 <Input value={filename} onChange={e => setFilename(e.target.value)} className="h-7 w-48 border-transparent hover:border-zinc-300 font-semibold bg-transparent px-2 focus:border-green-600" />
+                 <Input 
+                    value={filename} 
+                    onChange={e => setFilename(e.target.value)} 
+                    // ESTILO ATUALIZADO: text-black para legibilidade
+                    className="h-7 w-48 border-transparent hover:border-zinc-300 font-bold text-black bg-transparent px-2 focus:border-green-600 focus:bg-white" 
+                 />
              </div>
              <div className="flex gap-1">
                  <Button size="icon" variant="ghost" onClick={undo} disabled={historyIndex <= 0} className="h-7 w-7"><Undo2 className="w-4 h-4" /></Button>
                  <Button size="icon" variant="ghost" onClick={redo} disabled={historyIndex >= history.length - 1} className="h-7 w-7"><Redo2 className="w-4 h-4" /></Button>
                  <div className="w-px h-4 bg-zinc-300 mx-1 self-center" />
-                 <Button size="sm" onClick={handleSaveDrive} disabled={isSaving} className="h-7 bg-green-600 hover:bg-green-700 text-white gap-2">
-                    {isSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />} Salvar
-                 </Button>
              </div>
         </div>
 
@@ -501,9 +541,10 @@ export function SheetApp({ windowId }: { windowId: string }) {
             onApplyFormat={applyFormat} 
             onFormatTable={handleFormatTable} 
             onClear={() => handleContextAction('clear')}
-            onSaveDrive={handleSaveDrive}
-            onExport={handleExport}
-            onImportClick={() => fileInputRef.current?.click()}
+            onOpenSaveModal={() => setIsSaveModalOpen(true)}
+            onExport={(type) => handleConfirmSave('local', type, filename)}
+            onImportDrive={() => setIsImportDriveOpen(true)}
+            onImportLocal={handleImportFile}
         />
 
         {/* FORMULA BAR */}
@@ -541,7 +582,7 @@ export function SheetApp({ windowId }: { windowId: string }) {
                 rowHeights={rowHeights}
                 selections={selections}
                 activeCell={activeCell}
-                editingCell={editingCell} // Passa estado de edição
+                editingCell={editingCell} 
                 onMouseDown={handleMouseDown}
                 onMouseEnter={handleMouseEnter}
                 onResizeStart={handleResizeStart}
@@ -564,7 +605,6 @@ export function SheetApp({ windowId }: { windowId: string }) {
                     setEditingCell({ r, c });
                 }}
                 onCellCommit={(r, c, val) => {
-                    // Update cell and close edit mode
                     updateCell(r, c, val, true);
                 }}
             />
@@ -579,6 +619,21 @@ export function SheetApp({ windowId }: { windowId: string }) {
                 onAction={handleContextAction}
             />
         )}
+
+        {/* MODALS */}
+        <SheetSaveModal 
+            isOpen={isSaveModalOpen}
+            onClose={() => setIsSaveModalOpen(false)}
+            currentFilename={filename}
+            onConfirm={handleConfirmSave}
+            isSaving={isSaving}
+        />
+
+        <ImportDriveModal 
+            isOpen={isImportDriveOpen}
+            onClose={() => setIsImportDriveOpen(false)}
+            onImportSuccess={() => { /* Lógica de refresh se necessário */ }}
+        />
 
         {/* STATUS BAR */}
         <div className="h-6 bg-zinc-100 border-t border-zinc-300 flex items-center px-3 justify-between text-[10px] text-zinc-500 shrink-0">

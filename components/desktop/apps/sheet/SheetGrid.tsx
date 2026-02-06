@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils';
 import { CellData, SelectionRange } from './types';
 import { DEFAULT_COLS, DEFAULT_ROWS, DEFAULT_CELL_WIDTH, DEFAULT_CELL_HEIGHT, getColName, getCellId, formatCellValue } from './utils';
 import { Grid } from 'lucide-react';
+import { FormulaSuggestions } from './FormulaSuggestions';
 
 interface SheetGridProps {
     cells: Record<string, CellData>;
@@ -170,24 +171,38 @@ const CellInput = ({ initialValue, onCommit }: { initialValue: string, onCommit:
     }, []);
 
     const handleBlur = () => {
-        onCommit(val);
+        // Pequeno timeout para permitir que o clique na sugestão aconteça antes do blur
+        setTimeout(() => {
+             onCommit(val);
+        }, 150);
     };
 
     const handleKeyDown = (e: React.KeyboardEvent) => {
         if (e.key === 'Enter') {
-            e.preventDefault(); // Impede newline em formulários se houver
+            e.preventDefault(); 
             inputRef.current?.blur();
         }
     };
 
+    // Auto-complete handler
+    const handleSelectFormula = (formula: string) => {
+        setVal(`=${formula}(`);
+        inputRef.current?.focus();
+    };
+
     return (
-        <input 
-            ref={inputRef}
-            className="w-full h-full border-none outline-none bg-white p-0 m-0 text-xs font-normal text-black absolute inset-0 z-20"
-            value={val}
-            onChange={(e) => setVal(e.target.value)}
-            onBlur={handleBlur}
-            onKeyDown={handleKeyDown}
-        />
+        <div className="relative w-full h-full">
+            <input 
+                ref={inputRef}
+                className="w-full h-full border-none outline-none bg-white p-0 m-0 text-xs font-normal text-black absolute inset-0 z-20"
+                value={val}
+                onChange={(e) => setVal(e.target.value)}
+                onBlur={handleBlur}
+                onKeyDown={handleKeyDown}
+            />
+            {val.startsWith('=') && (
+                <FormulaSuggestions query={val} onSelect={handleSelectFormula} />
+            )}
+        </div>
     );
 };
