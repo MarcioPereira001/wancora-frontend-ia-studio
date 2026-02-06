@@ -1,170 +1,20 @@
-
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Button } from '@/components/ui/button';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Input } from '@/components/ui/input';
-import { 
-    Save, FileSpreadsheet, Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, 
-    Undo2, Redo2, Plus, Trash, Loader2, Grid, 
-    PaintBucket, Type, Copy, Clipboard, Eraser, Table as TableIcon, 
-    Scissors, MousePointerClick, MoreVertical
-} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Save, FileSpreadsheet, Undo2, Redo2, Loader2, ArrowRight } from 'lucide-react';
 import { useToast } from '@/hooks/useToast';
 import { useCloudStore } from '@/store/useCloudStore';
 import { useDesktopStore } from '@/store/useDesktopStore';
-import { cn } from '@/lib/utils';
 import ExcelJS from 'exceljs';
 
-// --- CONSTANTES & CONFIG ---
-const DEFAULT_COLS = 26; // A-Z
-const DEFAULT_ROWS = 100;
-const DEFAULT_CELL_WIDTH = 100;
-const DEFAULT_CELL_HEIGHT = 24;
-
-// --- TIPAGEM ---
-interface CellStyle {
-    bold?: boolean;
-    italic?: boolean;
-    underline?: boolean;
-    align?: 'left' | 'center' | 'right';
-    bg?: string;
-    color?: string;
-    fontSize?: number;
-    border?: string; // 'top' | 'bottom' | 'left' | 'right' | 'all'
-}
-
-interface CellData {
-    value: string; 
-    computed?: string | number | null;
-    style?: CellStyle;
-}
-
-interface SelectionRange {
-    start: { r: number, c: number };
-    end: { r: number, c: number };
-}
-
-interface ContextMenuState {
-    x: number;
-    y: number;
-    target: { r: number, c: number } | 'selection';
-}
-
-// --- HELPER FUNCTIONS ---
-const getColName = (index: number) => {
-    let columnName = "";
-    let i = index;
-    while (i >= 0) {
-        columnName = String.fromCharCode((i % 26) + 65) + columnName;
-        i = Math.floor(i / 26) - 1;
-    }
-    return columnName;
-};
-
-const getCellId = (r: number, c: number) => `${getColName(c)}${r + 1}`;
-
-const parseCellId = (id: string) => {
-    const match = id.match(/^([A-Z]+)([0-9]+)$/);
-    if (!match) return null;
-    const colStr = match[1];
-    const rowStr = match[2];
-    
-    let col = 0;
-    for (let i = 0; i < colStr.length; i++) {
-        col = col * 26 + (colStr.charCodeAt(i) - 64);
-    }
-    return { r: parseInt(rowStr) - 1, c: col - 1 };
-};
-
-// --- MOTOR DE FÓRMULAS V2 ---
-const evaluateFormula = (expression: string, cells: Record<string, CellData>): string | number => {
-    // Se estiver vazio, retorna string vazia (Correção do bug do "0")
-    if (expression === '' || expression === null || expression === undefined) return '';
-    
-    // Se for número, retorna número
-    if (!isNaN(Number(expression))) return Number(expression);
-
-    if (!expression.startsWith('=')) return expression;
-
-    let cleanExpr = expression.substring(1).toUpperCase().trim();
-
-    try {
-        // 1. Resolve Intervalos (ex: A1:A3 -> [A1, A2, A3])
-        cleanExpr = cleanExpr.replace(/([A-Z]+[0-9]+):([A-Z]+[0-9]+)/g, (match, startId, endId) => {
-            const start = parseCellId(startId);
-            const end = parseCellId(endId);
-            if (!start || !end) return "0";
-
-            const values = [];
-            const minR = Math.min(start.r, end.r);
-            const maxR = Math.max(start.r, end.r);
-            const minC = Math.min(start.c, end.c);
-            const maxC = Math.max(start.c, end.c);
-
-            for (let r = minR; r <= maxR; r++) {
-                for (let c = minC; c <= maxC; c++) {
-                    const id = getCellId(r, c);
-                    const cellVal = cells[id]?.value;
-                    // Trata valor vazio como 0 apenas dentro de operações matemáticas de range
-                    const val = (cellVal === '' || cellVal === undefined) ? 0 : (cells[id]?.computed || cellVal);
-                    values.push(Number(val) || 0);
-                }
-            }
-            return `[${values.join(',')}]`;
-        });
-
-        // 2. Resolve Referências Únicas (ex: A1)
-        cleanExpr = cleanExpr.replace(/[A-Z]+[0-9]+/g, (match) => {
-            const cell = cells[match];
-            if (!cell) return "0";
-            const val = cell.computed !== undefined ? cell.computed : cell.value;
-            // Se for string não numérica, envolve em aspas para o eval
-            return isNaN(Number(val)) ? `"${val}"` : String(val || 0);
-        });
-
-        // 3. Funções Avançadas
-        // SUM, AVG, MIN, MAX, COUNT
-        if (cleanExpr.includes('SUM(')) {
-            cleanExpr = cleanExpr.replace(/SUM\((.*?)\)/g, (_, args) => {
-                const nums = args.replace(/\[|\]/g, '').split(',').map((n: string) => Number(n) || 0);
-                return String(nums.reduce((a: number, b: number) => a + b, 0));
-            });
-        }
-        if (cleanExpr.includes('AVG(') || cleanExpr.includes('MEDIA(')) {
-            cleanExpr = cleanExpr.replace(/(AVG|MEDIA)\((.*?)\)/g, (_, __, args) => {
-                const nums = args.replace(/\[|\]/g, '').split(',').map((n: string) => Number(n) || 0);
-                return nums.length ? String(nums.reduce((a: number, b: number) => a + b, 0) / nums.length) : "0";
-            });
-        }
-        if (cleanExpr.includes('MIN(')) {
-            cleanExpr = cleanExpr.replace(/MIN\((.*?)\)/g, (_, args) => {
-                const nums = args.replace(/\[|\]/g, '').split(',').map((n: string) => Number(n) || 0);
-                return String(Math.min(...nums));
-            });
-        }
-        if (cleanExpr.includes('MAX(')) {
-            cleanExpr = cleanExpr.replace(/MAX\((.*?)\)/g, (_, args) => {
-                const nums = args.replace(/\[|\]/g, '').split(',').map((n: string) => Number(n) || 0);
-                return String(Math.max(...nums));
-            });
-        }
-
-        // Logic: IF(cond, true, false)
-        cleanExpr = cleanExpr.replace(/IF\(([^,]+),([^,]+),([^)]+)\)/g, "($1 ? $2 : $3)");
-        
-        // Text: CONCAT, TRIM
-        cleanExpr = cleanExpr.replace(/CONCAT\((.*?)\)/g, "($1)"); // JS Concat via +
-        
-        // 4. Eval Final Seguro
-        // eslint-disable-next-line no-new-func
-        const result = new Function(`return ${cleanExpr}`)();
-        return isNaN(result) && typeof result !== 'string' ? '#VALOR!' : result;
-
-    } catch (e) {
-        return "#ERR";
-    }
-};
+// Imports Modulares
+import { SheetToolbar } from './sheet/SheetToolbar';
+import { SheetGrid } from './sheet/SheetGrid';
+import { SheetContextMenu } from './sheet/SheetContextMenu';
+import { CellData, SheetState, SelectionRange, CellStyle } from './sheet/types';
+import { DEFAULT_COLS, DEFAULT_ROWS, DEFAULT_CELL_WIDTH, DEFAULT_CELL_HEIGHT, getCellId, evaluateFormula } from './sheet/utils';
 
 export function SheetApp({ windowId }: { windowId: string }) {
   const { uploadFile } = useCloudStore();
@@ -175,60 +25,69 @@ export function SheetApp({ windowId }: { windowId: string }) {
   const initialState = windowInstance?.internalState || {};
   const data = windowInstance?.data || {};
 
-  // --- STATE ---
+  // --- GLOBAL STATE ---
   const [filename, setFilename] = useState(initialState.filename || (data.title || 'Nova Planilha'));
   const [cells, setCells] = useState<Record<string, CellData>>(initialState.cells || {});
-  
   const [colWidths, setColWidths] = useState<Record<number, number>>(initialState.colWidths || {});
   const [rowHeights, setRowHeights] = useState<Record<number, number>>(initialState.rowHeights || {});
 
-  // Selection
+  // --- HISTORY ---
+  const [history, setHistory] = useState<SheetState[]>([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
+
+  // --- SELECTION & INTERACTION ---
   const [activeCell, setActiveCell] = useState<{r: number, c: number} | null>(null);
   const [selections, setSelections] = useState<SelectionRange[]>([]);
   const [isDragging, setIsDragging] = useState(false);
-  const [dragMode, setDragMode] = useState<'select' | 'fill'>('select'); // Novo: Fill Handle
-  
-  // UI & Menu
-  const [activeTab, setActiveTab] = useState<'home' | 'data' | 'view'>('home');
+  const [isFillDragging, setIsFillDragging] = useState(false);
   const [formulaInput, setFormulaInput] = useState('');
+  
+  const [contextMenu, setContextMenu] = useState<{ x: number, y: number, r: number, c: number } | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
 
   // Refs
   const gridRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const contextMenuRef = useRef<HTMLDivElement>(null);
   const resizeRef = useRef<{ type: 'col'|'row', index: number, start: number, startSize: number } | null>(null);
 
-  // --- HISTORY ---
-  const [history, setHistory] = useState<{cells: Record<string, CellData>}[]>([]);
-  const [historyIndex, setHistoryIndex] = useState(-1);
-
-  const saveToHistory = () => {
-      const snapshot = JSON.parse(JSON.stringify(cells));
+  // --- HISTORY LOGIC ---
+  const saveToHistory = useCallback(() => {
+      const state: SheetState = { cells, colWidths, rowHeights };
       const newHistory = history.slice(0, historyIndex + 1);
-      newHistory.push({ cells: snapshot });
-      if(newHistory.length > 30) newHistory.shift();
+      newHistory.push(JSON.parse(JSON.stringify(state)));
+      if (newHistory.length > 50) newHistory.shift();
+      
       setHistory(newHistory);
       setHistoryIndex(newHistory.length - 1);
       setWindowDirty(windowId, true);
-  };
+  }, [cells, colWidths, rowHeights, history, historyIndex, windowId]);
 
   const undo = () => {
-      if(historyIndex > 0) {
-          setCells(history[historyIndex - 1].cells);
+      if (historyIndex > 0) {
+          const prev = history[historyIndex - 1];
+          setCells(prev.cells);
+          setColWidths(prev.colWidths);
+          setRowHeights(prev.rowHeights);
           setHistoryIndex(historyIndex - 1);
       }
   };
 
   const redo = () => {
-      if(historyIndex < history.length - 1) {
-          setCells(history[historyIndex + 1].cells);
+      if (historyIndex < history.length - 1) {
+          const next = history[historyIndex + 1];
+          setCells(next.cells);
+          setColWidths(next.colWidths);
+          setRowHeights(next.rowHeights);
           setHistoryIndex(historyIndex + 1);
       }
   };
 
-  // --- RECALCULATION ---
+  // Init History
+  useEffect(() => {
+      if (history.length === 0) saveToHistory();
+  }, []);
+
+  // --- CORE LOGIC: Recalculate ---
   const recalculateAll = (currentCells: Record<string, CellData>) => {
       const nextCells = { ...currentCells };
       Object.keys(nextCells).forEach(key => {
@@ -236,31 +95,142 @@ export function SheetApp({ windowId }: { windowId: string }) {
           if(cell.value && cell.value.toString().startsWith('=')) {
               cell.computed = evaluateFormula(cell.value, nextCells);
           } else {
-              // Tenta converter pra número se possível, senão mantém string
-              const num = Number(cell.value);
-              // Correção BUG DO 0: Se for string vazia, não converte pra 0
-              if (cell.value === '') cell.computed = '';
-              else cell.computed = isNaN(num) ? cell.value : num;
+              // Correção BUG DO 0: Se string vazia, computed = vazio.
+              const val = cell.value;
+              if (val === '' || val === null || val === undefined) {
+                  cell.computed = '';
+              } else {
+                  const num = Number(val);
+                  cell.computed = isNaN(num) ? val : num;
+              }
           }
       });
       return nextCells;
   };
 
-  // --- HANDLERS ---
-  const handleUpdateCell = (r: number, c: number, val: string, commit = false) => {
+  const updateCell = (r: number, c: number, val: string, commit = false) => {
       const id = getCellId(r, c);
       const newCells = { ...cells, [id]: { ...cells[id], value: val } };
       
       if (commit) {
-          const computedCells = recalculateAll(newCells);
-          setCells(computedCells);
+          const computed = recalculateAll(newCells);
+          setCells(computed);
           saveToHistory();
       } else {
           setCells(newCells);
       }
   };
 
-  const applyFormat = (styleUpdate: Partial<CellStyle>) => {
+  // --- MOUSE HANDLERS (Selection) ---
+  const handleMouseDown = (e: React.MouseEvent, r: number, c: number) => {
+      if (e.button === 2) { // Right Click
+           e.preventDefault();
+           // Se clicou fora da seleção atual, seleciona a célula
+           if (!selections.some(s => r >= Math.min(s.start.r, s.end.r) && r <= Math.max(s.start.r, s.end.r) && c >= Math.min(s.start.c, s.end.c) && c <= Math.max(s.start.c, s.end.c))) {
+                setActiveCell({ r, c });
+                setSelections([{ start: { r, c }, end: { r, c } }]);
+           }
+           setContextMenu({ x: e.clientX, y: e.clientY, r, c });
+           return;
+      }
+      
+      setContextMenu(null);
+      const isCtrl = e.ctrlKey || e.metaKey;
+      const isShift = e.shiftKey;
+
+      if (isShift && activeCell) {
+          const lastSel = selections[selections.length - 1];
+          const newSel = { start: activeCell, end: { r, c } };
+          setSelections(isCtrl ? [...selections, newSel] : [newSel]);
+      } else if (isCtrl) {
+          setActiveCell({ r, c });
+          setSelections([...selections, { start: { r, c }, end: { r, c } }]);
+      } else {
+          setActiveCell({ r, c });
+          setSelections([{ start: { r, c }, end: { r, c } }]);
+      }
+      setIsDragging(true);
+  };
+
+  const handleMouseEnter = (r: number, c: number) => {
+      if (isDragging && selections.length > 0) {
+          const current = [...selections];
+          current[current.length - 1].end = { r, c };
+          setSelections(current);
+      }
+  };
+
+  const handleFillHandleDown = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      e.preventDefault();
+      setIsFillDragging(true);
+      // Logic for fill drag start... (Reuse existing selection for visualization)
+      setIsDragging(true);
+  };
+
+  const handleGlobalMouseUp = () => {
+      if (isFillDragging && activeCell && selections.length > 0) {
+          // AUTO-FILL LOGIC
+          const range = selections[selections.length - 1];
+          const sourceId = getCellId(activeCell.r, activeCell.c);
+          const sourceData = cells[sourceId];
+          
+          if (sourceData) {
+              const newCells = { ...cells };
+              const minR = Math.min(range.start.r, range.end.r);
+              const maxR = Math.max(range.start.r, range.end.r);
+              const minC = Math.min(range.start.c, range.end.c);
+              const maxC = Math.max(range.start.c, range.end.c);
+              
+              for(let r = minR; r <= maxR; r++) {
+                  for(let c = minC; c <= maxC; c++) {
+                      const targetId = getCellId(r, c);
+                      if (targetId !== sourceId) {
+                          newCells[targetId] = { ...sourceData }; // Clone value & style
+                      }
+                  }
+              }
+              setCells(recalculateAll(newCells));
+              saveToHistory();
+          }
+      }
+      
+      setIsDragging(false);
+      setIsFillDragging(false);
+      resizeRef.current = null;
+  };
+
+  // --- RESIZE LOGIC ---
+  const handleResizeStart = (e: React.MouseEvent, type: 'col' | 'row', index: number) => {
+      e.stopPropagation();
+      e.preventDefault();
+      resizeRef.current = {
+          type, index, start: type === 'col' ? e.clientX : e.clientY,
+          startSize: type === 'col' ? (colWidths[index] || DEFAULT_CELL_WIDTH) : (rowHeights[index] || DEFAULT_CELL_HEIGHT)
+      };
+  };
+
+  const handleGlobalMouseMove = useCallback((e: MouseEvent) => {
+      if (!resizeRef.current) return;
+      const { type, index, start, startSize } = resizeRef.current;
+      const delta = (type === 'col' ? e.clientX : e.clientY) - start;
+      const newSize = Math.max(20, startSize + delta);
+      
+      if (type === 'col') setColWidths(prev => ({ ...prev, [index]: newSize }));
+      else setRowHeights(prev => ({ ...prev, [index]: newSize }));
+  }, []);
+
+  useEffect(() => {
+      window.addEventListener('mouseup', handleGlobalMouseUp);
+      window.addEventListener('mousemove', handleGlobalMouseMove);
+      return () => {
+          window.removeEventListener('mouseup', handleGlobalMouseUp);
+          window.removeEventListener('mousemove', handleGlobalMouseMove);
+      };
+  }, [isFillDragging, activeCell, selections]); // Deps needed for fill logic closure
+
+  // --- TOOLBAR ACTIONS ---
+  const applyFormat = (style: Partial<CellStyle>) => {
       const newCells = { ...cells };
       let changed = false;
 
@@ -269,52 +239,45 @@ export function SheetApp({ windowId }: { windowId: string }) {
           const maxR = Math.max(range.start.r, range.end.r);
           const minC = Math.min(range.start.c, range.end.c);
           const maxC = Math.max(range.start.c, range.end.c);
-
-          for(let r = minR; r <= maxR; r++) {
-              for(let c = minC; c <= maxC; c++) {
+          
+          for(let r=minR; r<=maxR; r++) {
+              for(let c=minC; c<=maxC; c++) {
                   const id = getCellId(r, c);
-                  if(!newCells[id]) newCells[id] = { value: '', computed: '' };
-                  
-                  newCells[id] = {
-                      ...newCells[id],
-                      style: { ...newCells[id].style, ...styleUpdate }
-                  };
+                  if(!newCells[id]) newCells[id] = { value: '' };
+                  newCells[id] = { ...newCells[id], style: { ...newCells[id].style, ...style } };
                   changed = true;
               }
           }
       });
 
-      if(changed) {
+      if (changed) {
           setCells(newCells);
           saveToHistory();
       }
   };
 
-  const handleFormatAsTable = () => {
-      // Formata como tabela zebrada (Alternating Colors)
+  const handleFormatTable = () => {
+      // Zebra Striping + Header
       if (selections.length === 0) return;
       const range = selections[0];
+      const newCells = { ...cells };
       const minR = Math.min(range.start.r, range.end.r);
       const maxR = Math.max(range.start.r, range.end.r);
       const minC = Math.min(range.start.c, range.end.c);
       const maxC = Math.max(range.start.c, range.end.c);
 
-      const newCells = { ...cells };
-      
-      for(let r = minR; r <= maxR; r++) {
+      for(let r=minR; r<=maxR; r++) {
           const isHeader = r === minR;
           const isEven = (r - minR) % 2 === 0;
-          
-          for(let c = minC; c <= maxC; c++) {
+          for(let c=minC; c<=maxC; c++) {
               const id = getCellId(r, c);
               if(!newCells[id]) newCells[id] = { value: '' };
-
               if (isHeader) {
-                  newCells[id].style = { ...newCells[id].style, bg: '#2563eb', color: '#ffffff', bold: true, align: 'center' };
+                  newCells[id].style = { ...newCells[id].style, bg: '#2563eb', color: '#fff', bold: true, align: 'center' };
               } else if (isEven) {
-                   newCells[id].style = { ...newCells[id].style, bg: '#eff6ff' };
+                  newCells[id].style = { ...newCells[id].style, bg: '#eff6ff' };
               } else {
-                   newCells[id].style = { ...newCells[id].style, bg: '#ffffff' };
+                  newCells[id].style = { ...newCells[id].style, bg: '#ffffff' };
               }
           }
       }
@@ -322,147 +285,83 @@ export function SheetApp({ windowId }: { windowId: string }) {
       saveToHistory();
   };
 
-  // --- SELECTION LOGIC ---
-  const handleMouseDown = (e: React.MouseEvent, r: number, c: number) => {
-      // Left Click
-      if(e.button === 0) {
-        setContextMenu(null);
-        const isCtrl = e.ctrlKey || e.metaKey;
-        const isShift = e.shiftKey;
-
-        if(isShift && activeCell) {
-            const newSelection = { start: activeCell, end: { r, c } };
-            setSelections(isCtrl ? [...selections, newSelection] : [newSelection]);
-        } else if (isCtrl) {
-            setActiveCell({ r, c });
-            setSelections([...selections, { start: { r, c }, end: { r, c } }]);
-        } else {
-            setActiveCell({ r, c });
-            setSelections([{ start: { r, c }, end: { r, c } }]);
-        }
-        setIsDragging(true);
-      }
-      // Right Click
-      else if (e.button === 2) {
-          e.preventDefault();
-          // Se clicou fora da seleção, seleciona a célula nova
-          if (!isSelected(r, c)) {
-              setActiveCell({ r, c });
-              setSelections([{ start: { r, c }, end: { r, c } }]);
-          }
-          setContextMenu({ x: e.clientX, y: e.clientY, target: 'selection' });
-      }
-  };
-
-  const handleMouseEnter = (r: number, c: number) => {
-      if(isDragging && selections.length > 0) {
-          const currentSelections = [...selections];
-          const lastIndex = currentSelections.length - 1;
-          currentSelections[lastIndex] = {
-              ...currentSelections[lastIndex],
-              end: { r, c }
-          };
-          setSelections(currentSelections);
-      }
-  };
-
-  const handleMouseUp = () => {
-      setIsDragging(false);
-      resizeRef.current = null;
-  };
-
-  // --- CONTEXT MENU ACTIONS ---
+  // --- CONTEXT ACTIONS ---
   const handleContextAction = (action: string) => {
       setContextMenu(null);
       if (selections.length === 0) return;
-
+      
       const newCells = { ...cells };
-      const range = selections[selections.length-1];
+      const range = selections[0];
       const minR = Math.min(range.start.r, range.end.r);
       const maxR = Math.max(range.start.r, range.end.r);
       const minC = Math.min(range.start.c, range.end.c);
       const maxC = Math.max(range.start.c, range.end.c);
 
-      switch(action) {
-          case 'clear':
-              for(let r=minR; r<=maxR; r++) {
-                  for(let c=minC; c<=maxC; c++) {
-                      const id = getCellId(r, c);
-                      if (newCells[id]) delete newCells[id];
-                  }
-              }
-              setCells(recalculateAll(newCells));
-              saveToHistory();
-              break;
-          
-          case 'copy':
-              // Lógica simples de cópia para clipboard (Tab separated)
-              let text = '';
-              for(let r=minR; r<=maxR; r++) {
-                  for(let c=minC; c<=maxC; c++) {
-                      const id = getCellId(r, c);
-                      text += (newCells[id]?.computed ?? newCells[id]?.value ?? '') + '\t';
-                  }
-                  text += '\n';
-              }
-              navigator.clipboard.writeText(text);
-              addToast({ type: 'info', title: 'Copiado', message: 'Conteúdo copiado.' });
-              break;
-
-          case 'delete_row':
-              // Remove linha e sobe as outras
-              // Implementação simplificada: apaga dados da linha
-              for(let r=minR; r<=maxR; r++) {
-                  for(let c=0; c<DEFAULT_COLS; c++) {
-                      delete newCells[getCellId(r, c)];
-                  }
-              }
-              setCells(recalculateAll(newCells));
-              saveToHistory();
-              break;
+      if (action === 'clear') {
+          for(let r=minR; r<=maxR; r++) {
+              for(let c=minC; c<=maxC; c++) delete newCells[getCellId(r, c)];
+          }
+          setCells(recalculateAll(newCells));
+          saveToHistory();
+      } else if (action === 'copy') {
+          let text = '';
+          for(let r=minR; r<=maxR; r++) {
+              for(let c=minC; c<=maxC; c++) text += (newCells[getCellId(r, c)]?.value || '') + '\t';
+              text += '\n';
+          }
+          navigator.clipboard.writeText(text);
+          addToast({ type: 'success', title: 'Copiado', message: 'Células copiadas.' });
+      } else if (action === 'delete_row') {
+          // Simplificado: Apaga dados das linhas selecionadas
+          for(let r=minR; r<=maxR; r++) {
+              for(let c=0; c<DEFAULT_COLS; c++) delete newCells[getCellId(r, c)];
+          }
+          setCells(recalculateAll(newCells));
+          saveToHistory();
+      } else if (action === 'format_table') {
+          handleFormatTable();
       }
   };
 
-  // --- GLOBAL EVENTS (Close Menu) ---
+  // --- SYNC FORMULA BAR ---
   useEffect(() => {
-      const handleClick = (e: MouseEvent) => {
-          if (contextMenuRef.current && !contextMenuRef.current.contains(e.target as Node)) {
-              setContextMenu(null);
-          }
-      };
-      document.addEventListener('click', handleClick);
-      return () => document.removeEventListener('click', handleClick);
-  }, []);
+      if (activeCell) {
+          const id = getCellId(activeCell.r, activeCell.c);
+          setFormulaInput(cells[id]?.value || '');
+      } else {
+          setFormulaInput('');
+      }
+  }, [activeCell, cells]);
 
-  // --- SAVE & EXPORT ---
+  // --- SAVE ---
   const handleSave = async () => {
       setIsSaving(true);
       try {
           const workbook = new ExcelJS.Workbook();
-          const sheet = workbook.addWorksheet('Planilha1');
-
-          Object.entries(cells).forEach(([key, rawData]) => {
-              const data = rawData as CellData;
-              const cell = sheet.getCell(key);
+          const sheet = workbook.addWorksheet('Planilha 1');
+          
+          Object.entries(cells).forEach(([key, rawCell]) => {
+              const cell = rawCell as CellData; // Cast seguro para evitar erro 'unknown'
+              const excelCell = sheet.getCell(key);
               
-              if (data.value.startsWith('=')) {
-                  cell.value = { formula: data.value.substring(1), result: data.computed as any };
+              const val = cell.value || '';
+              if (val.startsWith('=')) {
+                  excelCell.value = { formula: val.substring(1), result: cell.computed as any };
               } else {
-                  cell.value = data.computed as any;
+                  excelCell.value = cell.computed as any;
               }
-              // Styles
-              if(data.style) {
-                  if(data.style.bold) cell.font = { ...cell.font, bold: true };
-                  if(data.style.italic) cell.font = { ...cell.font, italic: true };
-                  if(data.style.bg) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: data.style.bg.replace('#', '') } };
+              
+              if (cell.style) {
+                  if (cell.style.bold) excelCell.font = { ...excelCell.font, bold: true };
+                  if (cell.style.bg) excelCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: cell.style.bg.replace('#', '') } };
               }
           });
-
+          
           const buffer = await workbook.xlsx.writeBuffer();
-          const file = new File([buffer], filename.endsWith('.xlsx') ? filename : `${filename}.xlsx`, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+          const file = new File([buffer], `${filename}.xlsx`, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
           await uploadFile(file);
           
-          addToast({ type: 'success', title: 'Salvo', message: 'Arquivo atualizado no Drive.' });
+          addToast({ type: 'success', title: 'Salvo', message: 'Planilha salva no Drive.' });
           setWindowDirty(windowId, false);
       } catch (e: any) {
           addToast({ type: 'error', title: 'Erro', message: e.message });
@@ -471,35 +370,14 @@ export function SheetApp({ windowId }: { windowId: string }) {
       }
   };
 
-  // Sync Input Formula
-  useEffect(() => {
-      if(activeCell) {
-          const id = getCellId(activeCell.r, activeCell.c);
-          setFormulaInput(cells[id]?.value || '');
-      }
-  }, [activeCell, cells]);
-
-  const isSelected = (r: number, c: number) => {
-      return selections.some(range => 
-          r >= Math.min(range.start.r, range.end.r) &&
-          r <= Math.max(range.start.r, range.end.r) &&
-          c >= Math.min(range.start.c, range.end.c) &&
-          c <= Math.max(range.start.c, range.end.c)
-      );
-  };
-
   return (
-    <div className="flex flex-col h-full bg-[#f8f9fa] text-black select-none overflow-hidden relative">
+    <div className="flex flex-col h-full bg-[#f8f9fa] text-black select-none" onClick={() => setContextMenu(null)}>
         
-        {/* TOP BAR */}
+        {/* HEADER */}
         <div className="h-10 flex items-center justify-between px-3 border-b border-zinc-300 bg-white shrink-0">
              <div className="flex items-center gap-2">
                  <div className="p-1 bg-green-600 rounded text-white"><FileSpreadsheet className="w-4 h-4" /></div>
-                 <Input 
-                    value={filename}
-                    onChange={(e) => setFilename(e.target.value)}
-                    className="h-7 w-48 border-transparent hover:border-zinc-300 focus:border-green-600 font-semibold bg-transparent px-2"
-                />
+                 <Input value={filename} onChange={e => setFilename(e.target.value)} className="h-7 w-48 border-transparent hover:border-zinc-300 font-semibold bg-transparent px-2 focus:border-green-600" />
              </div>
              <div className="flex gap-1">
                  <Button size="icon" variant="ghost" onClick={undo} disabled={historyIndex <= 0} className="h-7 w-7"><Undo2 className="w-4 h-4" /></Button>
@@ -511,39 +389,8 @@ export function SheetApp({ windowId }: { windowId: string }) {
              </div>
         </div>
 
-        {/* RIBBON */}
-        <div className="bg-zinc-100 border-b border-zinc-300 shrink-0">
-            <div className="h-12 bg-white flex items-center px-4 gap-4 overflow-x-auto">
-                 {/* Formatting */}
-                 <div className="flex gap-1 pr-4 border-r border-zinc-200">
-                    <Button size="icon" variant="ghost" onClick={() => applyFormat({ bold: true })} className="h-8 w-8 hover:bg-zinc-100 font-bold"><Bold className="w-4 h-4" /></Button>
-                    <Button size="icon" variant="ghost" onClick={() => applyFormat({ italic: true })} className="h-8 w-8 hover:bg-zinc-100 italic"><Italic className="w-4 h-4" /></Button>
-                    <Button size="icon" variant="ghost" onClick={() => applyFormat({ underline: true })} className="h-8 w-8 hover:bg-zinc-100 underline"><Underline className="w-4 h-4" /></Button>
-                 </div>
-                 {/* Alignment */}
-                 <div className="flex gap-1 pr-4 border-r border-zinc-200">
-                    <Button size="icon" variant="ghost" onClick={() => applyFormat({ align: 'left' })} className="h-8 w-8"><AlignLeft className="w-4 h-4" /></Button>
-                    <Button size="icon" variant="ghost" onClick={() => applyFormat({ align: 'center' })} className="h-8 w-8"><AlignCenter className="w-4 h-4" /></Button>
-                    <Button size="icon" variant="ghost" onClick={() => applyFormat({ align: 'right' })} className="h-8 w-8"><AlignRight className="w-4 h-4" /></Button>
-                 </div>
-                 {/* Color & Table */}
-                 <div className="flex gap-2 items-center">
-                    <label className="cursor-pointer hover:bg-zinc-100 p-1.5 rounded flex flex-col items-center">
-                        <PaintBucket className="w-4 h-4 mb-0.5" />
-                        <input type="color" className="w-0 h-0 opacity-0 absolute" onChange={(e) => applyFormat({ bg: e.target.value })} />
-                        <div className="w-4 h-1 bg-yellow-400"></div>
-                    </label>
-                    <label className="cursor-pointer hover:bg-zinc-100 p-1.5 rounded flex flex-col items-center">
-                        <Type className="w-4 h-4 mb-0.5" />
-                        <input type="color" className="w-0 h-0 opacity-0 absolute" onChange={(e) => applyFormat({ color: e.target.value })} />
-                        <div className="w-4 h-1 bg-black"></div>
-                    </label>
-                    <Button size="sm" variant="ghost" onClick={handleFormatAsTable} className="text-xs gap-2 border border-dashed border-zinc-300">
-                        <TableIcon className="w-4 h-4" /> Formatar Tabela
-                    </Button>
-                 </div>
-            </div>
-        </div>
+        {/* TOOLBAR */}
+        <SheetToolbar onApplyFormat={applyFormat} onFormatTable={handleFormatTable} onClear={() => handleContextAction('clear')} />
 
         {/* FORMULA BAR */}
         <div className="flex items-center px-2 py-1 gap-2 bg-white border-b border-zinc-300 shrink-0">
@@ -557,112 +404,64 @@ export function SheetApp({ windowId }: { windowId: string }) {
                 value={formulaInput}
                 onChange={(e) => {
                     setFormulaInput(e.target.value);
-                    if (activeCell) handleUpdateCell(activeCell.r, activeCell.c, e.target.value);
+                    if (activeCell) updateCell(activeCell.r, activeCell.c, e.target.value);
                 }}
                 onKeyDown={(e) => {
-                    if(e.key === 'Enter' && activeCell) {
-                        handleUpdateCell(activeCell.r, activeCell.c, formulaInput, true);
+                    if (e.key === 'Enter' && activeCell) {
+                        updateCell(activeCell.r, activeCell.c, formulaInput, true);
+                        if (activeCell.r < DEFAULT_ROWS - 1) {
+                            setActiveCell({ r: activeCell.r + 1, c: activeCell.c });
+                            setSelections([{ start: { r: activeCell.r + 1, c: activeCell.c }, end: { r: activeCell.r + 1, c: activeCell.c } }]);
+                        }
                     }
                 }}
-                onBlur={() => { if(activeCell) handleUpdateCell(activeCell.r, activeCell.c, formulaInput, true); }}
+                onBlur={() => activeCell && updateCell(activeCell.r, activeCell.c, formulaInput, true)}
             />
         </div>
 
-        {/* GRID AREA */}
+        {/* GRID */}
         <div className="flex-1 overflow-auto relative custom-scrollbar bg-zinc-200" ref={gridRef}>
-            <div className="relative bg-white" style={{ minWidth: '100%', width: 'max-content' }}>
-                
-                {/* HEADERS */}
-                <div className="flex sticky top-0 z-20 shadow-sm">
-                    <div className="w-[40px] h-[24px] bg-zinc-100 border-r border-b border-zinc-300 shrink-0 sticky left-0 z-30 flex items-center justify-center">
-                        <Grid className="w-3 h-3 text-zinc-400" />
-                    </div>
-                    {Array.from({ length: DEFAULT_COLS }).map((_, c) => (
-                        <div 
-                            key={c} 
-                            className="h-[24px] border-r border-b border-zinc-300 flex items-center justify-center text-xs font-bold text-zinc-600 bg-zinc-100 hover:bg-zinc-200 transition-colors relative"
-                            style={{ width: colWidths[c] || DEFAULT_CELL_WIDTH }}
-                        >
-                            {getColName(c)}
-                        </div>
-                    ))}
-                </div>
-
-                {/* ROWS */}
-                {Array.from({ length: DEFAULT_ROWS }).map((_, r) => (
-                    <div key={r} className="flex" style={{ height: rowHeights[r] || DEFAULT_CELL_HEIGHT }}>
-                        <div className="w-[40px] bg-zinc-100 border-r border-b border-zinc-300 flex items-center justify-center text-xs text-zinc-600 sticky left-0 z-10 hover:bg-zinc-200 cursor-pointer">
-                            {r + 1}
-                        </div>
-
-                        {Array.from({ length: DEFAULT_COLS }).map((_, c) => {
-                            const id = getCellId(r, c);
-                            const cell = cells[id];
-                            const selected = isSelected(r, c);
-                            const active = activeCell?.r === r && activeCell?.c === c;
-                            const width = colWidths[c] || DEFAULT_CELL_WIDTH;
-
-                            return (
-                                <div
-                                    key={id}
-                                    className={cn(
-                                        "border-r border-b border-zinc-200 text-xs px-1 outline-none truncate relative cursor-cell",
-                                        selected ? "bg-blue-50" : "bg-white",
-                                        active && "ring-2 ring-green-600 z-10 bg-white",
-                                        selected && "border-blue-200"
-                                    )}
-                                    style={{ 
-                                        width,
-                                        fontWeight: cell?.style?.bold ? 'bold' : 'normal',
-                                        fontStyle: cell?.style?.italic ? 'italic' : 'normal',
-                                        textDecoration: cell?.style?.underline ? 'underline' : 'none',
-                                        textAlign: cell?.style?.align || 'left',
-                                        backgroundColor: selected && !cell?.style?.bg ? undefined : cell?.style?.bg,
-                                        color: cell?.style?.color
-                                    }}
-                                    onMouseDown={(e) => handleMouseDown(e, r, c)}
-                                    onMouseEnter={() => handleMouseEnter(r, c)}
-                                    onContextMenu={(e) => handleMouseDown(e, r, c)} // Garante seleção no right click
-                                >
-                                    <div className="w-full h-full flex items-center overflow-hidden pointer-events-none">
-                                        {cell?.computed ?? cell?.value ?? ''}
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-                ))}
-            </div>
+            <SheetGrid 
+                cells={cells}
+                colWidths={colWidths}
+                rowHeights={rowHeights}
+                selections={selections}
+                activeCell={activeCell}
+                onMouseDown={handleMouseDown}
+                onMouseEnter={handleMouseEnter}
+                onResizeStart={handleResizeStart}
+                onFillHandleDown={handleFillHandleDown}
+                onHeaderClick={(index, type) => {
+                    if (index === -1) setSelections([{ start: { r: 0, c: 0 }, end: { r: DEFAULT_ROWS - 1, c: DEFAULT_COLS - 1 } }]);
+                    else if (type === 'col') setSelections([{ start: { r: 0, c: index }, end: { r: DEFAULT_ROWS - 1, c: index } }]);
+                    else setSelections([{ start: { r: index, c: 0 }, end: { r: index, c: DEFAULT_COLS - 1 } }]);
+                }}
+                onContextMenu={(e, r, c) => {
+                    e.preventDefault();
+                    if (!selections.some(s => r >= Math.min(s.start.r, s.end.r) && r <= Math.max(s.start.r, s.end.r) && c >= Math.min(s.start.c, s.end.c) && c <= Math.max(s.start.c, s.end.c))) {
+                         setActiveCell({ r, c });
+                         setSelections([{ start: { r, c }, end: { r, c } }]);
+                    }
+                    setContextMenu({ x: e.clientX, y: e.clientY, r, c });
+                }}
+            />
         </div>
 
         {/* CONTEXT MENU */}
         {contextMenu && (
-            <>
-                <div className="fixed inset-0 z-40" onClick={() => setContextMenu(null)} onContextMenu={(e) => { e.preventDefault(); setContextMenu(null); }} />
-                <div 
-                    ref={contextMenuRef}
-                    className="fixed z-50 bg-white border border-zinc-200 rounded-lg shadow-xl py-1 w-48 text-sm animate-in fade-in zoom-in-95"
-                    style={{ top: contextMenu.y, left: contextMenu.x }}
-                >
-                    <button onClick={() => handleContextAction('copy')} className="w-full text-left px-3 py-2 hover:bg-zinc-100 flex items-center gap-2">
-                        <Copy className="w-3.5 h-3.5 text-zinc-500" /> Copiar
-                    </button>
-                    <div className="h-px bg-zinc-200 my-1" />
-                    <button onClick={() => handleContextAction('clear')} className="w-full text-left px-3 py-2 hover:bg-zinc-100 flex items-center gap-2 text-red-600">
-                        <Eraser className="w-3.5 h-3.5" /> Limpar Conteúdo
-                    </button>
-                    <button onClick={() => handleContextAction('delete_row')} className="w-full text-left px-3 py-2 hover:bg-zinc-100 flex items-center gap-2 text-red-600">
-                        <Trash className="w-3.5 h-3.5" /> Excluir Linha
-                    </button>
-                </div>
-            </>
+            <SheetContextMenu 
+                x={contextMenu.x} 
+                y={contextMenu.y} 
+                onClose={() => setContextMenu(null)}
+                onAction={handleContextAction}
+            />
         )}
 
         {/* STATUS BAR */}
         <div className="h-6 bg-zinc-100 border-t border-zinc-300 flex items-center px-3 justify-between text-[10px] text-zinc-500 shrink-0">
              <div>Pronto</div>
              {selections.length > 0 && (
-                 <div className="flex gap-4">
+                 <div className="flex gap-4 font-mono font-bold text-zinc-600">
                      <span>Média: {evaluateFormula(`AVG(${getCellId(selections[0].start.r, selections[0].start.c)}:${getCellId(selections[0].end.r, selections[0].end.c)})`, cells)}</span>
                      <span>Soma: {evaluateFormula(`SUM(${getCellId(selections[0].start.r, selections[0].start.c)}:${getCellId(selections[0].end.r, selections[0].end.c)})`, cells)}</span>
                  </div>
