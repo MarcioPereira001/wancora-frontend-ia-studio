@@ -1,8 +1,10 @@
+
 'use client';
 
 import React, { createContext, useState, useCallback, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { X, CheckCircle, AlertCircle, Info, AlertTriangle } from 'lucide-react';
+import { X, CheckCircle2, AlertCircle, Info, AlertTriangle } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 export type ToastType = 'success' | 'error' | 'info' | 'warning';
 
@@ -47,54 +49,93 @@ export function ToastProvider({ children }: ToastProviderProps) {
     setToasts((state) => state.filter((toast) => toast.id !== id));
   }, []);
 
+  // Configuração de Cores por Tipo
+  const typeStyles = {
+    success: {
+      icon: CheckCircle2,
+      glow: 'via-emerald-500',
+      iconBox: 'bg-emerald-500/10 text-emerald-500',
+      title: 'text-white'
+    },
+    error: {
+      icon: AlertCircle,
+      glow: 'via-red-500',
+      iconBox: 'bg-red-500/10 text-red-500',
+      title: 'text-white'
+    },
+    warning: {
+      icon: AlertTriangle,
+      glow: 'via-yellow-500',
+      iconBox: 'bg-yellow-500/10 text-yellow-500',
+      title: 'text-white'
+    },
+    info: {
+      icon: Info,
+      glow: 'via-blue-500',
+      iconBox: 'bg-blue-500/10 text-blue-400',
+      title: 'text-white'
+    }
+  };
+
   // Renderização do conteúdo das notificações
   const ToastContainer = () => (
     <div 
-      className="fixed inset-0 z-[99999] flex flex-col gap-3 pointer-events-none items-center justify-start pt-4 px-4 md:items-end md:justify-start md:p-6"
+      className="fixed bottom-6 right-6 z-[99999] flex flex-col gap-3 pointer-events-none items-end"
       role="region" 
       aria-live="polite"
     >
-      {toasts.map((toast) => (
-        <div 
-          key={toast.id}
-          className={`
-            pointer-events-auto w-full md:w-80 flex items-start gap-3 p-4 rounded-xl shadow-[0_10px_40px_-10px_rgba(0,0,0,0.5)] border backdrop-blur-xl transition-all duration-300 animate-in slide-in-from-top-5 fade-in zoom-in-95
-            ${toast.type === 'success' ? 'bg-[#09090b]/95 border-green-500/30 text-white shadow-green-500/10' : ''}
-            ${toast.type === 'error' ? 'bg-[#09090b]/95 border-red-500/30 text-white shadow-red-500/10' : ''}
-            ${toast.type === 'info' ? 'bg-[#09090b]/95 border-blue-500/30 text-white shadow-blue-500/10' : ''}
-            ${toast.type === 'warning' ? 'bg-[#09090b]/95 border-yellow-500/30 text-white shadow-yellow-500/10' : ''}
-          `}
-        >
-          {/* Ícone */}
-          <div className="mt-0.5 shrink-0">
-            {toast.type === 'success' && <CheckCircle className="w-5 h-5 text-green-500" />}
-            {toast.type === 'error' && <AlertCircle className="w-5 h-5 text-red-500" />}
-            {toast.type === 'info' && <Info className="w-5 h-5 text-blue-500" />}
-            {toast.type === 'warning' && <AlertTriangle className="w-5 h-5 text-yellow-500" />}
-          </div>
+      {toasts.map((toast) => {
+        const config = typeStyles[toast.type];
+        const Icon = config.icon;
 
-          {/* Conteúdo */}
-          <div className="flex-1 min-w-0">
-            <h4 className="text-sm font-bold leading-none tracking-tight">{toast.title}</h4>
-            {toast.message && (
-              <p className="text-xs text-zinc-400 mt-1.5 leading-relaxed font-medium opacity-90 break-words">
-                {toast.message}
-              </p>
+        return (
+          <div 
+            key={toast.id}
+            className={cn(
+                "pointer-events-auto w-96 bg-[#09090b] border border-zinc-800 rounded-xl shadow-[0_0_80px_rgba(0,0,0,0.6)] relative overflow-hidden backdrop-blur-2xl ring-1 ring-white/10 animate-in slide-in-from-right-10 fade-in duration-300 p-5",
             )}
-          </div>
-
-          {/* Botão Fechar */}
-          <button 
-            onClick={() => removeToast(toast.id)}
-            className="text-zinc-500 hover:text-white transition-colors p-1 -mt-1 -mr-1 rounded-md hover:bg-white/10"
           >
-            <X className="w-4 h-4" />
-          </button>
+            {/* Glow Topo (Igual ao GlobalSync) */}
+            <div className={`absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent ${config.glow} to-transparent opacity-75`} />
 
-          {/* Barra de Progresso (Visual) */}
-          <div className="absolute bottom-0 left-0 h-[2px] bg-current opacity-30 w-full animate-[shrink_linear_forwards] origin-left rounded-b-xl" style={{ animationDuration: `${toast.duration}ms` }}></div>
-        </div>
-      ))}
+            <div className="flex items-start gap-4 relative z-10">
+              {/* Ícone em Box */}
+              <div className={cn("p-3 rounded-xl transition-colors duration-500 shadow-inner shrink-0", config.iconBox)}>
+                 <Icon className="w-6 h-6" />
+              </div>
+
+              {/* Conteúdo */}
+              <div className="flex-1 min-w-0 pt-0.5">
+                <h4 className={cn("text-base font-bold leading-tight mb-1", config.title)}>{toast.title}</h4>
+                {toast.message && (
+                  <p className="text-xs text-zinc-400 font-medium leading-relaxed break-words opacity-90">
+                    {toast.message}
+                  </p>
+                )}
+              </div>
+
+              {/* Botão Fechar */}
+              <button 
+                onClick={() => removeToast(toast.id)}
+                className="text-zinc-500 hover:text-white transition-colors p-1 -mr-2 -mt-2 rounded-md hover:bg-white/10"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Barra de Progresso Sutil no Fundo */}
+            <div className="absolute bottom-0 left-0 h-[2px] bg-white/10 w-full rounded-full overflow-hidden">
+                 <div 
+                    className={cn("h-full opacity-50", config.iconBox.split(' ')[0].replace('/10', ''))} // Usa a cor do bg do ícone sem opacidade baixa
+                    style={{ 
+                        width: '100%', 
+                        animation: `shrink ${toast.duration}ms linear forwards` 
+                    }} 
+                 />
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 
