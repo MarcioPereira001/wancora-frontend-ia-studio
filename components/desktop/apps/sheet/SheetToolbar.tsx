@@ -3,78 +3,34 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { 
     Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, 
-    PaintBucket, Type, Table as TableIcon, Eraser, FileDown, Upload, Save, 
-    ChevronDown, DollarSign, Percent, Hash, Cloud
+    PaintBucket, Type, Table as TableIcon, Eraser, Undo2, Redo2,
+    DollarSign, Percent, Hash
 } from 'lucide-react';
 import { CellStyle } from './types';
-import { cn } from '@/lib/utils';
 
 interface SheetToolbarProps {
     onApplyFormat: (style: Partial<CellStyle>) => void;
     onFormatTable: () => void;
     onClear: () => void;
-    onOpenSaveModal: () => void; // Mudança: Agora abre o modal
-    onExport: (type: 'xlsx' | 'csv' | 'pdf') => void;
-    onImportDrive: () => void;
-    onImportLocal: (e: React.ChangeEvent<HTMLInputElement>) => void;
+    onUndo: () => void;
+    onRedo: () => void;
+    canUndo: boolean;
+    canRedo: boolean;
 }
 
-export function SheetToolbar({ onApplyFormat, onFormatTable, onClear, onOpenSaveModal, onExport, onImportDrive, onImportLocal }: SheetToolbarProps) {
-    const [showFileMenu, setShowFileMenu] = useState(false);
-    const [showImportMenu, setShowImportMenu] = useState(false);
-    const menuRef = useRef<HTMLDivElement>(null);
-    const importRef = useRef<HTMLDivElement>(null);
-
-    useEffect(() => {
-        const handleClick = (e: MouseEvent) => {
-            if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-                setShowFileMenu(false);
-            }
-            if (importRef.current && !importRef.current.contains(e.target as Node)) {
-                setShowImportMenu(false);
-            }
-        };
-        document.addEventListener('click', handleClick);
-        return () => document.removeEventListener('click', handleClick);
-    }, []);
-
+export function SheetToolbar({ onApplyFormat, onFormatTable, onClear, onUndo, onRedo, canUndo, canRedo }: SheetToolbarProps) {
     return (
         <div className="bg-zinc-100 border-b border-zinc-300 shrink-0 select-none">
             <div className="h-12 bg-white flex items-center px-4 gap-4 overflow-x-auto">
                  
-                 {/* SAVE BUTTON */}
-                 <div className="pr-4 border-r border-zinc-200">
-                     <Button 
-                        size="sm" 
-                        onClick={onOpenSaveModal} 
-                        className="bg-green-600 hover:bg-green-500 text-white gap-2 h-8 text-xs font-bold"
-                    >
-                        <Save className="w-3.5 h-3.5" /> Salvar / Baixar
+                 {/* History Controls (Moved from Header) */}
+                 <div className="flex gap-1 pr-4 border-r border-zinc-200">
+                     <Button size="icon" variant="ghost" onClick={onUndo} disabled={!canUndo} className="h-8 w-8 hover:bg-zinc-100" title="Desfazer (Ctrl+Z)">
+                        <Undo2 className="w-4 h-4" />
                      </Button>
-                 </div>
-
-                 {/* IMPORT MENU */}
-                 <div className="relative pr-4 border-r border-zinc-200" ref={importRef}>
-                    <Button 
-                        variant="ghost" 
-                        size="sm" 
-                        className={cn("h-8 gap-1 font-bold text-zinc-600", showImportMenu ? "bg-zinc-100" : "")}
-                        onClick={() => setShowImportMenu(!showImportMenu)}
-                    >
-                        <Upload className="w-3.5 h-3.5 text-orange-500" /> Importar <ChevronDown className="w-3 h-3" />
-                    </Button>
-                    
-                    {showImportMenu && (
-                        <div className="absolute top-10 left-0 bg-white border border-zinc-200 shadow-xl rounded-lg w-48 py-1 z-50 animate-in fade-in zoom-in-95">
-                            <button onClick={() => { onImportDrive(); setShowImportMenu(false); }} className="w-full text-left px-4 py-2 text-sm hover:bg-zinc-100 flex items-center gap-2">
-                                <Cloud className="w-4 h-4 text-blue-500" /> Do Google Drive
-                            </button>
-                            <label className="w-full text-left px-4 py-2 text-sm hover:bg-zinc-100 flex items-center gap-2 cursor-pointer">
-                                <Upload className="w-4 h-4 text-zinc-500" /> Do Computador
-                                <input type="file" className="hidden" accept=".xlsx" onChange={(e) => { onImportLocal(e); setShowImportMenu(false); }} />
-                            </label>
-                        </div>
-                    )}
+                     <Button size="icon" variant="ghost" onClick={onRedo} disabled={!canRedo} className="h-8 w-8 hover:bg-zinc-100" title="Refazer (Ctrl+Y)">
+                        <Redo2 className="w-4 h-4" />
+                     </Button>
                  </div>
 
                  {/* Text Formatting */}

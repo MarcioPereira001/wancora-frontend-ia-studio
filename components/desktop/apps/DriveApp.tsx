@@ -110,7 +110,11 @@ export function DriveApp() {
           navigateTo(file.google_id, file.name);
       } else {
           const mime = file.mime_type || '';
-          if (mime.includes('image') || mime.includes('video') || mime.includes('pdf')) {
+          // Open Spreadsheet
+          if (mime.includes('spreadsheet') || mime.includes('excel')) {
+              openWindow('sheet', file.name, { fileId: file.google_id });
+          }
+          else if (mime.includes('image') || mime.includes('video') || mime.includes('pdf')) {
               openWindow('preview', file.name, { url: file.web_view_link, type: mime, id: file.google_id });
           } 
           else if (mime.includes('word') || mime.includes('document')) {

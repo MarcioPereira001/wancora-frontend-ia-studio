@@ -4,25 +4,29 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Save, FileSpreadsheet, Undo2, Redo2, Loader2, ArrowRight } from 'lucide-react';
+import { Save, FileSpreadsheet, Loader2, Upload, ChevronDown, Cloud } from 'lucide-react';
 import { useToast } from '@/hooks/useToast';
 import { useCloudStore } from '@/store/useCloudStore';
 import { useDesktopStore } from '@/store/useDesktopStore';
+import { useAuthStore } from '@/store/useAuthStore';
 import ExcelJS from 'exceljs';
 import jsPDF from 'jspdf'; 
+import { api } from '@/services/api';
 
 // Imports Modulares
 import { SheetToolbar } from './sheet/SheetToolbar';
 import { SheetGrid } from './sheet/SheetGrid';
 import { SheetContextMenu } from './sheet/SheetContextMenu';
 import { SheetSaveModal } from './sheet/SheetSaveModal';
-import { ImportDriveModal } from './ImportDriveModal'; // FIX: Caminho relativo corrigido
+import { ImportDriveModal } from './ImportDriveModal'; 
 import { CellData, SheetState, SelectionRange, CellStyle } from './sheet/types';
 import { DEFAULT_COLS, DEFAULT_ROWS, DEFAULT_CELL_WIDTH, DEFAULT_CELL_HEIGHT, getCellId, evaluateFormula, getColName } from './sheet/utils';
+import { cn } from '@/lib/utils';
 
 export function SheetApp({ windowId }: { windowId: string }) {
   const { uploadFile } = useCloudStore();
   const { setWindowState, setWindowDirty, windows } = useDesktopStore();
+  const { user } = useAuthStore();
   const { addToast } = useToast();
   
   const windowInstance = windows.find(w => w.id === windowId);
@@ -46,19 +50,90 @@ export function SheetApp({ windowId }: { windowId: string }) {
   const [isDragging, setIsDragging] = useState(false);
   const [isFillDragging, setIsFillDragging] = useState(false);
   const [formulaInput, setFormulaInput] = useState('');
+  const [loadingFile, setLoadingFile] = useState(false);
   
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, r: number, c: number } | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
-  // --- MODALS ---
+  // --- MODALS & MENUS ---
   const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
   const [isImportDriveOpen, setIsImportDriveOpen] = useState(false);
+  const [showImportMenu, setShowImportMenu] = useState(false);
 
   // Input file oculto para importação
   const fileInputRef = useRef<HTMLInputElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const importMenuRef = useRef<HTMLDivElement>(null);
   const resizeRef = useRef<{ type: 'col'|'row', index: number, start: number, startSize: number } | null>(null);
+
+  // --- LOAD EXISTING FILE (EDIT MODE) ---
+  useEffect(() => {
+      const loadFile = async () => {
+          if (!data.fileId || initialState.cells) return;
+          
+          setLoadingFile(true);
+          try {
+              if (user?.company_id) {
+                  // Busca o conteúdo binário (XLSX) do backend
+                  const res = await api.post('/cloud/google/download-content', {
+                      companyId: user.company_id,
+                      fileId: data.fileId
+                  });
+
+                  if (res.base64) {
+                      const binaryString = atob(res.base64);
+                      const len = binaryString.length;
+                      const bytes = new Uint8Array(len);
+                      for (let i = 0; i < len; i++) {
+                          bytes[i] = binaryString.charCodeAt(i);
+                      }
+                      
+                      const workbook = new ExcelJS.Workbook();
+                      await workbook.xlsx.load(bytes.buffer);
+                      const worksheet = workbook.getWorksheet(1);
+                      
+                      if (worksheet) {
+                           const newCells: Record<string, CellData> = {};
+                           worksheet.eachRow((row, rowNumber) => {
+                               row.eachCell((cell, colNumber) => {
+                                   const id = getCellId(rowNumber - 1, colNumber - 1);
+                                   let val = cell.value;
+                                   let computed: any = val;
+
+                                   if (typeof val === 'object' && val !== null) {
+                                       if ('formula' in val) {
+                                           val = `=${val.formula}`;
+                                           computed = val.result;
+                                       } else if ('richText' in val) {
+                                           val = val.richText.map((r: any) => r.text).join('');
+                                           computed = val;
+                                       }
+                                   }
+                                   newCells[id] = { value: String(val), computed: computed };
+                               });
+                           });
+                           setCells(newCells);
+                           setFilename(res.filename || filename);
+                           // Save initial history
+                           const state = { cells: newCells, colWidths: {}, rowHeights: {} };
+                           setHistory([state]);
+                           setHistoryIndex(0);
+                      }
+                      addToast({ type: 'success', title: 'Carregado', message: 'Planilha aberta.' });
+                  }
+              }
+          } catch (e: any) {
+              console.error(e);
+              addToast({ type: 'error', title: 'Erro', message: 'Falha ao abrir planilha. ' + e.message });
+          } finally {
+              setLoadingFile(false);
+          }
+      };
+
+      loadFile();
+  }, [data.fileId]);
+
 
   // --- HISTORY LOGIC ---
   const saveToHistory = useCallback(() => {
@@ -92,9 +167,20 @@ export function SheetApp({ windowId }: { windowId: string }) {
       }
   };
 
-  // Init History
+  // Init History if empty and not loading file
   useEffect(() => {
-      if (history.length === 0) saveToHistory();
+      if (history.length === 0 && !data.fileId) saveToHistory();
+  }, []);
+
+  // Menu Listener
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+        if (importMenuRef.current && !importMenuRef.current.contains(e.target as Node)) {
+            setShowImportMenu(false);
+        }
+    };
+    document.addEventListener('click', handleClick);
+    return () => document.removeEventListener('click', handleClick);
   }, []);
 
   // --- RECALCULATE ---
@@ -134,9 +220,8 @@ export function SheetApp({ windowId }: { windowId: string }) {
   // --- SHORTCUTS ---
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
-        if (editingCell) return; // Se estiver editando célula, não dispara atalhos de formatação
+        if (editingCell) return; 
 
-        // Formatação
         if ((e.ctrlKey || e.metaKey)) {
             if (e.key === 'b') { e.preventDefault(); applyFormat({ bold: true }); return; }
             if (e.key === 'i') { e.preventDefault(); applyFormat({ italic: true }); return; }
@@ -484,7 +569,7 @@ export function SheetApp({ windowId }: { windowId: string }) {
                                   val = `=${val.formula}`;
                                   computed = val.result;
                               } else if ('richText' in val) {
-                                  val = val.richText.map(r => r.text).join('');
+                                  val = val.richText.map((r:any) => r.text).join('');
                                   computed = val;
                               }
                           }
@@ -514,37 +599,69 @@ export function SheetApp({ windowId }: { windowId: string }) {
       }
   }, [activeCell, cells]);
 
+  if (loadingFile) {
+      return <div className="flex h-full items-center justify-center bg-white text-zinc-500"><Loader2 className="w-8 h-8 animate-spin" /></div>;
+  }
+
   return (
     <div className="flex flex-col h-full bg-[#f8f9fa] text-black select-none" onClick={() => setContextMenu(null)}>
         <input type="file" ref={fileInputRef} className="hidden" accept=".xlsx" onChange={handleImportFile} />
 
-        {/* HEADER */}
+        {/* HEADER: BOTÕES SALVAR/IMPORTAR MOVIDOS PARA CÁ */}
         <div className="h-10 flex items-center justify-between px-3 border-b border-zinc-300 bg-white shrink-0">
              <div className="flex items-center gap-2">
                  <div className="p-1 bg-green-600 rounded text-white"><FileSpreadsheet className="w-4 h-4" /></div>
                  <Input 
                     value={filename} 
                     onChange={e => setFilename(e.target.value)} 
-                    // ESTILO ATUALIZADO: text-black para legibilidade
                     className="h-7 w-48 border-transparent hover:border-zinc-300 font-bold text-black bg-transparent px-2 focus:border-green-600 focus:bg-white" 
                  />
              </div>
-             <div className="flex gap-1">
-                 <Button size="icon" variant="ghost" onClick={undo} disabled={historyIndex <= 0} className="h-7 w-7"><Undo2 className="w-4 h-4" /></Button>
-                 <Button size="icon" variant="ghost" onClick={redo} disabled={historyIndex >= history.length - 1} className="h-7 w-7"><Redo2 className="w-4 h-4" /></Button>
-                 <div className="w-px h-4 bg-zinc-300 mx-1 self-center" />
+             
+             {/* ACTIONS: Import & Save */}
+             <div className="flex gap-2">
+                 {/* Menu Importar */}
+                 <div className="relative" ref={importMenuRef}>
+                    <Button 
+                        size="sm" 
+                        variant="ghost"
+                        className={cn("h-7 gap-1 font-bold text-zinc-600 bg-zinc-100 border border-zinc-200", showImportMenu ? "bg-zinc-200" : "")}
+                        onClick={() => setShowImportMenu(!showImportMenu)}
+                    >
+                        <Upload className="w-3.5 h-3.5 text-orange-500" /> Importar <ChevronDown className="w-3 h-3" />
+                    </Button>
+                    {showImportMenu && (
+                        <div className="absolute top-8 right-0 bg-white border border-zinc-200 shadow-xl rounded-lg w-48 py-1 z-50 animate-in fade-in zoom-in-95">
+                            <button onClick={() => { setIsImportDriveOpen(true); setShowImportMenu(false); }} className="w-full text-left px-4 py-2 text-sm hover:bg-zinc-100 flex items-center gap-2">
+                                <Cloud className="w-4 h-4 text-blue-500" /> Do Google Drive
+                            </button>
+                            <label className="w-full text-left px-4 py-2 text-sm hover:bg-zinc-100 flex items-center gap-2 cursor-pointer">
+                                <Upload className="w-4 h-4 text-zinc-500" /> Do Computador
+                                <input type="file" className="hidden" accept=".xlsx" onChange={(e) => { handleImportFile(e); setShowImportMenu(false); }} />
+                            </label>
+                        </div>
+                    )}
+                 </div>
+
+                 <Button 
+                    size="sm" 
+                    onClick={() => setIsSaveModalOpen(true)} 
+                    className="bg-green-600 hover:bg-green-500 text-white gap-2 h-7 text-xs font-bold shadow-sm"
+                 >
+                    <Save className="w-3.5 h-3.5" /> Salvar
+                 </Button>
              </div>
         </div>
 
-        {/* TOOLBAR */}
+        {/* TOOLBAR: UNDO/REDO AGORA AQUI */}
         <SheetToolbar 
             onApplyFormat={applyFormat} 
             onFormatTable={handleFormatTable} 
             onClear={() => handleContextAction('clear')}
-            onOpenSaveModal={() => setIsSaveModalOpen(true)}
-            onExport={(type) => handleConfirmSave('local', type, filename)}
-            onImportDrive={() => setIsImportDriveOpen(true)}
-            onImportLocal={handleImportFile}
+            onUndo={undo}
+            onRedo={redo}
+            canUndo={historyIndex > 0}
+            canRedo={historyIndex < history.length - 1}
         />
 
         {/* FORMULA BAR */}
