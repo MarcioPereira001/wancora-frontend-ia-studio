@@ -11,55 +11,64 @@ Este documento é a **Bíblia Técnica** do Backend. Ele descreve a comunicaçã
 
 Repositsório original: https://github.com/DestravaVendas/wancora-backend.git
 
-📂 Estrutura Global do Projeto Validado e Existente (Project Blueprint)
+📂 Estrutura Global do Projeto (Project Blueprint)
 wancora-backend/
 ├── 📁 auth/
-│   └── 📄 supabaseAuth.js        # Gerenciamento de estado e persistência Baileys no Supabase
+│   └── 📄 supabaseAuth.js        # Persistência de sessão Baileys no Supabase (JSONB fix)
 ├── 📁 controllers/
-│   ├── 📄 appointmentController.js # [NOVO] Lógica de agendamentos e confirmações
-│   ├── 📄 campaignController.js    # Orquestração de criação e disparo de campanhas
-│   └── 📄 whatsappController.js    # Facade para controle de sessões, mensagens e enquetes
+│   ├── 📄 appointmentController.js # [NOVO] Lógica de confirmação imediata de agendamentos
+│   ├── 📄 campaignController.js    # Controle de criação e disparo de campanhas
+│   ├── 📄 cloudController.js       # [NOVO] Controlador do Google Drive, Uploads e Conversões
+│   └── 📄 whatsappController.js    # Facade para sessão, mensagens, grupos e catálogo
 ├── 📁 lib/
 │   └── 📄 schemas.js             # Schemas de validação Zod para payloads
 ├── 📁 middleware/
-│   ├── 📄 auth.js                # Validação JWT e Multi-Tenant
-│   ├── 📄 limiter.js             # Rate Limiting e Proteção DDoS
-│   └── 📄 validator.js           # Validação de dados de entrada
+│   ├── 📄 auth.js                # Autenticação JWT e Validação Multi-Tenant (RBAC)
+│   ├── 📄 limiter.js             # Rate Limiting (Redis) e Proteção DDoS
+│   └── 📄 validator.js           # Middleware de validação de Schema
 ├── 📁 routes/
 │   ├── 📄 automation.routes.js   # Rotas de automação (campanhas, agenda)
-│   ├── 📄 management.routes.js   # Rotas de gestão (grupos, canais)
+│   ├── 📄 cloud.routes.js        # [NOVO] Rotas de Cloud/Drive (Upload, List, Sync)
+│   ├── 📄 management.routes.js   # Rotas de gestão (grupos, comunidades, catálogo)
 │   ├── 📄 message.routes.js      # Rotas de mensageria (envio, voto, reação)
 │   └── 📄 session.routes.js      # Rotas de sessão (QR, status, logout)
 ├── 📁 services/
+│   ├── 📁 ai/
+│   │   └── 📄 transcriber.js     # [NOVO] Transcrição de áudio via Gemini Flash
 │   ├── 📁 baileys/
 │   │   ├── 📁 handlers/
 │   │   │   ├── 📄 contactHandler.js  # Lógica de presença e upsert de contatos
-│   │   │   ├── 📄 historyHandler.js  # Processamento de histórico inicial
-│   │   │   ├── 📄 mediaHandler.js    # Download e upload de mídia
+│   │   │   ├── 📄 historyHandler.js  # Processamento de histórico inicial (Sync Barrier)
+│   │   │   ├── 📄 mediaHandler.js    # Download e upload de mídia (Sharp optimization)
 │   │   │   └── 📄 messageHandler.js  # Processamento central de mensagens
-│   │   ├── 📄 community.js       # Gestão de Grupos e Canais
+│   │   ├── 📄 catalog.js         # Sincronização de Produtos do WhatsApp Business
+│   │   ├── 📄 community.js       # Gestão de Grupos e Comunidades
 │   │   ├── 📄 connection.js      # Core: Gestão de sockets e reconexão
 │   │   ├── 📄 listener.js        # Configuração de eventos do socket
 │   │   ├── 📄 messageQueue.js    # Fila de processamento de mensagens recebidas
-│   │   └── 📄 sender.js          # Protocolo de envio (Texto, Mídia, Enquetes)
+│   │   └── 📄 sender.js          # Protocolo de envio (Com suporte a Streaming do Drive)
 │   ├── 📁 crm/
-│   │   └── 📄 sync.js            # Integração com banco de dados (Leads/Contacts)
+│   │   └── 📄 sync.js            # Integração com banco de dados (Leads/Contacts/Locks)
+│   ├── 📁 google/                # [NOVO] Módulo de Integração Drive
+│   │   ├── 📄 authService.js     # OAuth2, Refresh Tokens e Autenticação
+│   │   └── 📄 driveService.js    # Lógica de Arquivos, Lixeira, Upload e Conversão DOCX
 │   ├── 📁 integrations/
 │   │   └── 📄 webhook.js         # Disparo de webhooks externos
 │   ├── 📁 scheduler/
-│   │   └── 📄 sentinel.js        # Agente de IA (Gemini) e automação de resposta
+│   │   └── 📄 sentinel.js        # Agente de IA (Gemini) com suporte a Tools (Busca de Arq)
 │   └── 📄 redisClient.js         # Infra: Conexão Singleton com Redis
 ├── 📁 utils/
-│   ├── 📄 audioConverter.js      # Conversão de áudio para PTT (FFmpeg)
-│   └── 📄 wppParsers.js          # Helpers de normalização de dados do WhatsApp
+│   ├── 📄 audioConverter.js      # Conversão de áudio para OGG/Opus (FFmpeg)
+│   └── 📄 wppParsers.js          # Helpers de normalização (JID, Unwrap)
 ├── 📁 workers/
-│   ├── 📄 agendaWorker.js        # [NOVO] Cron job para lembretes de agendamento
+│   ├── 📄 agendaWorker.js        # [NOVO] Cron job para lembretes de agendamento (Redis Lock)
 │   ├── 📄 campaignQueue.js       # Definição da fila BullMQ
-│   └── 📄 campaignWorker.js      # Processador de disparo em massa
+│   ├── 📄 campaignWorker.js      # Processador de disparo em massa
+│   └── 📄 retentionWorker.js     # [NOVO] Worker de Ciclo de Vida (Mover mídia para Drive)
 ├── 📄 .gitignore
 ├── 📄 .slugignore
-├── 📄 Dockerfile                 # Infraestrutura de Container
-├── 📄 ecosystem.config.cjs       # Configuração PM2 (opcional/local)
+├── 📄 Dockerfile.txt             # Definição de Container
+├── 📄 ecosystem.config.cjs       # Configuração PM2
 ├── 📄 instrument.js              # Monitoramento Sentry
 ├── 📄 package-lock.json
 ├── 📄 package.json
@@ -311,9 +320,10 @@ Payload enviado para o seu n8n/Typebot:
 }```
 
 ### 3.7. Automação de Agenda (Automation Service)
-POST /appointments/confirm
-Dispara notificações imediatas (WhatsApp) de confirmação de agendamento para o Admin e para o Lead, baseado nas regras configuradas.
-Body:
+`POST /appointments/confirm` (Disparo Imediato)
+Acionado pelo Frontend público (`/agendar/[slug]`) logo após criar um agendamento.
+* **Função:** Lê as regras de `notification_config` do usuário e dispara as mensagens do tipo `on_booking` (Confirmação imediata) para o Admin e para o Lead.
+* **Body:** `{ "appointmentId": "uuid", "companyId": "uuid" }`
 ```json
 {
   "appointmentId": "uuid",
@@ -338,6 +348,11 @@ Lista arquivos. Usa estratégia "Hybrid Cache": lê do banco `drive_cache` imedi
 * **Body:** `{ "companyId": "uuid" }`
 * **Query:** `?folderId=...` (Opcional. Se omitido, lista a raiz).
 * **Response:** `{ "files": [ ... ], "source": "hybrid" }`
+
+#### `POST /cloud/google/list-remote` (Navegação Remota)
+Lista arquivos de uma pasta específica diretamente da API do Google (bypass de cache) para o modal de importação.
+* **Body:** `{ "companyId": "uuid", "folderId": "google_folder_id_ou_root" }`
+* **Response:** `{ "files": [ ... ] }`
 
 #### `POST /cloud/google/upload`
 Faz upload de um arquivo diretamente para o Google Drive via Streaming (Multipart).

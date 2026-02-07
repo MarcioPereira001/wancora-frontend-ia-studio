@@ -208,20 +208,20 @@ Unificação de calendário e gerenciador de tarefas.
 * `user_id`: uuid (FK - Responsável/Dono da agenda)
 * `lead_id`: uuid (FK - Opcional) -> Nullable pois pode ser tarefa pessoal.
 * `title`: text
-* `description`: text
+* `title`, `description`, `start_time`, `end_time`
 * `start_time`: timestamptz
 * `end_time`: timestamptz
 * `status`: text ('pending', 'confirmed', 'cancelled')
-* `is_task`: boolean (Default: false) -> Define se é Tarefa (Check) ou Evento (Tempo).
+* `is_task`: boolean (True = Checklist, False = Evento de Tempo)
 * `completed_at`: timestamptz -> Se preenchido, a tarefa foi concluída.
 * `category`: text -> Categoria visual (ex: 'Reunião', 'Pessoal').
 * `color`: text -> Hex code para UI.
-* `recurrence_rule`: jsonb -> Ex: `{ frequency: 'weekly', interval: 1, count: 5 }`.
+* `recurrence_rule`: jsonb (Ex: `{ "frequency": "weekly", "count": 10 }`)
 * `meet_link`: text
 * `origin`: text (Default: 'internal')
 * `ai_summary`: text
-* `reminder_sent`: boolean (Default: false) - Controle do worker de lembretes.
-* `confirmation_sent`: boolean (Default: false) - Controle de envio imediato.
+* `reminder_sent`: boolean (Controle para o Worker não enviar duplicado)
+* `confirmation_sent`: boolean (Controle de envio imediato `on_booking`)
 
 ### `availability_rules` (Agendamento Inteligente)
 Define as regras de horários para o sistema de agendamento (tipo Calendly).
@@ -237,16 +237,17 @@ Define as regras de horários para o sistema de agendamento (tipo Calendly).
 * `buffer_before`: integer
 * `buffer_after`: integer
 * `is_active`: boolean
-* `notification_config`: jsonb (NOVO) - Configurações de automação de avisos.
-  * Estrutura JSON: 
+* `notification_config`: jsonb (CRÍTICO) - Configurações de automação.
+  * Schema:
     ```json
     { 
       "admin_phone": "5511999999999", 
       "admin_notifications": [
-        { "type": "on_booking", "active": true, "template": "Novo agendamento..." }
+        { "id": "uuid", "type": "on_booking", "active": true, "template": "Novo agendamento de [lead_name]..." },
+        { "id": "uuid", "type": "before_event", "time_amount": 1, "time_unit": "hours", "template": "Falta 1h..." }
       ], 
       "lead_notifications": [
-        { "type": "before_event", "time_amount": 1, "time_unit": "hours", "template": "Lembrete..." }
+        { "id": "uuid", "type": "before_event", "time_amount": 30, "time_unit": "minutes", "template": "Olá [lead_name], sua reunião começa em 30min." }
       ] 
     }
     ```

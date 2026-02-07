@@ -282,14 +282,14 @@ Agora possui navegação por **Abas** e controle de visibilidade:
 * **Agendamento:** Botão relógio no input -> Salva em `scheduled_messages` com status `pending` -> Cronjob dispara.
 * **Campanhas:** Disparo em massa com delay aleatório para evitar banimento.
 
-### 📅 Módulo 5: Agenda 2.0 & Automação
-Sistema completo de agendamento público e interno.
-* **Visão Híbrida:** Botão flutuante para alternar instantaneamente entre Mês e Semana (Grid adaptativo).
-* **Link Público (/agendar):** Página de booking externa otimizada com verificação de conflitos em tempo real via RPC.
-* **Engine de Automação de Avisos:**
-    * **Gatilhos Configuráveis:** Envio de mensagem ao agendar (`on_booking`) ou lembretes pré-reunião (`before_event`).
-    * **Templates Dinâmicos:** Suporte a variáveis como `[lead_name]`, `[data]`, `[hora]`.
-    * **Multicanal:** Configuração distinta para avisos ao Admin (Dono da agenda) e ao Cliente (Lead).
+### 📅 Módulo 5: Agenda 2.0 & Automação Inteligente
+Sistema completo de agendamento público e interno com motor de notificações.
+* **Visão Híbrida:** Botão flutuante para alternar instantaneamente entre Mês e Semana.
+* **Link Público (/agendar/[slug]):** Página de booking externa otimizada (Mobile-first) que respeita as regras de disponibilidade definidas.
+* **Engine de Notificações (Worker):**
+    * **Gatilhos Configuráveis:** Suporte a avisos para o Admin ("Você tem uma reunião") e para o Lead ("Lembrete: Reunião em 1h").
+    * **Templates Dinâmicos:** Variáveis como `[lead_name]`, `[data]`, `[hora]`, `[empresa]`.
+    * **Cron Jobs:** Worker dedicado (`agendaWorker.js`) roda a cada 5 minutos verificando agendamentos futuros na tabela `appointments`.
 
 ### 🛡️ Módulo 6: Controle de Acesso (RBAC)
 O sistema implementa uma hierarquia de permissões estrita baseada na coluna `role` da tabela `profiles`:
@@ -307,12 +307,11 @@ O sistema implementa uma hierarquia de permissões estrita baseada na coluna `ro
     *   Dashboard restrito às suas próprias métricas de venda.
     *   Não acessa configurações globais da empresa.
 
-### ☁️ Módulo 7: Área de Trabalho (Desktop Environment)
-Um sistema operacional completo dentro do navegador para gestão de arquivos e produtividade.
-* **Window Manager (v2.0):** 
-    * Sistema de janelas flutuantes (`useDesktopStore`) com controle de foco, minimização e *z-index*.
-    * **Physics Engine:** Correção de "Double Jump" no arraste utilizando `framer-motion` com reset de transformadas e `useMotionValue` para coordenadas absolutas.
-    * **Singleton Logic:** Impede múltiplas instâncias do Drive ou Lixeira abertas simultaneamente.
+### ☁️ Módulo 7: Área de Trabalho (Wancora OS)
+Um ambiente desktop simulado dentro do navegador para produtividade máxima.
+* **Window Manager (Zustand):**
+    * Gerenciamento de janelas (`useDesktopStore`) com suporte a minimizar, maximizar, focar e persistência de posição.
+    * **Wallpaper Engine:** Suporte a papéis de parede personalizados, com padrão do sistema definido como "System Grid" (Cyberpunk Aesthetic).
 * **Drive App (Híbrido):** 
     * Explorador de arquivos integrado ao Google Drive.
     * **Busca Ao Vivo:** Modal dedicado para encontrar e importar arquivos que já existem no Google Drive da empresa mas não estão no cache.
