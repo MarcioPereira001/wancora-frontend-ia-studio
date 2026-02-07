@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState } from 'react';
@@ -67,11 +68,12 @@ export function DesktopDocks() {
     router.push('/auth/login');
   };
 
-  // Base Classes para os Paineis
-  const dockBaseClasses = "pointer-events-auto fixed top-1/2 -translate-y-1/2 bg-[#050505]/90 backdrop-blur-3xl border border-zinc-800/80 rounded-3xl flex flex-col gap-2 transition-all duration-500 ease-[cubic-bezier(0.25,1,0.5,1)] z-[100] shadow-[0_0_50px_-10px_rgba(0,0,0,1)] ring-1 ring-white/5";
+  // Base Classes para os Paineis - AGORA COM NEON PERMANENTE
+  // border-primary/40 e shadow verde aplicados por padrão
+  const dockBaseClasses = "pointer-events-auto fixed top-1/2 -translate-y-1/2 bg-[#050505]/90 backdrop-blur-3xl border border-primary/40 rounded-3xl flex flex-col gap-2 transition-all duration-500 ease-[cubic-bezier(0.25,1,0.5,1)] z-[100] shadow-[0_0_35px_-5px_rgba(34,197,94,0.3)] ring-1 ring-white/5";
   
-  // Neon Glow quando expandido
-  const activeGlow = "hover:border-primary/50 hover:shadow-[0_0_60px_-15px_rgba(34,197,94,0.4)]";
+  // Neon Glow Intensificado quando expandido (Hover)
+  const activeGlow = "hover:border-primary/70 hover:shadow-[0_0_60px_-5px_rgba(34,197,94,0.6)]";
 
   return (
     <div className="hidden lg:block pointer-events-none fixed inset-0 z-40">
@@ -98,7 +100,7 @@ export function DesktopDocks() {
             )}
         </div>
 
-        <div className="w-full h-px bg-gradient-to-r from-transparent via-zinc-700 to-transparent mb-1 opacity-50" />
+        <div className="w-full h-px bg-gradient-to-r from-transparent via-primary/30 to-transparent mb-1 opacity-50" />
 
         <div className="flex-1 flex flex-col gap-1 w-full overflow-y-auto overflow-x-hidden custom-scrollbar py-2">
             {NAV_ITEMS.main.map((item) => {
@@ -111,7 +113,7 @@ export function DesktopDocks() {
         {/* Indicador Visual de Expansão (Seta) */}
         {!hoverLeft && (
             <div className="absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-12 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                <ChevronRight className="w-4 h-4 text-zinc-600 animate-pulse" />
+                <ChevronRight className="w-4 h-4 text-primary animate-pulse" />
             </div>
         )}
       </nav>
@@ -147,7 +149,7 @@ export function DesktopDocks() {
              )}
         </div>
 
-        <div className="w-full h-px bg-gradient-to-r from-transparent via-zinc-700 to-transparent mb-1 opacity-50" />
+        <div className="w-full h-px bg-gradient-to-r from-transparent via-primary/30 to-transparent mb-1 opacity-50" />
 
         <div className="flex-1 flex flex-col gap-1 w-full overflow-y-auto overflow-x-hidden custom-scrollbar py-2">
             {NAV_ITEMS.utility.map((item) => {
@@ -156,7 +158,7 @@ export function DesktopDocks() {
             })}
         </div>
 
-        <div className="w-full h-px bg-gradient-to-r from-transparent via-zinc-700 to-transparent mt-1 opacity-50" />
+        <div className="w-full h-px bg-gradient-to-r from-transparent via-primary/30 to-transparent mt-1 opacity-50" />
 
         <button 
             onClick={handleLogout}
