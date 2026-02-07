@@ -1,15 +1,14 @@
-
 'use client';
 
-import React, { useState } from 'react';
+import React from 'react';
+import { Button } from '@/components/ui/button';
 import { 
     Bold, Italic, Underline, Strikethrough, AlignLeft, AlignCenter, AlignRight, AlignJustify,
-    List, ListOrdered, Link as LinkIcon, Image as ImageIcon, Type, Minus, Plus, 
-    Printer, Download, FileText, Settings, Layout, ZoomIn, ZoomOut, Monitor, Undo2, Redo2,
-    Highlighter, ChevronDown, Table as TableIcon
+    List, ListOrdered, Link as LinkIcon, Image as ImageIcon, Minus, Plus, 
+    Printer, Layout, ZoomIn, ZoomOut, Monitor, Undo2, Redo2,
+    FileText
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
 
 export type EditorTab = 'home' | 'insert' | 'layout' | 'view';
 
@@ -34,10 +33,10 @@ export function EditorToolbar({
         <div className="flex flex-col border-b border-zinc-300 bg-[#fbfbfb] select-none shrink-0">
             {/* Tabs */}
             <div className="flex px-2 pt-1 border-b border-zinc-200 gap-1 bg-white">
-                <button onClick={onSave} className="px-4 py-1.5 text-xs bg-blue-600 text-white rounded-t-md hover:bg-blue-700 font-medium transition-colors flex items-center gap-2">
-                    <FileText className="w-3.5 h-3.5" />
-                    Arquivo
-                </button>
+                <div className="px-4 py-1.5 text-xs font-bold text-zinc-700 flex items-center gap-2 border-r border-zinc-200 mr-2">
+                    <FileText className="w-3.5 h-3.5 text-blue-600" />
+                    Editor
+                </div>
                 {['home', 'insert', 'view'].map((tab) => (
                     <button
                         key={tab}
