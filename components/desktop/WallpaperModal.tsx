@@ -11,7 +11,7 @@ import { useAuthStore } from '@/store/useAuthStore';
 import { Upload, Check, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-// Opções Personalizadas Wancora (Atualizadas)
+// Opções Personalizadas Wancora (Atualizadas com System Grid)
 const WALLPAPERS = [
     { id: 1, url: 'https://image2url.com/r2/default/images/1770448028670-401772f7-f691-4028-b537-1f2c27de9301.png', name: 'Wancora Prime' },
     { id: 2, url: 'https://image2url.com/r2/default/images/1770448176758-f1140984-b35e-4d12-8e2b-dbc80736cdd5.png', name: 'Cyber Mist' },
