@@ -11,7 +11,7 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-h-[100dvh] bg-zinc-950 flex flex-col">
+    <div className="min-h-[100dvh] bg-zinc-950 flex flex-col overflow-x-hidden">
       {/* Navegação Mobile (Top + Bottom) */}
       <MobileNav />
 
@@ -19,13 +19,20 @@ export default function DashboardLayout({
       <DesktopDocks />
 
       {/* Conteúdo Principal */}
-      <main className="flex-1 w-full relative">
+      <main className="flex-1 w-full relative z-0">
         {/* 
-            Container Responsivo Inteligente 
-            - Mobile: Padding Top 16 (Header) + Padding Bottom 24 (Nav)
-            - Desktop: Padding X (Para não bater nos Docks) + Max Width controlado
+            Container Central "Cockpit"
+            - Mobile: Paddings padrão
+            - Desktop: Margens laterais grandes (px-32/px-40) para não tocar nas barras flutuantes (w-20 + margin).
+            - Centralização absoluta com max-w controlado.
         */}
-        <div className="pt-20 pb-24 px-4 md:pt-8 md:pb-8 lg:px-28 max-w-[1800px] mx-auto min-h-[calc(100vh-80px)]">
+        <div className="
+            pt-20 pb-24 px-4 
+            md:pt-8 md:pb-8 
+            lg:px-32 xl:px-44 
+            max-w-[1600px] mx-auto 
+            min-h-[calc(100vh-60px)]
+        ">
             {children}
         </div>
       </main>
