@@ -75,6 +75,7 @@ export function Sidebar({ onClose }: SidebarProps) {
               key={item.href} 
               href={item.href}
               onClick={onClose}
+              prefetch={false} // FIX: Desativa prefetch para evitar 404 em loop de builds antigas
               className={cn(
                 "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
                 isActive 

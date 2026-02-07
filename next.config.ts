@@ -25,6 +25,29 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+  // FIX 404 CHUNKS: Força o navegador a revalidar arquivos HTML/JSON cruciais
+  async headers() {
+    return [
+      {
+        source: '/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=0, must-revalidate',
+          },
+        ],
+      },
+      {
+        source: '/_next/static/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=31536000, immutable',
+          },
+        ],
+      },
+    ];
+  },
   // Configuração do Webpack para ignorar 'fs' e outros módulos nativos no client-side
   webpack: (config, { isServer }) => {
     if (!isServer) {
