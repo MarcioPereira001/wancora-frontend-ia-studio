@@ -6,7 +6,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/button';
 import { useRealtimeStore } from '@/store/useRealtimeStore';
-import { AlertTriangle, RefreshCw } from 'lucide-react';
+import { AlertTriangle, RefreshCw, Trash2 } from 'lucide-react';
 import { whatsappService } from '@/services/whatsappService';
 import { useToast } from '@/hooks/useToast';
 
@@ -41,6 +41,11 @@ export function DisconnectAlert() {
     }
   };
 
+  const navigateToConnections = () => {
+      setDisconnectModalOpen(false);
+      router.push('/connections');
+  };
+
   return (
     <Modal 
         isOpen={isDisconnectModalOpen} 
@@ -56,10 +61,7 @@ export function DisconnectAlert() {
             <div className="space-y-2">
                 <h3 className="text-xl font-bold text-white">WhatsApp Desconectado</h3>
                 <p className="text-sm text-zinc-400 leading-relaxed">
-                    O servidor reiniciou (Deploy ou Atualização) e a conexão com o WhatsApp foi encerrada por segurança.
-                </p>
-                <p className="text-xs text-zinc-500 bg-zinc-900 p-2 rounded border border-zinc-800 mt-2">
-                    Erro: Sessão não encontrada ou desconectada.
+                    A conexão com o WhatsApp foi encerrada. Isso pode ocorrer por reinício do servidor ou erro de criptografia.
                 </p>
             </div>
 
@@ -68,7 +70,15 @@ export function DisconnectAlert() {
                     onClick={handleReconnect} 
                     className="w-full bg-primary hover:bg-primary/90 text-white font-bold h-12 shadow-lg shadow-green-500/20"
                 >
-                    <RefreshCw className="w-4 h-4 mr-2" /> Reconectar Agora
+                    <RefreshCw className="w-4 h-4 mr-2" /> Tentar Reconectar
+                </Button>
+
+                <Button 
+                    variant="outline"
+                    onClick={navigateToConnections}
+                    className="w-full border-red-500/30 text-red-400 hover:bg-red-500/10 hover:text-red-300"
+                >
+                    <Trash2 className="w-4 h-4 mr-2" /> Gerenciar / Remover Instância
                 </Button>
                 
                 <Button 

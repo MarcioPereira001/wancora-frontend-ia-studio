@@ -407,11 +407,11 @@ const ConnectionCard: React.FC<{ instance: Instance, refresh: () => void, onRest
     const [loadingAction, setLoadingAction] = useState(false);
     
     const handleDelete = async () => {
-        if (!confirm(`TEM CERTEZA? Isso excluirá a instância e desconectará o WhatsApp.`)) return;
+        if (!confirm(`TEM CERTEZA? Isso excluirá a instância e todas as chaves de criptografia. Os dados de leads serão mantidos.`)) return;
         setLoadingAction(true);
         try {
             await whatsappService.deleteInstance(instance.session_id);
-            addToast({ type: 'success', title: 'Excluído', message: 'Instância removida.' });
+            addToast({ type: 'success', title: 'Excluído', message: 'Instância removida com sucesso. Conecte novamente.' });
             refresh();
         } catch (e: any) {
             addToast({ type: 'error', title: 'Erro', message: e.message });
@@ -435,63 +435,77 @@ const ConnectionCard: React.FC<{ instance: Instance, refresh: () => void, onRest
     };
 
     return (
-        <div className="group bg-zinc-950/50 border border-zinc-800 hover:border-primary/30 rounded-2xl p-6 flex items-center justify-between transition-all">
-            <div className="flex items-center gap-4">
-                <div className={cn(
-                    "w-12 h-12 rounded-xl flex items-center justify-center border shadow-inner relative",
-                    instance.status === 'connected' ? 'bg-zinc-900 border-primary text-primary' : 'bg-zinc-900 border-zinc-700 text-zinc-500'
-                )}>
-                    {instance.status === 'connected' ? <Wifi className="w-6 h-6" /> : <Power className="w-6 h-6" />}
-                    {instance.status !== 'connected' && (
-                        <div className="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full border-2 border-zinc-950 animate-pulse"></div>
-                    )}
-                </div>
-                <div>
-                    <h3 className="font-bold text-white text-lg">{instance.name}</h3>
-                    <div className="flex items-center gap-2">
-                        <span className={cn("w-2 h-2 rounded-full", instance.status === 'connected' ? "bg-green-500 animate-pulse" : "bg-red-500")} />
-                        <span className="text-xs text-zinc-500 uppercase font-mono">
-                            {instance.status === 'connected' ? 'ONLINE' : instance.qrcode_url ? 'QR CODE PRONTO' : 'DESCONECTADO'}
-                        </span>
+        <div className="group bg-zinc-950/50 border border-zinc-800 hover:border-primary/30 rounded-2xl p-6 flex flex-col gap-4 transition-all">
+            <div className="flex items-center justify-between w-full">
+                <div className="flex items-center gap-4">
+                    <div className={cn(
+                        "w-12 h-12 rounded-xl flex items-center justify-center border shadow-inner relative",
+                        instance.status === 'connected' ? 'bg-zinc-900 border-primary text-primary' : 'bg-zinc-900 border-zinc-700 text-zinc-500'
+                    )}>
+                        {instance.status === 'connected' ? <Wifi className="w-6 h-6" /> : <Power className="w-6 h-6" />}
+                        {instance.status !== 'connected' && (
+                            <div className="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full border-2 border-zinc-950 animate-pulse"></div>
+                        )}
+                    </div>
+                    <div>
+                        <h3 className="font-bold text-white text-lg">{instance.name}</h3>
+                        <div className="flex items-center gap-2">
+                            <span className={cn("w-2 h-2 rounded-full", instance.status === 'connected' ? "bg-green-500 animate-pulse" : "bg-red-500")} />
+                            <span className="text-xs text-zinc-500 uppercase font-mono">
+                                {instance.status === 'connected' ? 'ONLINE' : instance.qrcode_url ? 'QR CODE PRONTO' : 'DESCONECTADO'}
+                            </span>
+                        </div>
                     </div>
                 </div>
-            </div>
-            
-            <div className="flex gap-2">
-                <Button 
-                    variant="ghost" 
-                    size="icon" 
-                    onClick={onWebhook}
-                    disabled={loadingAction}
-                    className="hover:bg-purple-500/10 hover:text-purple-500" 
-                    title="Configurar Webhook"
-                >
-                    <Webhook className="w-5 h-5" />
-                </Button>
-
-                {instance.status !== 'connected' && (
+                
+                <div className="flex gap-2">
                     <Button 
                         variant="ghost" 
                         size="icon" 
-                        onClick={onRestart} 
-                        disabled={loadingAction} 
-                        className="bg-blue-500/10 text-blue-500 hover:bg-blue-500/20 hover:text-blue-400 border border-blue-500/20" 
-                        title="Reiniciar Conexão"
+                        onClick={onWebhook}
+                        disabled={loadingAction}
+                        className="hover:bg-purple-500/10 hover:text-purple-500" 
+                        title="Configurar Webhook"
                     >
-                        <RotateCcw className="w-5 h-5" />
+                        <Webhook className="w-5 h-5" />
                     </Button>
-                )}
 
-                {instance.status === 'connected' && (
-                    <Button variant="ghost" size="icon" onClick={handleLogout} disabled={loadingAction} className="hover:bg-yellow-500/10 hover:text-yellow-500" title="Desconectar">
-                        <Power className="w-5 h-5" />
+                    {instance.status !== 'connected' && (
+                        <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            onClick={onRestart} 
+                            disabled={loadingAction} 
+                            className="bg-blue-500/10 text-blue-500 hover:bg-blue-500/20 hover:text-blue-400 border border-blue-500/20" 
+                            title="Reiniciar Conexão"
+                        >
+                            <RotateCcw className="w-5 h-5" />
+                        </Button>
+                    )}
+
+                    {instance.status === 'connected' && (
+                        <Button variant="ghost" size="icon" onClick={handleLogout} disabled={loadingAction} className="hover:bg-yellow-500/10 hover:text-yellow-500" title="Desconectar">
+                            <Power className="w-5 h-5" />
+                        </Button>
+                    )}
+                    
+                    <Button variant="ghost" size="icon" onClick={handleDelete} disabled={loadingAction} className="hover:bg-red-500/10 hover:text-red-500" title="Excluir (Resetar Chaves)">
+                        {loadingAction ? <Loader2 className="w-5 h-5 animate-spin" /> : <Trash2 className="w-5 h-5" />}
                     </Button>
-                )}
-                
-                <Button variant="ghost" size="icon" onClick={handleDelete} disabled={loadingAction} className="hover:bg-red-500/10 hover:text-red-500" title="Excluir">
-                    {loadingAction ? <Loader2 className="w-5 h-5 animate-spin" /> : <Trash2 className="w-5 h-5" />}
-                </Button>
+                </div>
             </div>
+
+            {/* ALERTA VISUAL PARA ERRO DE CRIPTOGRAFIA */}
+            {instance.status === 'disconnected' && (
+                 <div className="w-full p-3 bg-red-500/10 border border-red-500/20 rounded-lg flex gap-3 items-start animate-in slide-in-from-top-2">
+                     <AlertTriangle className="w-5 h-5 text-red-500/80 shrink-0 mt-0.5" />
+                     <div className="text-xs text-zinc-400">
+                         <strong className="text-red-400 block mb-1">Problemas de Conexão?</strong>
+                         Se o QR Code não gerar ou a conexão falhar repetidamente, clique no botão de <strong>Excluir</strong> (<Trash2 className="w-3 h-3 inline text-red-400"/>) acima. 
+                         Isso reseta as chaves de criptografia corrompidas <strong>sem apagar</strong> seus Leads ou Conversas.
+                     </div>
+                 </div>
+            )}
         </div>
     );
 }
