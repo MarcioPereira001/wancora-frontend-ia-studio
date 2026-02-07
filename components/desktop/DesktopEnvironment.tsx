@@ -8,7 +8,7 @@ import { WindowFrame } from './WindowFrame';
 import { DriveApp } from './apps/DriveApp';
 import { EditorApp } from './apps/EditorApp';
 import { PreviewApp } from './apps/PreviewApp';
-import { SheetApp } from './apps/SheetApp'; // NOVO
+import { SheetApp } from './apps/SheetApp'; 
 import { Taskbar } from './Taskbar'; 
 import { Cloud, Key, FileText, Trash2, FolderPlus, Loader2, FileSpreadsheet } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -41,8 +41,8 @@ const DesktopIcon = ({ label, icon: Icon, onOpen, onSelect, color = "text-blue-5
 );
 
 export function DesktopEnvironment() {
-  const { windows, openWindow } = useDesktopStore();
-  const { createFolder, fetchFiles, setTrashView } = useCloudStore();
+  const { windows, openWindow, wallpaper } = useDesktopStore();
+  const { setTrashView } = useCloudStore();
   const { user } = useAuthStore();
   const supabase = createClient();
   const { addToast } = useToast();
@@ -64,7 +64,7 @@ export function DesktopEnvironment() {
 
   const handleDriveClick = () => {
       if (hasIntegration) {
-          setTrashView(false); // Reseta para Meu Drive
+          setTrashView(false); 
           openWindow('drive', 'Meu Drive');
       } else {
           setShowAuthModal(true);
@@ -76,7 +76,7 @@ export function DesktopEnvironment() {
           setShowAuthModal(true);
           return;
       }
-      setTrashView(true); // Define contexto de lixeira
+      setTrashView(true); 
       openWindow('drive', 'Lixeira');
   };
 
@@ -92,12 +92,14 @@ export function DesktopEnvironment() {
         ref={desktopConstraintsRef}
         className="absolute inset-0 w-full h-full overflow-hidden bg-cover bg-center select-none"
         style={{ 
-            backgroundImage: 'url(https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=2564&auto=format&fit=crop)',
+            backgroundImage: `url(${wallpaper})`,
             backgroundSize: 'cover',
-            backgroundPosition: 'center'
+            backgroundPosition: 'center',
+            backgroundColor: '#000'
         }}
         onClick={() => setSelectedIcon(null)}
     >
+        {/* Overlay para escurecer o fundo e melhorar contraste */}
         <div className="absolute inset-0 bg-black/30 pointer-events-none" />
 
         <div className="absolute top-4 left-4 grid grid-cols-1 gap-2 z-10">
