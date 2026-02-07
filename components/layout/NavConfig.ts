@@ -12,11 +12,11 @@ export const NAV_ITEMS = {
     { icon: Users, label: 'CRM', href: '/crm' },
     { icon: Send, label: 'Campanhas', href: '/campaigns' },
     { icon: Bot, label: 'Agentes', href: '/agents' },
-    { icon: Monitor, label: 'Mesa', href: '/cloud' }, // Movido para Main no Mobile para caber 6 itens
+    // Item 'Mesa' removido conforme solicitado para evitar duplicidade com 'Área de Trabalho'
   ],
   // Utilitário (Direita no Desktop / Menu Perfil no Mobile)
   utility: [
-    { icon: Monitor, label: 'Área de Trabalho', href: '/cloud' }, // Desktop Only na direita
+    { icon: Monitor, label: 'Área de Trabalho', href: '/cloud' }, // Desktop Only
     { icon: Calendar, label: 'Agenda', href: '/calendar' },
     { icon: QrCode, label: 'Conexões', href: '/connections' },
     { icon: Settings, label: 'Configurações', href: '/settings' },

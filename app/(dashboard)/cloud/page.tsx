@@ -14,13 +14,12 @@ export default function CloudPage() {
         </div>
     }>
         {/* 
-            Container "Monitor Virtual":
-            - relative: Prende os elementos absolutos do DesktopEnvironment aqui dentro.
-            - h-[85vh]: Altura fixa calculada para caber na tela sem scroll excessivo.
-            - rounded-3xl/border: Estética de "tela" isolada.
-            - mx-auto: Garante centralização extra se a largura for menor que o container pai.
+            Container "Monitor Virtual" Restaurado:
+            - h-full: Ocupa toda a altura do container pai (DashboardLayout).
+            - rounded-xl: Bordas arredondadas sutis.
+            - sem margens excessivas.
         */}
-        <div className="relative w-full h-[85vh] bg-zinc-900/50 border border-zinc-800 rounded-3xl overflow-hidden shadow-2xl ring-1 ring-white/5 mx-auto backdrop-blur-sm mt-2">
+        <div className="relative w-full h-full bg-zinc-900/50 border border-zinc-800 rounded-xl overflow-hidden shadow-2xl ring-1 ring-white/5 backdrop-blur-sm">
             <DesktopEnvironment />
         </div>
     </Suspense>
