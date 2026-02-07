@@ -73,7 +73,8 @@ export function DesktopDocks() {
   // backdrop-blur-xl -> Desfoco
   // border-zinc-800 -> Borda Cinza
   // shadow neon -> Sombra verde mantida
-  const dockBaseClasses = "pointer-events-auto fixed top-1/2 -translate-y-1/2 bg-[#18181b]/80 backdrop-blur-xl border border-zinc-800 rounded-3xl flex flex-col gap-2 transition-all duration-500 ease-[cubic-bezier(0.25,1,0.5,1)] z-[100] shadow-[0_0_35px_-10px_rgba(34,197,94,0.4)] ring-1 ring-white/5";
+  // ease-dock -> Curva personalizada definida no tailwind.config.ts
+  const dockBaseClasses = "pointer-events-auto fixed top-1/2 -translate-y-1/2 bg-[#18181b]/80 backdrop-blur-xl border border-zinc-800 rounded-3xl flex flex-col gap-2 transition-all duration-500 ease-dock z-[100] shadow-[0_0_35px_-10px_rgba(34,197,94,0.4)] ring-1 ring-white/5";
   
   // Neon Glow Intensificado quando expandido (Hover)
   // Mantém borda cinza (levemente mais clara) e intensifica a sombra verde

@@ -62,6 +62,7 @@ const nextConfig: NextConfig = {
         constants: false,
         os: false,
         crypto: false,
+        encoding: false, // FIX CRÍTICO: Resolve o erro "Can't resolve 'encoding'"
       };
     }
     return config;

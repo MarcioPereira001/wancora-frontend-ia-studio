@@ -1,3 +1,4 @@
+
 import type { Config } from "tailwindcss";
 import animate from "tailwindcss-animate";
 
@@ -59,6 +60,10 @@ const config: Config = {
           '0%': { width: '100%' },
           '100%': { width: '0%' },
         }
+      },
+      transitionTimingFunction: {
+        // Define a curva personalizada aqui para evitar erro de parser do Tailwind JIT
+        'dock': 'cubic-bezier(0.25, 1, 0.5, 1)', 
       }
     },
   },
