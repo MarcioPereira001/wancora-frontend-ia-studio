@@ -13,6 +13,7 @@ import { useAuthStore } from '@/store/useAuthStore';
 import { MessageInfoModal } from './MessageInfoModal';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/button';
+import EmojiPicker, { Theme } from 'emoji-picker-react';
 
 interface MessageBubbleProps {
   message: Message;
@@ -33,17 +34,15 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
   const [showInfo, setShowInfo] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showReactionPicker, setShowReactionPicker] = useState(false);
   
   const menuRef = useRef<HTMLDivElement>(null);
 
   if (!message) return null;
 
   const isSticker = message.message_type === 'sticker';
-  // Verifica se é grupo pelo JID do chat
   const isGroupMessage = message.remote_jid.includes('@g.us');
 
-  // Nome do participante (se existir e não for eu)
-  // O backend agora salva 'participant' na mensagem. Se não tiver, formata o JID do participante se disponível.
   const participantId = (message as any).participant;
   const participantName = participantId ? formatPhone(participantId) : null;
 
@@ -51,6 +50,7 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
       function handleClickOutside(event: MouseEvent) {
           if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
               setShowMenu(false);
+              setShowReactionPicker(false);
           }
       }
       if (showMenu) {
@@ -76,8 +76,36 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
     return <Check className={cn(iconClass, "text-zinc-400")} />;
   };
 
+  // Lógica de Reações (Toggle)
+  const myReaction = React.useMemo(() => {
+      const reactions: any[] = (message as any).reactions || [];
+      // Tenta achar reação feita pelo próprio "bot" (from_me=true no backend geralmente atribui ao JID da instância)
+      // Como não temos o JID exato da instância aqui facilmente, 
+      // assumimos que se o usuário clicou, ele quer alternar.
+      // O backend trata a remoção se mandarmos string vazia.
+      return null; 
+  }, [message]);
+
   const handleReact = async (emoji: string) => {
+      // Verifica se já reagiu com esse emoji para fazer toggle (remover)
+      const reactions: any[] = (message as any).reactions || [];
+      // Hack: Como não sabemos "quem sou eu" no contexto de JID exato aqui no frontend sem fazer query complexa,
+      // vamos confiar que o backend sobrescreve.
+      // Mas para REMOVER, precisamos enviar string vazia.
+      
+      // UX: Se o usuário clica no mesmo emoji que ele acabou de colocar (visualmente), remove.
+      // Simplificação: Se já existe esse emoji na lista, assumimos que pode ser dele e tentamos remover?
+      // Melhor não assumir. Vamos sempre enviar o emoji clicado.
+      // Se quiser remover, o usuário teria que clicar num botão "remover".
+      // Vamos adicionar lógica de toggle no futuro se tivermos o myJid na store.
+      
+      // Para agora: Envia o emoji. Se quiser remover, teria que ser uma ação explícita ou lógica de backend.
+      // Vamos implementar: Se clicar no mesmo emoji que já está "contado" como meu, envia vazio.
+      // (Requer myJid na store, vamos simplificar para envio direto por enquanto)
+
       setShowMenu(false);
+      setShowReactionPicker(false);
+      
       try {
           await api.post('/message/react', {
               sessionId: message.session_id,
@@ -89,6 +117,14 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
       } catch (error) {
           addToast({ type: 'error', title: 'Erro', message: 'Falha ao reagir.' });
       }
+  };
+
+  const handleReactionClick = (emoji: string) => {
+      handleReact(emoji);
+  };
+  
+  const handleRemoveReaction = () => {
+      handleReact(""); // Envia vazio para remover
   };
 
   const handleDelete = async (everyone: boolean) => {
@@ -175,7 +211,7 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
                 >
                     <div className="relative">
                         <button 
-                            onClick={(e) => { e.stopPropagation(); setShowMenu(!showMenu); }} 
+                            onClick={(e) => { e.stopPropagation(); setShowMenu(!showMenu); setShowReactionPicker(false); }} 
                             className={cn(
                                 "w-7 h-7 rounded-full border flex items-center justify-center shadow-xl transition-colors",
                                 showMenu ? "bg-zinc-700 border-zinc-500 text-white" : "bg-zinc-800 border-zinc-700 text-zinc-400 hover:bg-zinc-700 hover:text-white"
@@ -189,17 +225,46 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
                                 <div className="fixed inset-0 z-[60]" onClick={() => setShowMenu(false)} />
                                 
                                 <div className={cn(
-                                    "absolute top-8 bg-zinc-900 border border-zinc-800 rounded-xl shadow-[0_0_30px_rgba(0,0,0,0.8)] p-1 min-w-[220px] animate-in zoom-in-95 origin-top z-[70] ring-1 ring-white/10",
+                                    "absolute top-8 bg-zinc-900 border border-zinc-800 rounded-xl shadow-[0_0_30px_rgba(0,0,0,0.8)] p-1 min-w-[240px] animate-in zoom-in-95 origin-top z-[70] ring-1 ring-white/10",
                                     isMe ? "right-0" : "left-0"
                                 )}>
-                                    <div className="flex gap-1 p-2 bg-zinc-950/50 rounded-lg mb-1 justify-between">
+                                    {/* Reações Rápidas */}
+                                    <div className="flex gap-1 p-2 bg-zinc-950/50 rounded-lg mb-1 justify-between items-center relative">
                                         {COMMON_EMOJIS.slice(0, 5).map(emoji => (
-                                            <button key={emoji} onClick={() => handleReact(emoji)} className="hover:scale-125 transition-transform text-lg p-1">
+                                            <button key={emoji} onClick={() => handleReactionClick(emoji)} className="hover:scale-125 transition-transform text-lg p-1">
                                                 {emoji}
                                             </button>
                                         ))}
-                                        <button className="hover:bg-zinc-800 rounded p-1 text-zinc-500"><SmilePlus className="w-4 h-4" /></button>
+                                        <button 
+                                            onClick={() => setShowReactionPicker(!showReactionPicker)} 
+                                            className={cn("rounded p-1 transition-colors", showReactionPicker ? "bg-zinc-700 text-white" : "hover:bg-zinc-800 text-zinc-500")}
+                                        >
+                                            <SmilePlus className="w-4 h-4" />
+                                        </button>
                                     </div>
+                                    
+                                    {/* Emoji Picker Popover */}
+                                    {showReactionPicker && (
+                                        <div className="absolute top-12 left-0 z-[80]">
+                                            <EmojiPicker 
+                                                onEmojiClick={(data) => handleReactionClick(data.emoji)} 
+                                                theme={Theme.DARK} 
+                                                width={280} 
+                                                height={300}
+                                                searchDisabled
+                                                skinTonesDisabled
+                                                previewConfig={{ showPreview: false }}
+                                            />
+                                        </div>
+                                    )}
+
+                                    {/* Botão Remover Reação (Se houver) */}
+                                    {reactionCounts && (
+                                         <button onClick={handleRemoveReaction} className="flex items-center gap-2 px-3 py-2 text-xs text-zinc-400 hover:bg-zinc-800 rounded text-left w-full transition-colors mb-1">
+                                             <Ban className="w-3 h-3" /> Remover minha reação
+                                         </button>
+                                    )}
+
                                     {isMe && (
                                         <button onClick={() => { setShowMenu(false); setShowInfo(true); }} className="flex items-center gap-2 px-3 py-2.5 text-sm text-zinc-300 hover:bg-zinc-800 rounded text-left w-full transition-colors">
                                             <Info className="w-4 h-4" /> Dados da mensagem
@@ -225,14 +290,12 @@ export function MessageBubble({ message, isSelectionMode, isSelected, onSelect }
                 )}
                 onClick={() => isSelectionMode && onSelect && onSelect()}
             >
-                {/* Nome do Participante em Grupos (Se não for eu) */}
                 {isGroupMessage && !isMe && !isSticker && participantName && (
                      <span className="text-[10px] font-bold text-orange-400 px-1 mb-0.5 truncate max-w-[200px] block opacity-90">
                         {participantName}
                      </span>
                 )}
                 
-                {/* PushName do contato em DM (Se não for salvo na agenda) */}
                 {!isGroupMessage && !isMe && !isSticker && message.contact?.push_name && (
                     <span className="text-[10px] font-bold text-blue-400 px-1 mb-0.5 truncate max-w-[200px] block opacity-90">
                         {message.contact.push_name}
