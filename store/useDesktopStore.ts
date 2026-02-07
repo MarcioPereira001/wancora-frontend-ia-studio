@@ -42,7 +42,7 @@ export const useDesktopStore = create<DesktopState>()(
       windows: [],
       activeWindowId: null,
       nextZIndex: 100,
-      wallpaper: 'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?q=80&w=2670&auto=format&fit=crop', // Default Neon Circuit
+      wallpaper: 'https://image2url.com/r2/default/images/1770448028670-401772f7-f691-4028-b537-1f2c27de9301.png', // Novo Padrão Wancora
 
       setWallpaper: (url) => set({ wallpaper: url }),
 

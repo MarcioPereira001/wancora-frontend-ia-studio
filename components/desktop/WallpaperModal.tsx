@@ -11,14 +11,14 @@ import { useAuthStore } from '@/store/useAuthStore';
 import { Upload, Check, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-// Opções predefinidas "Cyberpunk / Wancora Style"
+// Opções Personalizadas Wancora
 const WALLPAPERS = [
-    { id: 1, url: 'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?q=80&w=2670&auto=format&fit=crop', name: 'Neon Circuit' },
-    { id: 2, url: 'https://images.unsplash.com/photo-1515630278258-407f66498911?q=80&w=2670&auto=format&fit=crop', name: 'Dark City' },
-    { id: 3, url: 'https://images.unsplash.com/photo-1550684848-fac1c5b4e853?q=80&w=2670&auto=format&fit=crop', name: 'Abstract Flow' },
-    { id: 4, url: 'https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?q=80&w=2670&auto=format&fit=crop', name: 'Matrix Code' },
-    { id: 5, url: 'https://images.unsplash.com/photo-1614850523459-c2f4c699c52e?q=80&w=2670&auto=format&fit=crop', name: 'Dark Hex' },
-    { id: 6, url: 'https://images.unsplash.com/photo-1558494949-ef526b0042a0?q=80&w=2670&auto=format&fit=crop', name: 'Server Room' }
+    { id: 1, url: 'https://image2url.com/r2/default/images/1770448028670-401772f7-f691-4028-b537-1f2c27de9301.png', name: 'Wancora Prime' },
+    { id: 2, url: 'https://image2url.com/r2/default/images/1770448176758-f1140984-b35e-4d12-8e2b-dbc80736cdd5.png', name: 'Cyber Mist' },
+    { id: 3, url: 'https://image2url.com/r2/default/images/1770448212104-3386e66f-f87e-4235-87db-5edeea13df22.png', name: 'Neon Horizon' },
+    { id: 4, url: 'https://image2url.com/r2/default/images/1770448237410-5e0b0938-f104-402b-8a11-578a317d9b31.png', name: 'Dark Void' },
+    { id: 5, url: 'https://image2url.com/r2/default/images/1770448285254-8dec4bd3-00a3-4f9b-9b36-8fa2764bd621.png', name: 'System Grid' },
+    { id: 6, url: 'https://image2url.com/r2/default/images/1770448321877-f88a110b-7b77-4fac-a1fe-50433110d3ca.png', name: 'Deep Space' }
 ];
 
 interface WallpaperModalProps {
