@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
@@ -60,15 +61,16 @@ export function ChatListSidebar() {
   const instanceDropdownRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
     
-  // --- AUTO SYNC (2 Minutos) ---
+  // --- AUTO SYNC (30 Segundos - Silent Mode) ---
   useEffect(() => {
     const interval = setInterval(() => {
-        // Verifica se a janela está visível para não gastar recurso em aba de fundo
+        // PERFORMANCE GUARD: Só atualiza se a aba estiver visível.
+        // Evita sobrecarga no banco quando o usuário minimiza o navegador (Scale 100 clients).
         if (!isRefreshing && typeof document !== 'undefined' && document.visibilityState === 'visible') {
-            console.log("🔄 Auto-Sync Chat List...");
-            refreshList(false); // Silent refresh
+            // Passa 'false' para não mostrar loading spinner (Silent Refresh)
+            refreshList(false); 
         }
-    }, 120000); // 2 minutos
+    }, 30000); // 30 segundos
 
     return () => clearInterval(interval);
   }, [refreshList, isRefreshing]);

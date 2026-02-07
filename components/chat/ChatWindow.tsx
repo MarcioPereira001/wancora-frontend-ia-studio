@@ -175,9 +175,33 @@ export function ChatWindow() {
             )}
 
             {messages.map((msg, idx) => {
-                // FIXED: Lógica mais permissiva para evitar que mensagens válidas fiquem invisíveis
-                // Se tiver media_url, exibe. Se tiver content, exibe. Se não tiver nada, só aí ignora.
-                if (!msg.content && !msg.media_url && !msg.message_type) return null;
+                // 🛡️ FRONTEND AUDIT: Filtragem Estrita
+                // Se o backend salvar algo errado, o frontend bloqueia a renderização.
+                
+                // 1. Mensagens Apagadas são permitidas (tem flag is_deleted)
+                if ((msg as any).is_deleted) {
+                    return (
+                        <div key={msg.id || idx} className={`flex w-full mb-1`}>
+                            <MessageBubble message={msg} isSelectionMode={isMsgSelectionMode} isSelected={selectedMsgIds.has(msg.id)} onSelect={() => toggleMessageSelection(msg.id)} />
+                        </div>
+                    );
+                }
+
+                // 2. Verificação de Conteúdo
+                const hasContent = msg.content && msg.content.trim().length > 0;
+                const hasMedia = !!msg.media_url;
+                const isSticker = msg.message_type === 'sticker';
+                const isPoll = msg.message_type === 'poll';
+                const isLoc = msg.message_type === 'location';
+                const isContact = msg.message_type === 'contact';
+                
+                // Se não tem nada visual, ignora (Isso pega reações/protocolos vazios)
+                if (!hasContent && !hasMedia && !isSticker && !isPoll && !isLoc && !isContact) {
+                    return null;
+                }
+                
+                // Se for "unknown" e vazio, ignora
+                if (msg.message_type === 'unknown' && !hasContent) return null;
 
                 return (
                     <div key={msg.id || idx} className={`flex w-full mb-1`}>
