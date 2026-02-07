@@ -11,7 +11,11 @@ import { WallpaperModal } from './WallpaperModal';
 export function Taskbar() {
   const { windows, activeWindowId, focusWindow, toggleMinimize, closeWindow, openWindow, centerWindow } = useDesktopStore();
   const { user } = useAuthStore();
-  const [time, setTime] = useState(new Date());
+  
+  // FIX HYDRATION 418: Estado inicial null para não renderizar tempo no server
+  const [time, setTime] = useState<Date | null>(null);
+  const [mounted, setMounted] = useState(false);
+
   const [startMenuOpen, setStartMenuOpen] = useState(false);
   const [isWallpaperModalOpen, setIsWallpaperModalOpen] = useState(false);
   
@@ -20,6 +24,8 @@ export function Taskbar() {
   const contextMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    setMounted(true);
+    setTime(new Date()); // Define tempo inicial no client
     const timer = setInterval(() => setTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
@@ -174,12 +180,16 @@ export function Taskbar() {
                 </div>
             </div>
 
-            {/* Tray Area */}
+            {/* Tray Area - Fix Hydration Error */}
             <div className="flex items-center gap-4 px-2">
-                <div className="flex flex-col items-end leading-none">
-                    <span className="text-xs font-medium text-zinc-200">{time.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-                    <span className="text-[10px] text-zinc-500">{time.toLocaleDateString()}</span>
-                </div>
+                {mounted && time ? (
+                    <div className="flex flex-col items-end leading-none animate-in fade-in">
+                        <span className="text-xs font-medium text-zinc-200">{time.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                        <span className="text-[10px] text-zinc-500">{time.toLocaleDateString()}</span>
+                    </div>
+                ) : (
+                    <div className="w-16 h-8 bg-zinc-800/50 rounded animate-pulse" />
+                )}
             </div>
         </div>
 

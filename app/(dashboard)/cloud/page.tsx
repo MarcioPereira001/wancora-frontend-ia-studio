@@ -14,12 +14,12 @@ export default function CloudPage() {
         </div>
     }>
         {/* 
-            Container "Monitor Virtual" Restaurado:
-            - h-full: Ocupa toda a altura do container pai (DashboardLayout).
-            - rounded-xl: Bordas arredondadas sutis.
-            - sem margens excessivas.
+            Container "Monitor Virtual" Limpo:
+            - h-full: Ocupa toda a altura.
+            - Removido bg-zinc-900/50 e backdrop-blur para não escurecer o wallpaper.
+            - Mantido apenas borda e shadow para estrutura.
         */}
-        <div className="relative w-full h-full bg-zinc-900/50 border border-zinc-800 rounded-xl overflow-hidden shadow-2xl ring-1 ring-white/5 backdrop-blur-sm">
+        <div className="relative w-full h-full border border-zinc-800 rounded-xl overflow-hidden shadow-2xl ring-1 ring-white/5 bg-black">
             <DesktopEnvironment />
         </div>
     </Suspense>

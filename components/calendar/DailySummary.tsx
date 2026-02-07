@@ -1,7 +1,7 @@
 
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useCalendarStore } from '@/store/useCalendarStore';
 import { createClient } from '@/utils/supabase/client';
 import { ChevronUp, ChevronDown, CheckCircle2, Circle, Clock, AlertCircle } from 'lucide-react';
@@ -12,7 +12,12 @@ import { cn } from '@/lib/utils';
 export function DailySummary() {
   const { appointments, toggleTaskCompletionOptimistic } = useCalendarStore();
   const [isExpanded, setIsExpanded] = useState(true);
+  const [mounted, setMounted] = useState(false);
   const supabase = createClient();
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const todayApps = appointments.filter(app => {
       const date = parseISO(app.start_time);
@@ -46,7 +51,7 @@ export function DailySummary() {
             <div className="flex items-center gap-4">
                 <div className="flex flex-col">
                     <h2 className="text-lg font-bold text-white capitalize">
-                        {format(new Date(), "EEEE, d 'de' MMMM", { locale: ptBR })}
+                        {mounted ? format(new Date(), "EEEE, d 'de' MMMM", { locale: ptBR }) : <span className="h-6 w-32 bg-zinc-800 rounded animate-pulse inline-block" />}
                     </h2>
                     <p className="text-xs text-zinc-400 flex items-center gap-2">
                         <span>{meetings.length} Reuniões</span>

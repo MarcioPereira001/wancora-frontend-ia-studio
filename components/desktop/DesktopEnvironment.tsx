@@ -95,13 +95,13 @@ export function DesktopEnvironment() {
             backgroundImage: `url(${wallpaper})`,
             backgroundSize: 'cover',
             backgroundPosition: 'center',
-            backgroundColor: '#000'
+            backgroundColor: '#121212', // Fallback
+            zIndex: 0 // Garante camada base
         }}
         onClick={() => setSelectedIcon(null)}
     >
-        {/* Overlay para escurecer o fundo e melhorar contraste */}
-        <div className="absolute inset-0 bg-black/30 pointer-events-none" />
-
+        {/* Overlay removido para corrigir visualização escura */}
+        
         <div className="absolute top-4 left-4 grid grid-cols-1 gap-2 z-10">
             <DesktopIcon 
                 label="Meu Drive" 
