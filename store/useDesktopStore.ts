@@ -42,7 +42,8 @@ export const useDesktopStore = create<DesktopState>()(
       windows: [],
       activeWindowId: null,
       nextZIndex: 100,
-      wallpaper: 'https://image2url.com/r2/default/images/1770448028670-401772f7-f691-4028-b537-1f2c27de9301.png', // Novo Padrão Wancora
+      // Padrão alterado para "System Grid" conforme solicitado
+      wallpaper: 'https://image2url.com/r2/default/images/1770448285254-8dec4bd3-00a3-4f9b-9b36-8fa2764bd621.png',
 
       setWallpaper: (url) => set({ wallpaper: url }),
 
