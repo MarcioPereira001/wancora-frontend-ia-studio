@@ -2,7 +2,7 @@
 'use client';
 
 import React from 'react';
-import { DesktopDocks } from "@/components/layout/DesktopDocks";
+import { Sidebar } from "@/components/layout/Sidebar";
 import { MobileNav } from "@/components/layout/MobileNav";
 
 export default function DashboardLayout({
@@ -11,27 +11,29 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-h-[100dvh] bg-zinc-950 flex flex-col overflow-x-hidden">
-      {/* Navegação Mobile (Top + Bottom) */}
+    <div className="min-h-[100dvh] bg-zinc-950 flex flex-col lg:flex-row overflow-hidden">
+      {/* Navegação Mobile (Aparece apenas em telas pequenas) */}
       <MobileNav />
 
-      {/* Navegação Desktop (Sidebars Flutuantes) */}
-      <DesktopDocks />
+      {/* Navegação Desktop (Sidebar Nova - Aparece apenas em telas grandes) */}
+      <Sidebar />
 
-      {/* Conteúdo Principal */}
-      <main className="flex-1 w-full relative z-0">
+      {/* Conteúdo Principal 
+          flex-1: Ocupa o espaço restante
+          overflow-y-auto: Permite scroll independente do sidebar
+          relative: Contexto de posicionamento
+      */}
+      <main className="flex-1 w-full relative h-[100dvh] overflow-y-auto overflow-x-hidden bg-[#09090b]">
         {/* 
             Container Central "Cockpit"
-            - Mobile: Paddings padrão
-            - Desktop: Margens laterais grandes (px-32/px-40) para não tocar nas barras flutuantes (w-20 + margin).
-            - Centralização absoluta com max-w controlado.
+            Ajustado para o novo layout flexível (remove margens fixas gigantes)
         */}
         <div className="
             pt-20 pb-24 px-4 
-            md:pt-8 md:pb-8 
-            lg:px-32 xl:px-44 
+            lg:pt-8 lg:pb-8 
+            lg:px-12 
             max-w-[1600px] mx-auto 
-            min-h-[calc(100vh-60px)]
+            min-h-full
         ">
             {children}
         </div>
