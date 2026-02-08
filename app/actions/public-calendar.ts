@@ -4,7 +4,7 @@
 import { createClient } from '@/utils/supabase/server';
 import { z } from 'zod';
 
-// Configurar URL da API (usando variável de ambiente ou fallback para localhost em dev)
+// Configurar URL da API
 const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001/api/v1';
 
 // Schema para validação do formulário de agendamento
@@ -13,7 +13,7 @@ const BookingSchema = z.object({
   date: z.string(), // YYYY-MM-DD
   time: z.string(), // HH:MM
   name: z.string().min(2, "Nome muito curto"),
-  phone: z.string().min(8, "Telefone inválido"), // Mínimo 8 dígitos para suportar números sem DDD localmente se necessário
+  phone: z.string().min(8, "Telefone inválido"), 
   email: z.string().email().optional().or(z.literal('')),
   notes: z.string().optional()
 });
@@ -61,8 +61,7 @@ export async function bookAppointment(formData: BookingData) {
   try {
       console.log(`📅 [Booking] Request: ${name}, ${phone}, ${date} ${time}`);
 
-      // SANITIZAÇÃO DE TELEFONE (Standard E.164)
-      // O frontend já envia com DDI se usar o seletor. Removemos apenas não-números.
+      // SANITIZAÇÃO DE TELEFONE (Mantém números puros)
       let cleanPhone = phone.replace(/\D/g, ''); 
       
       // Validação de segurança
@@ -70,7 +69,7 @@ export async function bookAppointment(formData: BookingData) {
            return { error: "Número de telefone parece incompleto." };
       }
 
-      // 1. Criar Agendamento via RPC (Agora com Logs Detalhados)
+      // 1. Criar Agendamento via RPC
       const { data, error } = await supabase.rpc('create_public_appointment', {
           p_slug: slug,
           p_date: date,
@@ -81,52 +80,47 @@ export async function bookAppointment(formData: BookingData) {
           p_notes: notes || ''
       });
 
-      // Erro Técnico do Supabase (Ex: Falha de conexão, Função inexistente)
       if (error) {
-          console.error("❌ [Booking] Erro RPC (Supabase FATAL):", {
-              message: error.message,
-              details: error.details,
-              hint: error.hint,
-              code: error.code
-          });
+          console.error("❌ [Booking] Erro RPC:", error);
 
-          // Tratamento específico para o erro de função duplicada (42725)
           if (error.code === '42725') {
-              return { error: `Erro interno de configuração (Função duplicada no banco). Por favor, avise o suporte.` };
+              return { error: `Erro interno de configuração (Função duplicada no banco).` };
           }
-          if (error.code === 'P0001') { // Erro levantado via PLPGSQL (RAISE EXCEPTION)
+          if (error.code === 'P0001') {
               return { error: error.message };
           }
-
           return { error: `Erro no servidor: ${error.message}` };
       }
 
-      // Erro Lógico Retornado pela Função (Ex: Horário Ocupado)
       if (data && data.error) {
-          console.error("❌ [Booking] Erro Lógico (RPC):", data.error, data.detail);
+          console.error("❌ [Booking] Erro Lógico RPC:", data.error);
           return { error: `${data.error}` };
       }
 
-      console.log("✅ [Booking] RPC Sucesso. Dados:", data);
+      console.log("✅ [Booking] RPC Sucesso. Appointment ID:", data?.id);
 
-      // 2. Disparar Notificação (Webhook para Backend Node)
-      const appointmentId = data?.id;
-
-      if (appointmentId) {
-          // Busca companyId para o webhook (segurança)
-          const { data: appData } = await supabase.from('appointments').select('company_id').eq('id', appointmentId).single();
+      // 2. Disparar Notificação (Webhook Interno)
+      // O Next.js (Server Action) chama o Backend (Express)
+      // Não requer autenticação de usuário pois é uma rota interna/segura
+      if (data?.id) {
+          // Busca companyId para garantir segurança no payload
+          const { data: appData } = await supabase.from('appointments').select('company_id').eq('id', data.id).single();
           
           if (appData) {
-               console.log(`🔔 [Booking] Disparando webhook para ID: ${appointmentId}`);
-               // Fire and Forget fetch
+               console.log(`🔔 [Booking] Disparando notificação via API: ${API_URL}/appointments/confirm`);
+               
+               // Fire and Forget fetch (Não bloqueia o retorno pro usuário)
                fetch(`${API_URL}/appointments/confirm`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ 
-                      appointmentId: appointmentId,
+                      appointmentId: data.id,
                       companyId: appData.company_id
                   })
-              }).catch(err => console.error("Erro fetch API:", err));
+              }).then(res => {
+                  if (!res.ok) console.error(`❌ [Booking] Falha no webhook: ${res.status}`);
+                  else console.log(`✅ [Booking] Webhook disparado com sucesso.`);
+              }).catch(err => console.error("❌ [Booking] Erro fetch API:", err));
           }
       }
 
