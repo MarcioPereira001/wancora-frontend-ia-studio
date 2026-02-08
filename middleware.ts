@@ -72,7 +72,13 @@ export async function middleware(request: NextRequest) {
   try {
       const { data: { session } } = await supabase.auth.getSession()
 
-      // LISTA DE ROTAS PROTEGIDAS
+      // LISTA DE ROTAS PROTEGIDAS (USER & ADMIN)
+      // Se tentar acessar /admin sem estar logado, vai pro login de admin
+      if (!session && request.nextUrl.pathname.startsWith('/admin')) {
+          return NextResponse.redirect(new URL('/auth/login-admin', request.url))
+      }
+
+      // Rotas protegidas normais
       if (!session && (
         request.nextUrl.pathname.startsWith('/dashboard') || 
         request.nextUrl.pathname.startsWith('/crm') || 
@@ -83,8 +89,7 @@ export async function middleware(request: NextRequest) {
         request.nextUrl.pathname.startsWith('/connections') ||
         request.nextUrl.pathname.startsWith('/campaigns')
       )) {
-        // Exceção: O calendário PÚBLICO (/agendar/...) já foi tratado no topo, 
-        // mas mantemos o check de /calendar/settings para garantir
+        // Exceção: O calendário PÚBLICO (/agendar/...) já foi tratado no topo
         if (request.nextUrl.pathname.startsWith('/calendar/settings')) {
              return NextResponse.redirect(new URL('/auth/login', request.url))
         }
@@ -93,8 +98,15 @@ export async function middleware(request: NextRequest) {
       }
 
       // Auth routes (redirect if logged in)
-      if (session && request.nextUrl.pathname.startsWith('/auth')) {
-        return NextResponse.redirect(new URL('/dashboard', request.url))
+      if (session) {
+          // Se já logado, redireciona login normal para dashboard
+          if (request.nextUrl.pathname === '/auth/login' || request.nextUrl.pathname === '/auth/register') {
+              return NextResponse.redirect(new URL('/dashboard', request.url))
+          }
+          // Se já logado e tentar login-admin, manda pro admin dashboard
+          if (request.nextUrl.pathname === '/auth/login-admin') {
+              return NextResponse.redirect(new URL('/admin/dashboard', request.url))
+          }
       }
   } catch (error) {
       console.error("Middleware Auth Error:", error);

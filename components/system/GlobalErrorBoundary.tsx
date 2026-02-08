@@ -1,6 +1,6 @@
 'use client';
 
-import React, { ErrorInfo, ReactNode } from 'react';
+import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { SystemLogger } from '@/lib/logger';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -13,7 +13,7 @@ interface State {
   hasError: boolean;
 }
 
-export class GlobalErrorBoundary extends React.Component<Props, State> {
+export class GlobalErrorBoundary extends Component<Props, State> {
   public state: State = {
     hasError: false
   };
