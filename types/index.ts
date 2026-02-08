@@ -50,6 +50,7 @@ export interface User {
   role: string;
   company_id?: string;
   avatar_url?: string;
+  super_admin?: boolean; // NOVO: Flag de Super Admin
 }
 
 export interface Company {
@@ -267,4 +268,26 @@ export interface Appointment {
   category?: string;
   reminder_sent?: boolean;
   confirmation_sent?: boolean;
+}
+
+// --- ADMIN & LOGS TYPES ---
+
+export interface SystemLog {
+    id: string;
+    level: 'info' | 'warn' | 'error' | 'fatal';
+    source: 'frontend' | 'backend' | 'worker' | 'database';
+    message: string;
+    metadata?: any;
+    company_id?: string;
+    user_id?: string;
+    created_at: string;
+}
+
+export interface Feedback {
+    id: string;
+    type: 'bug' | 'suggestion';
+    content: string;
+    status: 'pending' | 'in_progress' | 'resolved';
+    created_at: string;
+    user?: { name: string; email: string };
 }
