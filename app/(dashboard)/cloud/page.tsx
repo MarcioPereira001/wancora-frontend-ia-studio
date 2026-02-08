@@ -14,12 +14,13 @@ export default function CloudPage() {
         </div>
     }>
         {/* 
-            FIX CRÍTICO DE RENDERIZAÇÃO:
-            1. h-[85vh]: Define altura explícita. 'h-full' estava colapsando para 0px porque o pai tem 'min-h'.
-            2. Removido 'bg-black': Permite que o wallpaper do DesktopEnvironment apareça.
-            3. calc(100vh - 6rem): Ajuste fino para desktop para não gerar scroll duplo com o padding do layout.
+            VISUAL FULL SCREEN / IMERSIVO:
+            - w-full h-full: Preenche o container do layout (que agora tem padding 0).
+            - rounded-none: Cantos retos para encostar nas bordas da tela.
+            - border-none: Sem bordas físicas.
+            - bg-zinc-900/20: Fundo sutil enquanto carrega o wallpaper.
         */}
-        <div className="relative w-full h-[82vh] lg:h-[calc(100vh-6rem)] border border-zinc-800 rounded-xl overflow-hidden shadow-2xl ring-1 ring-white/5 bg-zinc-900/20 backdrop-blur-sm">
+        <div className="relative w-full h-full bg-zinc-900/20 overflow-hidden">
             <DesktopEnvironment />
         </div>
     </Suspense>
