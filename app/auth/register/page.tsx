@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useEffect, Suspense } from "react";
@@ -11,7 +10,8 @@ import { useToast } from "@/hooks/useToast";
 import Link from "next/link";
 import { Loader2, Building, Gift } from "lucide-react";
 
-function RegisterForm() {
+// Componente interno que usa useSearchParams (deve estar dentro de Suspense)
+function RegisterFormContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const supabase = createClient();
@@ -24,7 +24,6 @@ function RegisterForm() {
   const [password, setPassword] = useState("");
   const [companyName, setCompanyName] = useState("");
 
-  // Lógica Híbrida: Invite (Time) vs Referral (Indicação)
   const refParam = searchParams.get('ref');
   
   const [invitingCompany, setInvitingCompany] = useState<{name: string, id: string} | null>(null);
@@ -32,8 +31,6 @@ function RegisterForm() {
 
   useEffect(() => {
       if(refParam) {
-          // Se for UUID (36 chars), é convite para TIME.
-          // Se for menor, é código de INDICAÇÃO.
           if (refParam.length > 20) {
               const fetchCompany = async () => {
                   const { data } = await supabase.from('companies').select('name, id').eq('id', refParam).single();
@@ -44,14 +41,13 @@ function RegisterForm() {
               setReferralCode(refParam);
           }
       }
-  }, [refParam]);
+  }, [refParam, supabase]);
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
     try {
-      // 1. Sign Up
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email,
         password,
@@ -65,10 +61,8 @@ function RegisterForm() {
       if (authError) throw authError;
       if (!authData.user) throw new Error("Erro ao criar usuário.");
 
-      // Se for convite de time, usa o ID da empresa do convite.
       let targetCompanyId = invitingCompany?.id;
 
-      // 2. Create Company (APENAS SE NÃO FOR CONVITE DE TIME)
       if (!targetCompanyId) {
           const { data: companyData, error: companyError } = await supabase
             .from('companies')
@@ -83,7 +77,6 @@ function RegisterForm() {
           if (companyError) throw companyError;
           targetCompanyId = companyData.id;
 
-           // Criar Pipeline Default
            try {
               const { data: pipeline } = await supabase
                 .from("pipelines")
@@ -105,8 +98,6 @@ function RegisterForm() {
           }
       }
 
-      // 3. Create Profile
-      // Se tiver referralCode, salvamos quem indicou (buscando o dono do código)
       let referredByUserId = null;
       if (referralCode) {
           const { data: refUser } = await supabase.from('profiles').select('id').eq('referral_code', referralCode).single();
@@ -121,20 +112,17 @@ function RegisterForm() {
             name: name,
             company_id: targetCompanyId,
             role: invitingCompany ? 'agent' : 'owner',
-            // Salva quem indicou, se houver (requer coluna referred_by na tabela profiles, veja SQL)
-            // Como é dinâmico, passamos no payload se a coluna existir, senão o banco ignora
              ...(referredByUserId ? { referred_by: referredByUserId } : {})
         });
 
       if (profileError) throw profileError;
       
-      // Se foi referral, cria registro na tabela de referrals (Opcional, mas recomendado para analytics)
       if (referredByUserId) {
           await supabase.from('referrals').insert({
               referrer_id: referredByUserId,
               referred_user_id: authData.user.id,
               status: 'pending'
-          }).catch(e => console.log('Referral log error', e)); // Não bloqueia registro
+          }).catch(e => console.log('Referral log error', e));
       }
 
       addToast({ type: 'success', title: "Bem-vindo!", message: "Conta criada com sucesso!" });
@@ -184,7 +172,6 @@ function RegisterForm() {
               />
             </div>
             
-            {/* Nome da empresa só aparece se NÃO for convite de time */}
             {!invitingCompany && (
                 <div className="space-y-2">
                 <label className="text-xs font-medium text-zinc-400 uppercase">Nome da Empresa</label>
@@ -232,4 +219,19 @@ function RegisterForm() {
         </CardContent>
       </Card>
   );
+}
+
+// Wrapper Principal (Export Default) com Background e Suspense
+export default function RegisterPage() {
+    return (
+        <div className="min-h-screen flex items-center justify-center bg-zinc-950 p-4 relative overflow-hidden">
+            {/* Background Effects */}
+            <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-primary/10 rounded-full blur-3xl"></div>
+            <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-secondary/10 rounded-full blur-3xl"></div>
+            
+            <Suspense fallback={<div className="z-10"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>}>
+                <RegisterFormContent />
+            </Suspense>
+        </div>
+    );
 }
