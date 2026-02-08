@@ -5,20 +5,34 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/useAuthStore';
+import { createClient } from '@/utils/supabase/client';
 import { NAV_ITEMS } from './NavConfig';
 import { cn } from '@/lib/utils';
-import { Zap, Bell, LogOut, ChevronRight, X } from 'lucide-react';
+import { Zap, Bell, LogOut, ChevronRight, X, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 export function MobileNav() {
   const pathname = usePathname();
   const router = useRouter();
   const { user, logout } = useAuthStore();
+  const supabase = createClient();
+  
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
-  const handleLogout = () => {
-    logout();
-    router.push('/auth/login');
+  const handleLogout = async () => {
+    setIsLoggingOut(true);
+    try {
+        await supabase.auth.signOut();
+        logout();
+        router.push('/auth/login');
+        router.refresh();
+    } catch (e) {
+        logout();
+        router.push('/auth/login');
+    } finally {
+        setIsLoggingOut(false);
+    }
   };
 
   return (
@@ -78,7 +92,7 @@ export function MobileNav() {
           <div className="lg:hidden fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm animate-in fade-in">
               <div 
                   className="absolute top-0 right-0 bottom-0 w-[80%] max-w-[300px] bg-[#09090b] border-l border-zinc-800 shadow-2xl p-6 animate-in slide-in-from-right duration-300 flex flex-col"
-                  onClick={(e) => e.stopPropagation()} // Stop close on click inside
+                  onClick={(e) => e.stopPropagation()} 
               >
                   {/* Header Menu */}
                   <div className="flex items-center justify-between mb-8">
@@ -106,7 +120,7 @@ export function MobileNav() {
                   {/* Utility Links */}
                   <div className="space-y-2 flex-1">
                       <p className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-3">Aplicativos</p>
-                      {NAV_ITEMS.utility.filter(i => i.label !== 'Área de Trabalho').map((item) => { // Filtra Mesa pois já está embaixo
+                      {NAV_ITEMS.utility.filter(i => i.label !== 'Área de Trabalho').map((item) => { 
                           const isActive = pathname === item.href;
                           return (
                               <Link 
@@ -137,13 +151,13 @@ export function MobileNav() {
                       variant="destructive" 
                       className="w-full bg-red-950/30 text-red-500 hover:bg-red-900/50 border border-red-900/50 justify-start h-12 px-4 gap-3 mt-4"
                       onClick={handleLogout}
+                      disabled={isLoggingOut}
                   >
-                      <LogOut className="w-4 h-4" />
-                      Sair da Conta
+                      {isLoggingOut ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogOut className="w-4 h-4" />}
+                      {isLoggingOut ? 'Saindo...' : 'Sair da Conta'}
                   </Button>
               </div>
               
-              {/* Click outside to close */}
               <div className="absolute inset-0 z-[-1]" onClick={() => setIsProfileMenuOpen(false)} />
           </div>
       )}

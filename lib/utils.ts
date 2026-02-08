@@ -14,6 +14,29 @@ export function formatCurrency(value: number | string) {
   }).format(numberValue);
 }
 
+// SAFE DATE PARSER (CRÍTICO PARA SAFARI/OPERA GX/APPLE)
+// O Safari quebra com datas SQL padrão ("YYYY-MM-DD HH:MM:SS").
+// Esta função converte para ISO 8601 ("YYYY-MM-DDTHH:MM:SS") antes de criar o objeto Date.
+export function safeDate(dateInput: string | Date | null | undefined): Date | null {
+    if (!dateInput) return null;
+    if (dateInput instanceof Date) return dateInput;
+
+    // Se for string, tenta corrigir formatos incompatíveis com WebKit
+    let cleanDate = dateInput;
+    
+    // Corrige espaço para T (Ex: "2023-01-01 12:00" -> "2023-01-01T12:00")
+    if (typeof cleanDate === 'string' && cleanDate.includes(' ') && !cleanDate.includes('T')) {
+        cleanDate = cleanDate.replace(' ', 'T');
+    }
+
+    const d = new Date(cleanDate);
+    
+    // Verifica se é Data Inválida
+    if (isNaN(d.getTime())) return null;
+    
+    return d;
+}
+
 export function cleanJid(jid: string) {
   if (!jid) return '';
   return jid.split('@')[0].split(':')[0];
@@ -55,28 +78,22 @@ export function formatPhone(jid: string | null | undefined): string {
 }
 
 // LÓGICA DE OURO v4: HIERARQUIA DE NOMES (NULL SAFE)
-// Define o que será exibido na lista de chat e cabeçalho
 export function getDisplayName(contact: any): string {
     if (!contact) return "Usuário";
 
-    // 1. Grupos (Prioridade Total para o Nome se existir)
     if (contact.is_group || contact.remote_jid?.includes('@g.us')) {
         if (contact.name && contact.name !== contact.remote_jid) return contact.name;
-        // Fallback para grupos sem nome (raro)
         return "Grupo Sem Nome";
     }
     
-    // 2. Nome da Agenda (contact.name) - Se não for NULL
     if (contact.name && contact.name.trim() !== '') {
         return contact.name;
     }
     
-    // 3. Nome do Perfil (push_name)
     if (contact.push_name && contact.push_name.trim() !== '') {
-        return `~${contact.push_name}`; // O til indica que é o nome público
+        return `~${contact.push_name}`; 
     }
     
-    // 4. Fallback: Número Formatado
     return formatPhone(contact.remote_jid || contact.jid || contact.phone_number || '');
 }
 

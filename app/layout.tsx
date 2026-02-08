@@ -19,7 +19,8 @@ export const metadata: Metadata = {
   title: "Wancora CRM | Automação & IA",
   description: "Plataforma SaaS B2B Multi-Tenant",
   icons: {
-    icon: 'https://image2url.com/r2/default/images/1770515092570-e1d6ccac-bf8b-4c45-8927-453176642fb5.png',
+    // Nova logo ajustada (Versão Final)
+    icon: 'https://image2url.com/r2/default/images/1770517454050-2f1ea8be-21f3-4ce1-8806-f0efa97ecc30.png',
   }
 };
 

@@ -17,6 +17,19 @@ O Wancora CRM é um Sistema Operacional de Vendas para WhatsApp. Diferente de fe
 3.  **Contexto Infinito:** O histórico pertence ao Lead, não à conexão. Se o vendedor trocar de número/instância, a conversa com o cliente continua visível e acessível no CRM.
 4.  **IA Invisível:** A IA ("Sentinela") não é um robô chato. Ela é um "copiloto" que atua nos bastidores, sugerindo respostas e preenchendo dados.
 
+## 1.1. Identidade Visual (Assets Oficiais)
+A fonte da verdade para a marca Wancora CRM. Use estas URLs em todos os componentes para manter consistência.
+
+| Ativo | Tipo | URL (CDN) |
+| :--- | :--- | :--- |
+| **Logo Principal** | PNG (Horizontal) | `https://image2url.com/r2/default/images/1770517454050-2f1ea8be-21f3-4ce1-8806-f0efa97ecc30.png` |
+| **Wallpaper OS** | PNG (Grid) | `https://image2url.com/r2/default/images/1770448285254-8dec4bd3-00a3-4f9b-9b36-8fa2764bd621.png` |
+
+**Paleta de Cores Primária:**
+- **Primary (Neon Green):** `#22c55e` (Tailwind `green-500`)
+- **Background:** `#09090b` (Zinc 950)
+- **Glass Panel:** `bg-zinc-900/50 backdrop-blur-xl`
+
 ---
 
 ## 2. Arquitetura Técnica Detalhada
