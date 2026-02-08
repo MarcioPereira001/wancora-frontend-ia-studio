@@ -35,10 +35,10 @@ export const useCalendarStore = create<CalendarState>((set, get) => {
 
     initializeCalendar: async (companyId: string) => {
         const supabase = createClient();
-        const user = (await supabase.auth.getUser()).data.user;
+        const { data: { user } } = await supabase.auth.getUser();
         if (!user) return;
 
-        console.log(`📅 [Calendar] Inicializando para Empresa: ${companyId}`);
+        // Log removido para limpeza do console
 
         // 1. Snapshot Inicial (Blindado por Company ID)
         const { data, error } = await supabase

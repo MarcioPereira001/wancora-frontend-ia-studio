@@ -13,22 +13,30 @@ const SOUNDS = {
 };
 
 export function useSound() {
-  const play = useCallback((type: 'message' | 'success') => {
+  const play = useCallback(async (type: 'message' | 'success') => {
     try {
         // CORREÇÃO: Usa o Data URI diretamente para evitar 404 (Network Error)
-        // Isso carrega o som da memória em vez de buscar um arquivo inexistente
         const soundSrc = SOUNDS[type];
         
         if (soundSrc) {
             const audio = new Audio(soundSrc);
             audio.volume = 0.5;
-            audio.play().catch(e => {
-                // Ignora erro de autoplay policy (comum se o usuário não interagiu com a página ainda)
-                // console.debug("Autoplay prevented:", e);
-            });
+            
+            // Promise Handling para evitar "Uncaught (in promise) AbortError"
+            const playPromise = audio.play();
+            
+            if (playPromise !== undefined) {
+                playPromise.catch(error => {
+                    // Ignora erros de interrupção (comum em navegação rápida) ou autoplay bloqueado
+                    if (error.name === 'AbortError' || error.name === 'NotAllowedError') {
+                        return;
+                    }
+                    console.error("Audio playback error:", error);
+                });
+            }
         }
     } catch (error) {
-      console.error("Audio playback error", error);
+      console.error("Audio setup error", error);
     }
   }, []);
 

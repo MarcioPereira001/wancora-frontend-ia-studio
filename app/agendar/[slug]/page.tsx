@@ -83,10 +83,33 @@ export default function PublicSchedulePage() {
       }
   }, [selectedDate, rule]);
 
+  // Máscara de Telefone BR
+  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      let val = e.target.value.replace(/\D/g, '');
+      if (val.length > 11) val = val.substring(0, 11);
+      
+      let formatted = val;
+      if (val.length > 2) {
+          formatted = `(${val.substring(0, 2)}) ${val.substring(2)}`;
+      }
+      if (val.length > 7) {
+          formatted = `(${val.substring(0, 2)}) ${val.substring(2, 7)}-${val.substring(7)}`;
+      }
+      
+      setFormData({ ...formData, phone: formatted });
+  };
+
   const handleBooking = async () => {
       if (!selectedDate || !selectedTime) return;
-      if (!formData.name || !formData.phone) {
-          addToast({ type: 'warning', title: 'Campos Obrigatórios', message: 'Preencha nome e WhatsApp.' });
+      
+      if (!formData.name.trim()) {
+          addToast({ type: 'warning', title: 'Nome Obrigatório', message: 'Por favor, informe seu nome.' });
+          return;
+      }
+      // Validação de telefone mínima (DDD + 8 dígitos)
+      const rawPhone = formData.phone.replace(/\D/g, '');
+      if (rawPhone.length < 10) {
+          addToast({ type: 'warning', title: 'Telefone Inválido', message: 'Digite um número de WhatsApp válido com DDD.' });
           return;
       }
 
@@ -402,11 +425,13 @@ export default function PublicSchedulePage() {
                                     <Phone className="absolute left-3 top-3 w-4 h-4 text-zinc-500" />
                                     <Input 
                                         value={formData.phone} 
-                                        onChange={e => setFormData({...formData, phone: e.target.value})} 
+                                        onChange={handlePhoneChange} 
                                         className="pl-10 bg-zinc-900 border-zinc-800 h-12 text-base rounded-xl focus:ring-primary/50" 
                                         placeholder="(99) 99999-9999" 
+                                        maxLength={15}
                                     />
                                 </div>
+                                <p className="text-[10px] text-zinc-500 ml-1">Receberá a confirmação neste número.</p>
                             </div>
 
                             <div className="space-y-1.5">

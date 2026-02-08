@@ -1,3 +1,4 @@
+
 'use server';
 
 import { createClient } from '@/utils/supabase/server';
@@ -61,13 +62,23 @@ export async function bookAppointment(formData: BookingData) {
   try {
       console.log(`📅 [Public Calendar] Tentando agendar para ${name} em ${date} às ${time} (Slug: ${slug})`);
 
+      // SANITIZAÇÃO DE TELEFONE (Standard E.164-ish for BR)
+      let cleanPhone = phone.replace(/\D/g, ''); // Remove tudo que não é dígito
+      
+      // Se tiver 10 ou 11 dígitos, assume que é BR sem DDI e adiciona 55
+      if (cleanPhone.length >= 10 && cleanPhone.length <= 11) {
+          cleanPhone = '55' + cleanPhone;
+      }
+      // Se não começar com 55 e for maior que 11, talvez já tenha outro DDI, mantém. 
+      // Mas para BR, garantimos o 55.
+
       // 1. Criar Agendamento via RPC
       const { data, error } = await supabase.rpc('create_public_appointment', {
           p_slug: slug,
           p_date: date,
           p_time: time,
           p_name: name,
-          p_phone: phone,
+          p_phone: cleanPhone, // Envia o número limpo e com DDI
           p_email: email || '',
           p_notes: notes || ''
       });
@@ -83,12 +94,6 @@ export async function bookAppointment(formData: BookingData) {
       }
 
       // 2. Disparar Notificação (Webhook Manual para API)
-      // O RPC retorna { success: true, appointment_id: '...', company_id: '...' } se alterarmos o RPC,
-      // mas o código atual do RPC retorna apenas success: true ou error.
-      // Para funcionar perfeitamente, o RPC precisaria retornar o ID.
-      // Como não posso alterar o SQL aqui (apenas arquivos JS/TS), 
-      // vou buscar o agendamento recém-criado para pegar o ID.
-      
       const { data: newApp } = await supabase
           .from('appointments')
           .select('id, company_id')

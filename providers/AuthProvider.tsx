@@ -24,6 +24,12 @@ export default function AuthProvider({ children }: AuthProviderProps) {
     // Só começa a checar auth DEPOIS que o Zustand carregou o localStorage (Fim do Spinner Infinito)
     if (!hasHydrated) return;
 
+    // Rota pública: Não faz verificação de sessão
+    if (pathname?.startsWith('/agendar')) {
+        setLoading(false);
+        return;
+    }
+
     const checkUser = async () => {
       // FAILSAFE: Timeout de 4 segundos. 
       // Se o Supabase não responder (comum no Opera GX ou net lenta), libera a UI ou vai pro login.
@@ -45,7 +51,7 @@ export default function AuthProvider({ children }: AuthProviderProps) {
 
         if (!session) {
           // Se não tem sessão e está em rota protegida -> Login
-          if (!pathname?.startsWith('/auth') && pathname !== '/') {
+          if (!pathname?.startsWith('/auth') && pathname !== '/' && !pathname?.startsWith('/agendar')) {
             router.replace('/auth/login');
           }
           if (mounted) {
@@ -113,7 +119,9 @@ export default function AuthProvider({ children }: AuthProviderProps) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
         if (event === 'SIGNED_OUT') {
             setUser(null);
-            router.push('/auth/login');
+            if (!pathname?.startsWith('/agendar')) {
+                router.push('/auth/login');
+            }
         } else if (event === 'SIGNED_IN' && session) {
              if (!useAuthStore.getState().user) {
                 checkUser();
