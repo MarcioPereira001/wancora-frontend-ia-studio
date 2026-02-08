@@ -27,7 +27,7 @@ export function MobileNav() {
       <header className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-[#09090b]/90 backdrop-blur-xl border-b border-zinc-800 z-50 flex items-center justify-between px-4 shadow-lg">
           <div className="flex items-center gap-2">
                <img 
-                    src="https://image2url.com/r2/default/images/1770515456866-f72085e9-383f-4662-a81f-076d8c6870d9.png" 
+                    src="https://image2url.com/r2/default/images/1770516603287-c02eda7c-a7e7-4278-8915-863c87d4df9d.png" 
                     alt="Wancora" 
                     className="h-8 w-auto object-contain"
                 />
