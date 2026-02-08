@@ -52,22 +52,18 @@ export async function bookAppointment(formData: BookingData) {
   const validation = BookingSchema.safeParse(formData);
 
   if (!validation.success) {
-    console.error("❌ [Public Calendar] Validação falhou:", validation.error.flatten());
     return { error: "Dados inválidos: " + validation.error.errors[0].message };
   }
 
   const { slug, date, time, name, phone, email, notes } = validation.data;
+  let debugInfo: any = {};
 
   try {
       console.log(`📅 [Booking] Request: ${name}, ${phone}, ${date} ${time}`);
 
-      // SANITIZAÇÃO DE TELEFONE (Mantém números puros)
+      // SANITIZAÇÃO DE TELEFONE
       let cleanPhone = phone.replace(/\D/g, ''); 
-      
-      // Validação de segurança
-      if (cleanPhone.length < 8) {
-           return { error: "Número de telefone parece incompleto." };
-      }
+      if (cleanPhone.length < 8) return { error: "Número de telefone incompleto." };
 
       // 1. Criar Agendamento via RPC
       const { data, error } = await supabase.rpc('create_public_appointment', {
@@ -82,13 +78,8 @@ export async function bookAppointment(formData: BookingData) {
 
       if (error) {
           console.error("❌ [Booking] Erro RPC:", error);
-
-          if (error.code === '42725') {
-              return { error: `Erro interno de configuração (Função duplicada no banco).` };
-          }
-          if (error.code === 'P0001') {
-              return { error: error.message };
-          }
+          if (error.code === '42725') return { error: `Erro interno de configuração (Função duplicada).` };
+          if (error.code === 'P0001') return { error: error.message };
           return { error: `Erro no servidor: ${error.message}` };
       }
 
@@ -97,37 +88,45 @@ export async function bookAppointment(formData: BookingData) {
           return { error: `${data.error}` };
       }
 
-      console.log("✅ [Booking] RPC Sucesso. Appointment ID:", data?.id);
-
       // 2. Disparar Notificação (Webhook Interno)
-      // O Next.js (Server Action) chama o Backend (Express)
-      // Não requer autenticação de usuário pois é uma rota interna/segura
+      // AWAIT EXPLÍCITO para capturar o log do backend
       if (data?.id) {
-          // Busca companyId para garantir segurança no payload
           const { data: appData } = await supabase.from('appointments').select('company_id').eq('id', data.id).single();
           
           if (appData) {
-               console.log(`🔔 [Booking] Disparando notificação via API: ${API_URL}/appointments/confirm`);
-               
-               // Fire and Forget fetch (Não bloqueia o retorno pro usuário)
-               fetch(`${API_URL}/appointments/confirm`, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ 
-                      appointmentId: data.id,
-                      companyId: appData.company_id
-                  })
-              }).then(res => {
-                  if (!res.ok) console.error(`❌ [Booking] Falha no webhook: ${res.status}`);
-                  else console.log(`✅ [Booking] Webhook disparado com sucesso.`);
-              }).catch(err => console.error("❌ [Booking] Erro fetch API:", err));
+               try {
+                   console.log(`🔔 [Booking] Chamando backend...`);
+                   const response = await fetch(`${API_URL}/appointments/confirm`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ 
+                          appointmentId: data.id,
+                          companyId: appData.company_id
+                      })
+                   });
+                   
+                   const responseData = await response.json();
+                   debugInfo = responseData.debug || { message: "Sem debug do backend" };
+                   
+                   if (!response.ok) {
+                       console.error(`❌ [Booking] Falha Backend:`, responseData);
+                       debugInfo.error = responseData.error;
+                   } else {
+                       console.log(`✅ [Booking] Backend Sucesso:`, debugInfo);
+                   }
+
+               } catch (fetchErr: any) {
+                   console.error("❌ [Booking] Erro fetch API:", fetchErr);
+                   debugInfo = { error: fetchErr.message, type: 'FETCH_ERROR' };
+               }
           }
       }
 
-      return { success: true };
+      // Retorna sucesso E o debug para o cliente
+      return { success: true, debug: debugInfo };
 
   } catch (err: any) {
       console.error("❌ [Booking] Exception Fatal:", err);
-      return { error: "Erro inesperado. Tente novamente mais tarde." };
+      return { error: "Erro inesperado.", debug: { exception: err.message } };
   }
 }
