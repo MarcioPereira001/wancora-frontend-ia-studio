@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useEffect, Suspense } from "react";
@@ -8,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useToast } from "@/hooks/useToast";
 import Link from "next/link";
-import { Loader2, Building } from "lucide-react";
+import { Loader2, Building, Gift } from "lucide-react";
 
 function RegisterForm() {
   const router = useRouter();
@@ -23,19 +24,27 @@ function RegisterForm() {
   const [password, setPassword] = useState("");
   const [companyName, setCompanyName] = useState("");
 
-  // Lógica de Convite
-  const inviteCompanyId = searchParams.get('ref');
-  const [invitingCompany, setInvitingCompany] = useState<{name: string} | null>(null);
+  // Lógica Híbrida: Invite (Time) vs Referral (Indicação)
+  const refParam = searchParams.get('ref');
+  
+  const [invitingCompany, setInvitingCompany] = useState<{name: string, id: string} | null>(null);
+  const [referralCode, setReferralCode] = useState<string | null>(null);
 
   useEffect(() => {
-      if(inviteCompanyId) {
-          const fetchCompany = async () => {
-              const { data } = await supabase.from('companies').select('name').eq('id', inviteCompanyId).single();
-              if(data) setInvitingCompany(data);
-          };
-          fetchCompany();
+      if(refParam) {
+          // Se for UUID (36 chars), é convite para TIME.
+          // Se for menor, é código de INDICAÇÃO.
+          if (refParam.length > 20) {
+              const fetchCompany = async () => {
+                  const { data } = await supabase.from('companies').select('name, id').eq('id', refParam).single();
+                  if(data) setInvitingCompany(data);
+              };
+              fetchCompany();
+          } else {
+              setReferralCode(refParam);
+          }
       }
-  }, [inviteCompanyId]);
+  }, [refParam]);
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -56,9 +65,10 @@ function RegisterForm() {
       if (authError) throw authError;
       if (!authData.user) throw new Error("Erro ao criar usuário.");
 
-      let targetCompanyId = inviteCompanyId;
+      // Se for convite de time, usa o ID da empresa do convite.
+      let targetCompanyId = invitingCompany?.id;
 
-      // 2. Create Company (APENAS SE NÃO FOR CONVITE)
+      // 2. Create Company (APENAS SE NÃO FOR CONVITE DE TIME)
       if (!targetCompanyId) {
           const { data: companyData, error: companyError } = await supabase
             .from('companies')
@@ -95,7 +105,14 @@ function RegisterForm() {
           }
       }
 
-      // 3. Create Profile (Vincula à empresa alvo)
+      // 3. Create Profile
+      // Se tiver referralCode, salvamos quem indicou (buscando o dono do código)
+      let referredByUserId = null;
+      if (referralCode) {
+          const { data: refUser } = await supabase.from('profiles').select('id').eq('referral_code', referralCode).single();
+          if (refUser) referredByUserId = refUser.id;
+      }
+
       const { error: profileError } = await supabase
         .from('profiles')
         .insert({
@@ -103,10 +120,22 @@ function RegisterForm() {
             email: email,
             name: name,
             company_id: targetCompanyId,
-            role: inviteCompanyId ? 'agent' : 'owner' // Se for convite, entra como Agente. Se criou, é Owner.
+            role: invitingCompany ? 'agent' : 'owner',
+            // Salva quem indicou, se houver (requer coluna referred_by na tabela profiles, veja SQL)
+            // Como é dinâmico, passamos no payload se a coluna existir, senão o banco ignora
+             ...(referredByUserId ? { referred_by: referredByUserId } : {})
         });
 
       if (profileError) throw profileError;
+      
+      // Se foi referral, cria registro na tabela de referrals (Opcional, mas recomendado para analytics)
+      if (referredByUserId) {
+          await supabase.from('referrals').insert({
+              referrer_id: referredByUserId,
+              referred_user_id: authData.user.id,
+              status: 'pending'
+          }).catch(e => console.log('Referral log error', e)); // Não bloqueia registro
+      }
 
       addToast({ type: 'success', title: "Bem-vindo!", message: "Conta criada com sucesso!" });
       router.push("/auth/login");
@@ -119,19 +148,28 @@ function RegisterForm() {
   };
 
   return (
-    <Card className="w-full max-w-md bg-zinc-900/50 border-zinc-800 backdrop-blur-md z-10">
+    <Card className="w-full max-w-md bg-zinc-900/50 border-zinc-800 backdrop-blur-md z-10 shadow-2xl">
         <CardHeader>
           <CardTitle className="text-2xl text-white text-center font-bold">Criar Conta</CardTitle>
+          
           {invitingCompany ? (
-              <div className="bg-primary/10 border border-primary/20 rounded-lg p-3 text-center mt-2">
-                  <p className="text-xs text-primary font-bold uppercase mb-1">Convite para entrar em</p>
+              <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3 text-center mt-2 animate-in slide-in-from-top-2">
+                  <p className="text-xs text-blue-400 font-bold uppercase mb-1">Convite de Equipe</p>
                   <div className="flex items-center justify-center gap-2 text-white font-bold">
                       <Building className="w-4 h-4" /> {invitingCompany.name}
                   </div>
               </div>
+          ) : referralCode ? (
+              <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3 text-center mt-2 animate-in slide-in-from-top-2">
+                  <p className="text-xs text-yellow-500 font-bold uppercase mb-1 flex items-center justify-center gap-2">
+                      <Gift className="w-3 h-3" /> Indicação Aplicada
+                  </p>
+                  <p className="text-xs text-zinc-300">Você ganhará benefícios ao se cadastrar.</p>
+              </div>
           ) : (
             <CardDescription className="text-center text-zinc-400">Comece a usar o Wancora CRM hoje</CardDescription>
           )}
+
         </CardHeader>
         <CardContent>
           <form onSubmit={handleRegister} className="space-y-4">
@@ -146,6 +184,7 @@ function RegisterForm() {
               />
             </div>
             
+            {/* Nome da empresa só aparece se NÃO for convite de time */}
             {!invitingCompany && (
                 <div className="space-y-2">
                 <label className="text-xs font-medium text-zinc-400 uppercase">Nome da Empresa</label>
@@ -183,7 +222,7 @@ function RegisterForm() {
             </div>
             
             <Button type="submit" className="w-full bg-primary hover:bg-primary/90 text-white" disabled={loading}>
-              {loading ? <Loader2 className="animate-spin h-4 w-4" /> : (invitingCompany ? "Aceitar Convite" : "Criar Conta")}
+              {loading ? <Loader2 className="animate-spin h-4 w-4" /> : (invitingCompany ? "Aceitar e Entrar" : "Criar Minha Conta")}
             </Button>
 
             <div className="text-center text-sm text-zinc-500 mt-4">
@@ -192,24 +231,5 @@ function RegisterForm() {
           </form>
         </CardContent>
       </Card>
-  );
-}
-
-// Wrapper Principal com Suspense
-export default function RegisterPage() {
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-zinc-950 p-4 relative overflow-hidden">
-      {/* Background Effects */}
-      <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-primary/10 rounded-full blur-3xl"></div>
-      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-secondary/10 rounded-full blur-3xl"></div>
-
-      <Suspense fallback={
-        <div className="w-full max-w-md h-[500px] flex items-center justify-center bg-zinc-900/50 border border-zinc-800 rounded-xl backdrop-blur-md z-10">
-            <Loader2 className="w-8 h-8 animate-spin text-primary" />
-        </div>
-      }>
-        <RegisterForm />
-      </Suspense>
-    </div>
   );
 }

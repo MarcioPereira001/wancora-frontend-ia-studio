@@ -2,7 +2,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { CreditCard, Building, ShieldCheck, Mail, Users, CheckCircle, Save, Loader2, Key, Bot, HardDrive, Clock, AlertTriangle } from 'lucide-react';
+import { CreditCard, Building, ShieldCheck, Mail, Users, CheckCircle, Save, Loader2, Key, Bot, HardDrive, Clock, AlertTriangle, Gift, Copy } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCompany } from '@/hooks/useCompany';
 import { useAuthStore } from '@/store/useAuthStore';
@@ -26,10 +26,21 @@ export default function SettingsPage() {
   // Retention Config
   const [retentionDays, setRetentionDays] = useState(30);
   const [hasDrive, setHasDrive] = useState(false);
+  
+  // Referral
+  const [referralCode, setReferralCode] = useState('');
 
   useEffect(() => {
       if (user?.name) setName(user.name);
-  }, [user?.name]);
+      
+      // Fetch referral code
+      if (user?.id) {
+          supabase.from('profiles').select('referral_code').eq('id', user.id).single()
+          .then(({data}) => {
+              if(data?.referral_code) setReferralCode(data.referral_code);
+          });
+      }
+  }, [user?.name, user?.id]);
 
   // Carregar Configurações e Check Drive
   useEffect(() => {
@@ -245,20 +256,53 @@ export default function SettingsPage() {
               </div>
           </div>
 
-          {/* Coluna Lateral (Assinatura) */}
-          <div className="bg-zinc-900/30 border border-zinc-800 rounded-xl p-6 flex flex-col h-fit sticky top-6">
-              <h3 className="text-lg font-semibold text-white mb-6 flex items-center gap-2">
-                  <CreditCard className="w-5 h-5 text-purple-500" />
-                  Assinatura
-              </h3>
-              
-              <div className="bg-gradient-to-br from-zinc-900 to-zinc-950 p-6 rounded-xl border border-zinc-800 mb-6 text-center shadow-inner relative overflow-hidden group">
-                  <div className="absolute inset-0 bg-purple-500/5 group-hover:bg-purple-500/10 transition-colors"></div>
-                  <p className="text-zinc-400 text-sm mb-1 relative z-10">Seu plano atual</p>
-                  <h4 className="text-3xl font-bold text-white mb-2 relative z-10">{company?.plan === 'starter' ? 'Starter' : company?.plan === 'pro' ? 'Pro' : 'Scale'}</h4>
-                  <span className={`relative z-10 inline-block px-3 py-1 rounded-full text-xs font-bold border ${company?.status === 'active' ? 'bg-green-500/10 text-green-500 border-green-500/20' : 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20'}`}>
-                      {company?.status === 'active' ? 'ATIVO' : 'TRIAL / INATIVO'}
-                  </span>
+          {/* Coluna Lateral (Assinatura & Referral) */}
+          <div className="flex flex-col gap-6 sticky top-6 h-fit">
+              {/* ASSINATURA */}
+              <div className="bg-zinc-900/30 border border-zinc-800 rounded-xl p-6">
+                  <h3 className="text-lg font-semibold text-white mb-6 flex items-center gap-2">
+                      <CreditCard className="w-5 h-5 text-purple-500" />
+                      Assinatura
+                  </h3>
+                  
+                  <div className="bg-gradient-to-br from-zinc-900 to-zinc-950 p-6 rounded-xl border border-zinc-800 text-center shadow-inner relative overflow-hidden group">
+                      <div className="absolute inset-0 bg-purple-500/5 group-hover:bg-purple-500/10 transition-colors"></div>
+                      <p className="text-zinc-400 text-sm mb-1 relative z-10">Seu plano atual</p>
+                      <h4 className="text-3xl font-bold text-white mb-2 relative z-10">{company?.plan === 'starter' ? 'Starter' : company?.plan === 'pro' ? 'Pro' : 'Scale'}</h4>
+                      <span className={`relative z-10 inline-block px-3 py-1 rounded-full text-xs font-bold border ${company?.status === 'active' ? 'bg-green-500/10 text-green-500 border-green-500/20' : 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20'}`}>
+                          {company?.status === 'active' ? 'ATIVO' : 'TRIAL / INATIVO'}
+                      </span>
+                  </div>
+              </div>
+
+              {/* INDICAÇÃO */}
+              <div className="bg-gradient-to-br from-zinc-900 to-zinc-950 border border-yellow-500/20 rounded-xl p-6 relative overflow-hidden">
+                  <div className="absolute top-0 right-0 p-3 opacity-10">
+                      <Gift className="w-16 h-16 text-yellow-500" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                      <Gift className="w-5 h-5 text-yellow-500" />
+                      Indique e Ganhe
+                  </h3>
+                  <p className="text-sm text-zinc-400 mb-4 leading-relaxed">
+                      Ganhe 1 mês grátis do plano Pro para cada empresa que se cadastrar com seu link.
+                  </p>
+                  <div className="bg-black/50 border border-zinc-800 rounded-lg p-2 flex items-center gap-2 relative z-10">
+                      <code className="flex-1 text-xs font-mono text-zinc-300 truncate">
+                          {`wancora-crm.app/auth/register?ref=${referralCode || '...'}`}
+                      </code>
+                      <Button 
+                        size="icon" 
+                        variant="ghost" 
+                        className="h-8 w-8 text-zinc-400 hover:text-white"
+                        onClick={() => { 
+                            navigator.clipboard.writeText(`https://wancora-crm.app/auth/register?ref=${referralCode}`);
+                            addToast({ type: 'success', title: 'Copiado', message: 'Link de indicação copiado.' });
+                        }}
+                      >
+                          <Copy className="w-4 h-4" />
+                      </Button>
+                  </div>
               </div>
           </div>
       </div>

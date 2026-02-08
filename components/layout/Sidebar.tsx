@@ -8,7 +8,8 @@ import { useAuthStore } from '@/store/useAuthStore';
 import { createClient } from '@/utils/supabase/client';
 import { NAV_ITEMS } from './NavConfig';
 import { cn } from '@/lib/utils';
-import { LogOut, ChevronLeft, ChevronRight, ZapOff, PlayCircle, Loader2 } from 'lucide-react';
+import { LogOut, ChevronLeft, ChevronRight, ZapOff, PlayCircle, Loader2, MessageSquarePlus } from 'lucide-react';
+import { FeedbackModal } from '@/components/modals/FeedbackModal'; // Novo Import
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -21,6 +22,9 @@ export function Sidebar() {
   const [isHovered, setIsHovered] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [mounted, setMounted] = useState(false);
+  
+  // State do Modal de Feedback
+  const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
 
   const isCollapsed = autoCollapseMode ? !isHovered : manualCollapsed;
 
@@ -53,6 +57,7 @@ export function Sidebar() {
   );
 
   return (
+    <>
     <aside 
         className={sidebarClasses}
         onMouseEnter={() => autoCollapseMode && setIsHovered(true)}
@@ -110,6 +115,24 @@ export function Sidebar() {
                  <NavItem key={item.href} item={item} isActive={!!isActive} isCollapsed={isCollapsed} />
              );
         })}
+
+        {/* FEEDBACK BUTTON */}
+        <div className="pt-2">
+            <button
+                onClick={() => setIsFeedbackOpen(true)}
+                className={cn(
+                    "group flex items-center rounded-lg transition-all duration-300 relative overflow-hidden w-full",
+                    isCollapsed ? "w-10 h-10 justify-center mx-auto" : "px-3 py-2 gap-3",
+                    "text-zinc-500 hover:text-blue-400 hover:bg-blue-500/10 border border-transparent"
+                )}
+                title="Enviar Feedback"
+            >
+                <MessageSquarePlus className={cn("shrink-0 transition-transform duration-300", isCollapsed ? "w-4 h-4" : "w-4 h-4")} />
+                <span className={cn("text-xs font-medium whitespace-nowrap transition-all duration-300", isCollapsed ? "opacity-0 w-0 hidden" : "opacity-100 w-auto")}>
+                    Feedback / Ajuda
+                </span>
+            </button>
+        </div>
 
       </div>
 
@@ -175,6 +198,9 @@ export function Sidebar() {
       </div>
 
     </aside>
+    
+    <FeedbackModal isOpen={isFeedbackOpen} onClose={() => setIsFeedbackOpen(false)} />
+    </>
   );
 }
 
