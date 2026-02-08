@@ -17,7 +17,7 @@ const Navbar = () => (
     <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
       <Link href="/" className="flex items-center gap-2">
         <img 
-            src="https://image2url.com/r2/default/images/1770512430716-c3433522-4fd7-43d3-951e-401e15dc4dba.png" 
+            src="https://image2url.com/r2/default/images/1770515456866-f72085e9-383f-4662-a81f-076d8c6870d9.png" 
             alt="Wancora" 
             className="h-10 w-auto object-contain"
         />
@@ -327,7 +327,7 @@ const Footer = () => (
     <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-6">
       <div className="flex items-center gap-2">
         <img 
-            src="https://image2url.com/r2/default/images/1770512430716-c3433522-4fd7-43d3-951e-401e15dc4dba.png" 
+            src="https://image2url.com/r2/default/images/1770515456866-f72085e9-383f-4662-a81f-076d8c6870d9.png" 
             alt="Wancora" 
             className="h-8 w-auto object-contain grayscale opacity-80 hover:grayscale-0 hover:opacity-100 transition-all"
         />
