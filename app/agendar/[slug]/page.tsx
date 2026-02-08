@@ -8,7 +8,7 @@ import { generateSlots } from '@/utils/calendar';
 import { 
     Calendar as CalendarIcon, Clock, CheckCircle2, User, 
     Phone, Mail, FileText, ChevronLeft, ChevronRight, Loader2, 
-    ArrowRight, MapPin, ChevronDown, Globe
+    MapPin, ChevronDown
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -27,7 +27,6 @@ const COUNTRIES = [
     { code: '44', label: 'UK', flag: '🇬🇧', mask: '9999 999999', limit: 10 },
     { code: '34', label: 'Espanha', flag: '🇪🇸', mask: '999 99 99 99', limit: 9 },
     { code: '54', label: 'Argentina', flag: '🇦🇷', mask: '9 99 9999-9999', limit: 11 },
-    // Adicione mais conforme necessário ou use um "Outro" genérico
 ];
 
 export default function PublicSchedulePage() {
@@ -55,11 +54,13 @@ export default function PublicSchedulePage() {
       notes: ''
   });
   
-  // Phone State Complexo
+  // Phone State
   const [selectedCountry, setSelectedCountry] = useState(COUNTRIES[0]); // Default BR
   const [phoneNumber, setPhoneNumber] = useState('');
   const [isCountryOpen, setIsCountryOpen] = useState(false);
+  
   const countryDropdownRef = useRef<HTMLDivElement>(null);
+  const phoneInputRef = useRef<HTMLInputElement>(null);
 
   const [bookingLoading, setBookingLoading] = useState(false);
 
@@ -141,16 +142,14 @@ export default function PublicSchedulePage() {
       }
       
       const rawPhone = phoneNumber.replace(/\D/g, '');
-      // Validação mínima: Pelo menos 8 dígitos para ser um número real
-      if (rawPhone.length < 8) {
+      if (rawPhone.length < 5) {
           addToast({ type: 'warning', title: 'Telefone Inválido', message: 'O número parece incompleto.' });
           return;
       }
 
       setBookingLoading(true);
 
-      // Constrói telefone completo E.164 (Sem o + para facilitar backend, ou com, dependendo da lógica)
-      // Vamos enviar apenas dígitos: DDI + PHONE
+      // Constrói telefone completo com DDI
       const fullPhone = `${selectedCountry.code}${rawPhone}`;
 
       // Date Logic
@@ -173,7 +172,7 @@ export default function PublicSchedulePage() {
           date: dateToSend,
           time: timeToSend,
           name: formData.name,
-          phone: fullPhone, // Envia número completo com DDI
+          phone: fullPhone, 
           email: formData.email,
           notes: formData.notes
       });
@@ -272,7 +271,6 @@ export default function PublicSchedulePage() {
         
         {/* --- SIDEBAR (INFO) --- */}
         <div className="w-full md:w-[35%] bg-zinc-900/60 p-6 md:p-8 border-b md:border-b-0 md:border-r border-zinc-800 flex flex-col justify-between shrink-0 relative overflow-hidden">
-            {/* Background Decor */}
             <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-primary/0 via-primary/50 to-primary/0 opacity-20"></div>
             <div className="absolute -bottom-20 -left-20 w-64 h-64 bg-primary/5 rounded-full blur-3xl pointer-events-none"></div>
 
@@ -308,7 +306,6 @@ export default function PublicSchedulePage() {
                 </div>
             </div>
 
-            {/* Resumo do Agendamento (Fixo na sidebar em desktop) */}
             <AnimatePresence>
             {selectedDate && selectedTime && (
                 <motion.div 
@@ -330,7 +327,6 @@ export default function PublicSchedulePage() {
         {/* --- MAIN CONTENT (STEPS) --- */}
         <div className="flex-1 relative bg-black/20 flex flex-col h-full overflow-hidden">
             
-            {/* Header Mobile com Botão Voltar */}
             {step > 0 && step < 3 && (
                 <div className="md:hidden flex items-center p-4 border-b border-zinc-800 bg-zinc-900/80 backdrop-blur z-20 sticky top-0">
                     <button onClick={() => setStep(step - 1)} className="p-2 -ml-2 text-zinc-400 hover:text-white">
@@ -427,10 +423,6 @@ export default function PublicSchedulePage() {
                                 ))}
                             </div>
                         )}
-                        
-                        <div className="mt-auto pt-8 flex justify-start md:hidden">
-                             {/* Espaço para footer se necessário */}
-                        </div>
                     </motion.div>
                 )}
 
@@ -467,7 +459,6 @@ export default function PublicSchedulePage() {
                             <div className="space-y-1.5 relative z-20">
                                 <label className="text-xs font-bold text-zinc-400 uppercase ml-1">Seu WhatsApp (Para confirmação)</label>
                                 <div className="flex gap-2">
-                                    {/* Seletor de País */}
                                     <div className="relative" ref={countryDropdownRef}>
                                         <button 
                                             type="button"
@@ -489,7 +480,8 @@ export default function PublicSchedulePage() {
                                                         onClick={() => {
                                                             setSelectedCountry(c);
                                                             setIsCountryOpen(false);
-                                                            setPhoneNumber(''); // Limpa ao mudar de país para evitar mascara errada
+                                                            setPhoneNumber(''); // Limpa ao mudar de país
+                                                            phoneInputRef.current?.focus(); 
                                                         }}
                                                     >
                                                         <span className="text-lg">{c.flag}</span>
@@ -499,17 +491,14 @@ export default function PublicSchedulePage() {
                                                         </div>
                                                     </button>
                                                 ))}
-                                                <div className="p-2 text-[10px] text-zinc-500 text-center border-t border-zinc-800 mt-1">
-                                                    Selecione o país correto
-                                                </div>
                                             </div>
                                         )}
                                     </div>
 
-                                    {/* Input Telefone */}
                                     <div className="relative flex-1">
                                         <Phone className="absolute left-3 top-3.5 w-5 h-5 text-zinc-500" />
                                         <Input 
+                                            ref={phoneInputRef}
                                             value={phoneNumber} 
                                             onChange={handlePhoneInput} 
                                             className="pl-10 bg-zinc-900 border-zinc-800 h-12 text-base rounded-xl focus:ring-primary/50 text-white font-mono" 

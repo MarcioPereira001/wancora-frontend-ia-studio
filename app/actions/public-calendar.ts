@@ -13,7 +13,7 @@ const BookingSchema = z.object({
   date: z.string(), // YYYY-MM-DD
   time: z.string(), // HH:MM
   name: z.string().min(2, "Nome muito curto"),
-  phone: z.string().min(10, "Telefone inválido (DDI + DDD + Num)"),
+  phone: z.string().min(8, "Telefone inválido"), // Mínimo 8 dígitos para suportar números sem DDD localmente se necessário
   email: z.string().email().optional().or(z.literal('')),
   notes: z.string().optional()
 });
@@ -23,7 +23,6 @@ export type BookingData = z.infer<typeof BookingSchema>;
 export async function getPublicRule(slug: string) {
   const supabase = await createClient();
   
-  // Chama a RPC criada no passo SQL
   const { data, error } = await supabase.rpc('get_public_availability_by_slug', {
     p_slug: slug
   });
@@ -33,7 +32,7 @@ export async function getPublicRule(slug: string) {
     return null;
   }
 
-  return data[0]; // Retorna a primeira linha
+  return data[0]; 
 }
 
 export async function getBusySlots(ruleId: string, date: string) {
@@ -63,16 +62,15 @@ export async function bookAppointment(formData: BookingData) {
       console.log(`📅 [Booking] Request: ${name}, ${phone}, ${date} ${time}`);
 
       // SANITIZAÇÃO DE TELEFONE (Standard E.164)
-      // O input já vem com DDI. Removemos tudo que não é número.
+      // O frontend já envia com DDI se usar o seletor. Removemos apenas não-números.
       let cleanPhone = phone.replace(/\D/g, ''); 
       
-      // Validação de segurança: Tamanho mínimo para ser um número global
+      // Validação de segurança
       if (cleanPhone.length < 8) {
-           return { error: "Número de telefone parece inválido." };
+           return { error: "Número de telefone parece incompleto." };
       }
 
-      // 1. Criar Agendamento via RPC
-      // Importante: A RPC deve ser security definer para permitir insert sem auth
+      // 1. Criar Agendamento via RPC (Agora com Logs Detalhados)
       const { data, error } = await supabase.rpc('create_public_appointment', {
           p_slug: slug,
           p_date: date,
@@ -83,44 +81,39 @@ export async function bookAppointment(formData: BookingData) {
           p_notes: notes || ''
       });
 
+      // Erro Técnico do Supabase (Ex: Falha de conexão, Função inexistente)
       if (error) {
-          console.error("❌ [Booking] Erro RPC (Supabase):", error);
-          return { error: "Erro interno no servidor de agendamento." };
+          console.error("❌ [Booking] Erro RPC (Supabase FATAL):", {
+              message: error.message,
+              details: error.details,
+              hint: error.hint,
+              code: error.code
+          });
+
+          // Tratamento específico para o erro de função duplicada (42725)
+          if (error.code === '42725') {
+              return { error: `Erro interno de configuração (Função duplicada no banco). Por favor, avise o suporte.` };
+          }
+          if (error.code === 'P0001') { // Erro levantado via PLPGSQL (RAISE EXCEPTION)
+              return { error: error.message };
+          }
+
+          return { error: `Erro no servidor: ${error.message}` };
       }
 
+      // Erro Lógico Retornado pela Função (Ex: Horário Ocupado)
       if (data && data.error) {
-          console.error("❌ [Booking] Erro Lógico (RPC):", data.error);
-          return { error: data.error }; // Exibe erro amigável retornado pelo banco (ex: Horário ocupado)
+          console.error("❌ [Booking] Erro Lógico (RPC):", data.error, data.detail);
+          return { error: `${data.error}` };
       }
 
-      // 2. Disparar Notificação (Webhook Manual para API)
-      // Recuperamos o ID recém criado para garantir consistência
-      // Atenção: A data no banco é TIMESTAMPTZ, converte para UTC
-      const targetTime = `${date}T${time}:00`; 
-      
-      // Faz uma busca tolerante de +/- 1 minuto para achar o agendamento criado (devido a conversão de fuso)
-      // ou busca pelo ultimo ID criado para essa empresa/lead (mais arriscado em alta concorrencia)
-      // A RPC create_public_appointment DEVERIA retornar o ID do appointment. 
-      // Se a versão atual da RPC retorna { success: true, id: ... }, usamos isso.
-      // Se retorna void ou apenas success, usamos a busca de fallback.
-      
-      let appointmentId = data?.id;
+      console.log("✅ [Booking] RPC Sucesso. Dados:", data);
 
-      if (!appointmentId) {
-          // Fallback: Busca o último agendamento criado com este telefone nos últimos 5 min
-          const { data: newApp } = await supabase
-            .from('appointments')
-            .select('id, company_id')
-            .eq('title', name) // A RPC usa o nome como título geralmente
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
-            
-          if (newApp) appointmentId = newApp.id;
-      }
+      // 2. Disparar Notificação (Webhook para Backend Node)
+      const appointmentId = data?.id;
 
       if (appointmentId) {
-          // Busca companyId se não tivermos
+          // Busca companyId para o webhook (segurança)
           const { data: appData } = await supabase.from('appointments').select('company_id').eq('id', appointmentId).single();
           
           if (appData) {
@@ -137,7 +130,6 @@ export async function bookAppointment(formData: BookingData) {
           }
       }
 
-      console.log("✅ [Booking] Sucesso.");
       return { success: true };
 
   } catch (err: any) {
