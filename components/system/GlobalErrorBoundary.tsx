@@ -14,21 +14,29 @@ interface State {
 }
 
 export class GlobalErrorBoundary extends Component<Props, State> {
-  public state: State = {
-    hasError: false
-  };
+  constructor(props: Props) {
+    super(props);
+    this.state = {
+      hasError: false
+    };
+  }
 
   public static getDerivedStateFromError(_: Error): State {
     return { hasError: true };
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    SystemLogger.error('React Render Crash', {
-        name: error.name,
-        message: error.message,
-        stack: error.stack,
-        componentStack: errorInfo.componentStack
-    });
+    // Evita loop infinito se o logger falhar
+    try {
+        SystemLogger.error('React Render Crash', {
+            name: error.name,
+            message: error.message,
+            stack: error.stack,
+            componentStack: errorInfo.componentStack
+        });
+    } catch (e) {
+        console.error("Falha crítica no Logger:", e);
+    }
   }
 
   public render() {
