@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState } from 'react';
@@ -14,12 +15,13 @@ import { Button } from '@/components/ui/button';
 const Navbar = () => (
   <nav className="fixed top-0 w-full z-50 border-b border-white/5 bg-zinc-950/80 backdrop-blur-xl">
     <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-      <div className="flex items-center gap-2">
-        <div className="w-8 h-8 bg-primary/20 rounded-lg flex items-center justify-center border border-primary/30">
-          <Zap className="w-5 h-5 text-primary" />
-        </div>
-        <span className="font-bold text-xl tracking-tight text-white">Wancora<span className="text-primary">.ai</span></span>
-      </div>
+      <Link href="/" className="flex items-center gap-2">
+        <img 
+            src="https://image2url.com/r2/default/images/1770512430716-c3433522-4fd7-43d3-951e-401e15dc4dba.png" 
+            alt="Wancora" 
+            className="h-10 w-auto object-contain"
+        />
+      </Link>
       
       <div className="hidden md:flex items-center gap-8 text-sm font-medium text-zinc-400">
         <Link href="#features" className="hover:text-white transition-colors">Funcionalidades</Link>
@@ -324,8 +326,11 @@ const Footer = () => (
   <footer className="py-12 border-t border-white/5 bg-zinc-950">
     <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-6">
       <div className="flex items-center gap-2">
-        <Zap className="w-5 h-5 text-primary" />
-        <span className="font-bold text-lg text-white">Wancora CRM</span>
+        <img 
+            src="https://image2url.com/r2/default/images/1770512430716-c3433522-4fd7-43d3-951e-401e15dc4dba.png" 
+            alt="Wancora" 
+            className="h-8 w-auto object-contain grayscale opacity-80 hover:grayscale-0 hover:opacity-100 transition-all"
+        />
       </div>
       <div className="text-zinc-500 text-sm">
         &copy; 2026 Wancora Tech. Todos os direitos reservados.

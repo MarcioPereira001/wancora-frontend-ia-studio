@@ -26,10 +26,11 @@ export function MobileNav() {
       {/* --- TOP BAR (FIXA) --- */}
       <header className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-[#09090b]/90 backdrop-blur-xl border-b border-zinc-800 z-50 flex items-center justify-between px-4 shadow-lg">
           <div className="flex items-center gap-2">
-              <div className="w-8 h-8 bg-primary/20 rounded-lg flex items-center justify-center border border-primary/30">
-                  <Zap className="w-4 h-4 text-primary" />
-              </div>
-              <span className="font-bold text-lg text-white tracking-tight">Wancora</span>
+               <img 
+                    src="https://image2url.com/r2/default/images/1770512430716-c3433522-4fd7-43d3-951e-401e15dc4dba.png" 
+                    alt="Wancora" 
+                    className="h-8 w-auto object-contain"
+                />
           </div>
 
           <div className="flex items-center gap-3">

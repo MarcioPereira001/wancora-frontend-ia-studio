@@ -18,6 +18,9 @@ const jetbrains = JetBrains_Mono({ subsets: ["latin"], variable: "--font-jetbrai
 export const metadata: Metadata = {
   title: "Wancora CRM | Automação & IA",
   description: "Plataforma SaaS B2B Multi-Tenant",
+  icons: {
+    icon: 'https://image2url.com/r2/default/images/1770514094535-7a518231-2117-4ae7-b031-81373bb746f4.png',
+  }
 };
 
 export default function RootLayout({

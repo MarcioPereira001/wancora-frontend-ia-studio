@@ -64,12 +64,14 @@ export function Sidebar() {
       {/* --- HEADER / LOGO --- */}
       <div className="h-14 flex items-center justify-center shrink-0 relative overflow-hidden mt-2">
          <div className={cn("flex items-center gap-2 transition-all duration-300", isCollapsed ? "justify-center w-full px-0" : "px-4 w-full justify-start")}>
-            <div className="w-8 h-8 bg-gradient-to-br from-zinc-800 to-black rounded-lg flex items-center justify-center border border-zinc-700 shadow-[0_0_10px_rgba(34,197,94,0.15)] shrink-0">
-                <Zap className="w-4 h-4 text-primary fill-primary/20" />
-            </div>
-            <span className={cn("text-white font-bold tracking-wider text-base transition-opacity duration-300 whitespace-nowrap", isCollapsed ? "opacity-0 w-0 hidden" : "opacity-100")}>
-                WANCORA
-            </span>
+            <img 
+                src="https://image2url.com/r2/default/images/1770512430716-c3433522-4fd7-43d3-951e-401e15dc4dba.png" 
+                alt="Wancora" 
+                className={cn(
+                    "object-contain transition-all duration-300",
+                    isCollapsed ? "w-8 h-8" : "h-9 w-auto"
+                )}
+            />
          </div>
       </div>
 

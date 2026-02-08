@@ -4,7 +4,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useDesktopStore } from '@/store/useDesktopStore';
 import { cn } from '@/lib/utils';
-import { Zap, Cloud, FileText, Monitor, X, Minus, Save, Maximize2, Layout, FileSpreadsheet, Image as ImageIcon } from 'lucide-react';
+import { Cloud, FileText, Monitor, X, Minus, Save, Maximize2, Layout, FileSpreadsheet, Image as ImageIcon } from 'lucide-react';
 import { useAuthStore } from '@/store/useAuthStore';
 import { WallpaperModal } from './WallpaperModal';
 
@@ -146,11 +146,15 @@ export function Taskbar() {
                     onClick={() => setStartMenuOpen(!startMenuOpen)}
                     onContextMenu={handleStartContextMenu}
                     className={cn(
-                        "w-9 h-9 rounded flex items-center justify-center transition-all hover:bg-white/10 active:scale-95",
+                        "w-9 h-9 rounded flex items-center justify-center transition-all hover:bg-white/10 active:scale-95 group",
                         startMenuOpen ? "bg-white/10 shadow-[0_0_10px_rgba(34,197,94,0.3)]" : ""
                     )}
                 >
-                    <Zap className={cn("w-5 h-5", startMenuOpen ? "text-primary" : "text-zinc-400")} />
+                    <img 
+                        src="https://image2url.com/r2/default/images/1770514094535-7a518231-2117-4ae7-b031-81373bb746f4.png"
+                        alt="Start"
+                        className={cn("w-5 h-5 object-contain transition-all", startMenuOpen ? "opacity-100 drop-shadow-[0_0_5px_rgba(34,197,94,0.8)]" : "opacity-70 group-hover:opacity-100")} 
+                    />
                 </button>
 
                 <div className="w-px h-6 bg-zinc-700 mx-1" />
