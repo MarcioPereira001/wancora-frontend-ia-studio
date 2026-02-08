@@ -151,7 +151,7 @@ export function Taskbar() {
                     )}
                 >
                     <img 
-                        src="https://image2url.com/r2/default/images/1770517454050-2f1ea8be-21f3-4ce1-8806-f0efa97ecc30.png"
+                        src="https://image2url.com/r2/default/images/1770515092570-e1d6ccac-bf8b-4c45-8927-453176642fb5.png"
                         alt="Start"
                         className={cn("w-5 h-5 object-contain transition-all", startMenuOpen ? "opacity-100 drop-shadow-[0_0_5px_rgba(34,197,94,0.8)]" : "opacity-70 group-hover:opacity-100")} 
                     />
