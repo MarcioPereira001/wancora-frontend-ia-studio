@@ -65,7 +65,7 @@ export function Sidebar() {
       <div className="h-14 flex items-center justify-center shrink-0 relative overflow-hidden mt-2">
          <div className={cn("flex items-center gap-2 transition-all duration-300", isCollapsed ? "justify-center w-full px-0" : "px-4 w-full justify-start")}>
             <img 
-                src="https://image2url.com/r2/default/images/1770516603287-c02eda7c-a7e7-4278-8915-863c87d4df9d.png" 
+                src="https://image2url.com/r2/default/images/1770517454050-2f1ea8be-21f3-4ce1-8806-f0efa97ecc30.png" 
                 alt="Wancora" 
                 className={cn(
                     "object-contain transition-all duration-300",
