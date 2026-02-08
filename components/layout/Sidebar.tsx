@@ -35,10 +35,10 @@ export function Sidebar() {
     router.push('/auth/login');
   };
 
-  // Estilo Cinza Ajustado (#202020) com Neon Leve e Borrado
+  // Estilo Cinza Mais Escuro (#18181b) com Neon Leve e Borrado
   const sidebarClasses = cn(
       "hidden lg:flex flex-col h-screen sticky top-0 transition-all duration-300 ease-in-out z-40",
-      "bg-[#202020]/95 backdrop-blur-md", 
+      "bg-[#18181b]/95 backdrop-blur-md", 
       "border-r border-white/5 shadow-[1px_0_20px_-5px_rgba(34,197,94,0.15)]",
       isCollapsed ? "w-16" : "w-60" // Reduzido largura total levemente
   );
@@ -54,7 +54,7 @@ export function Sidebar() {
       {!autoCollapseMode && (
           <button
             onClick={() => setManualCollapsed(!manualCollapsed)}
-            className="absolute -right-3 top-1/2 -translate-y-1/2 bg-[#202020] border border-zinc-700 text-zinc-400 hover:text-white rounded-full p-1 shadow-lg transition-colors z-50 hover:border-primary/50 hover:shadow-primary/20"
+            className="absolute -right-3 top-1/2 -translate-y-1/2 bg-[#18181b] border border-zinc-700 text-zinc-400 hover:text-white rounded-full p-1 shadow-lg transition-colors z-50 hover:border-primary/50 hover:shadow-primary/20"
             title={manualCollapsed ? "Expandir" : "Recolher"}
           >
             {manualCollapsed ? <ChevronRight size={12} /> : <ChevronLeft size={12} />}

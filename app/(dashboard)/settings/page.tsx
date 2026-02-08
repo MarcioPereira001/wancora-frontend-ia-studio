@@ -41,7 +41,8 @@ export default function SettingsPage() {
               if (data?.storage_retention_days) setRetentionDays(data.storage_retention_days);
 
               // 2. Check Drive Conectado
-              const { data: driveData } = await supabase.from('integrations_google').select('id').eq('company_id', company.id).maybeSingle();
+              // FIX: Seleciona 'company_id' em vez de 'id', pois a tabela integrations_google usa company_id como PK
+              const { data: driveData } = await supabase.from('integrations_google').select('company_id').eq('company_id', company.id).maybeSingle();
               setHasDrive(!!driveData);
           };
           fetchConfig();
