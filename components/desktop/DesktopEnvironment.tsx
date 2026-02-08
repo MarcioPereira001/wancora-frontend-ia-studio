@@ -95,13 +95,12 @@ export function DesktopEnvironment() {
             backgroundImage: `url(${wallpaper})`,
             backgroundSize: 'cover',
             backgroundPosition: 'center',
-            backgroundColor: '#121212', // Fallback
-            zIndex: 0 // Garante camada base
+            backgroundColor: '#18181b', // Fallback visual (Zinc 900) se a imagem falhar
+            zIndex: 0 
         }}
         onClick={() => setSelectedIcon(null)}
     >
-        {/* Overlay removido para corrigir visualização escura */}
-        
+        {/* Ícones do Desktop */}
         <div className="absolute top-4 left-4 grid grid-cols-1 gap-2 z-10">
             <DesktopIcon 
                 label="Meu Drive" 
@@ -145,7 +144,8 @@ export function DesktopEnvironment() {
             />
         </div>
 
-        <div className="absolute inset-0 pb-12 pointer-events-none overflow-hidden"> 
+        {/* Gerenciador de Janelas */}
+        <div className="absolute inset-0 pb-12 pointer-events-none overflow-hidden z-20"> 
             {windows.map((win) => (
                 <div key={win.id} className="pointer-events-auto">
                     <WindowFrame window={win} constraintsRef={desktopConstraintsRef}>
