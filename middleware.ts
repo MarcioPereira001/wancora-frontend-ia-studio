@@ -10,7 +10,13 @@ export async function middleware(request: NextRequest) {
     },
   })
 
-  // Validação defensiva para garantir que o cliente Supabase receba chaves válidas
+  // 1. ROTAS PÚBLICAS (BYPASS TOTAL DE AUTH)
+  // Verifica antes de qualquer lógica do Supabase para performance e evitar bugs de sessão
+  if (request.nextUrl.pathname.startsWith('/agendar')) {
+       return response;
+  }
+
+  // Validação defensiva
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
     console.error('CRITICAL: Supabase credentials missing in middleware config');
     return response;
@@ -62,12 +68,11 @@ export async function middleware(request: NextRequest) {
     }
   )
 
-  // Tentar obter sessão.
+  // 2. Tentar obter sessão
   try {
       const { data: { session } } = await supabase.auth.getSession()
 
-      // LISTA DE ROTAS PROTEGIDAS (ATUALIZADA)
-      // Adicionado: /calendar, /connections, /campaigns
+      // LISTA DE ROTAS PROTEGIDAS
       if (!session && (
         request.nextUrl.pathname.startsWith('/dashboard') || 
         request.nextUrl.pathname.startsWith('/crm') || 
@@ -78,13 +83,10 @@ export async function middleware(request: NextRequest) {
         request.nextUrl.pathname.startsWith('/connections') ||
         request.nextUrl.pathname.startsWith('/campaigns')
       )) {
-        // Exceção: O calendário PÚBLICO (/agendar/...) não deve redirecionar para login
+        // Exceção: O calendário PÚBLICO (/agendar/...) já foi tratado no topo, 
+        // mas mantemos o check de /calendar/settings para garantir
         if (request.nextUrl.pathname.startsWith('/calendar/settings')) {
              return NextResponse.redirect(new URL('/auth/login', request.url))
-        }
-        // Se for a rota pública de agendamento (/agendar), deixa passar
-        if (request.nextUrl.pathname.startsWith('/agendar')) {
-             return response;
         }
 
         return NextResponse.redirect(new URL('/auth/login', request.url))
