@@ -4,7 +4,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useRealtimeStore } from '@/store/useRealtimeStore';
 import { createClient } from '@/utils/supabase/client';
-import { CheckCircle2, Loader2, Hourglass, DownloadCloud, HardDrive } from 'lucide-react';
+import { CheckCircle2, Loader2, Hourglass, DownloadCloud, Database, RefreshCw, Wifi } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export function GlobalSyncIndicator() {
@@ -14,18 +14,27 @@ export function GlobalSyncIndicator() {
   
   // Estado Visual
   const [displayPercent, setDisplayPercent] = useState(0);
-  const [statusLabel, setStatusLabel] = useState('Preparando Ambiente');
-  const [subLabel, setSubLabel] = useState('Aguardando dados...');
+  const [statusLabel, setStatusLabel] = useState('Preparando');
+  const [subLabel, setSubLabel] = useState('Iniciando protocolo...');
   const [isComplete, setIsComplete] = useState(false);
+  
+  // Controle de Ícone
+  const [currentIcon, setCurrentIcon] = useState<'loader' | 'cloud' | 'db' | 'check' | 'wifi'>('loader');
 
-  // Refs para controle da animação sem re-render desnecessário
+  // Refs para controle da animação sem re-render
   const currentPercentRef = useRef(0);
   const targetPercentRef = useRef(0);
+  const animationSpeedRef = useRef(0.5); // Controle de "Fricção" (Quanto maior, mais lento)
+  
   const closingRef = useRef(false);
+  const completedRef = useRef(false); // Flag de conclusão real
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const animationFrameRef = useRef<number | null>(null);
+  
+  // Refs para o "Diretor" (Timeouts)
+  const timeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
-  // --- LÓGICA DE ANIMAÇÃO (Game Loop) ---
+  // --- ENGINE DE ANIMAÇÃO (Physics Based) ---
   const animate = () => {
     if (closingRef.current) return;
 
@@ -33,19 +42,24 @@ export function GlobalSyncIndicator() {
     const diff = targetPercentRef.current - currentPercentRef.current;
     
     // Se a diferença for muito pequena, arredonda
-    if (diff > 0 && diff < 0.1) {
+    if (Math.abs(diff) < 0.1) {
         currentPercentRef.current = targetPercentRef.current;
-    } else if (diff > 0) {
-        // Velocidade: Queremos cobrir a diferença em ~5 segundos (assumindo 60fps = 300 frames)
-        // Mas para ser seguro e não parar antes, usamos um divisor menor para "perseguir" o alvo
-        // Divisor 100 dá uma sensação de inércia boa
-        const step = diff / 100; 
-        // Garante um movimento mínimo para não estagnar
-        currentPercentRef.current += Math.max(step, 0.05);
+    } else {
+        // A velocidade depende da distância e da "fricção" configurada pela fase
+        // Fases longas tem fricção alta (divisor grande)
+        const step = diff / (animationSpeedRef.current * 100); 
+        
+        // Garante movimento mínimo para não estagnar, mas permite ser bem lento
+        // Se step for positivo, mínimo 0.01. Se negativo (reset), permite salto grande
+        const minStep = diff > 0 ? 0.01 : -100; 
+        
+        currentPercentRef.current += (Math.abs(step) < Math.abs(minStep) && diff > 0) ? minStep : step;
     }
     
-    // Trava em 100
+    // Trava em 100 visualmente
     if (currentPercentRef.current > 100) currentPercentRef.current = 100;
+    // Trava em 0 visualmente
+    if (currentPercentRef.current < 0) currentPercentRef.current = 0;
 
     // Atualiza estado React para renderizar
     setDisplayPercent(currentPercentRef.current);
@@ -54,9 +68,77 @@ export function GlobalSyncIndicator() {
     animationFrameRef.current = requestAnimationFrame(animate);
   };
 
-  // --- BUSCA DE DADOS (POLLING 5s) ---
+  // --- O DIRETOR (Roteiro da Animação) ---
+  const startDirector = () => {
+      // Limpa roteiro anterior
+      timeoutsRef.current.forEach(clearTimeout);
+      timeoutsRef.current = [];
+
+      // FASE 1: 0-11s (Preparando -> 99%)
+      // Rápido e empolgante
+      targetPercentRef.current = 99;
+      animationSpeedRef.current = 0.2; // Rápido
+      setStatusLabel("Preparando");
+      setSubLabel("Estabelecendo conexão segura...");
+      setCurrentIcon('loader');
+
+      // FASE 2: 11s (Reset -> 0%)
+      // O banho de água fria
+      const t1 = setTimeout(() => {
+          if (completedRef.current) return; // Se já acabou real, ignora
+          currentPercentRef.current = 0; // Hard reset físico
+          targetPercentRef.current = 0;
+          setStatusLabel("Aguardando resposta...");
+          setSubLabel("Sincronizando chaves...");
+          setCurrentIcon('wifi');
+      }, 11000);
+
+      // FASE 3: 16s (Jump -> Random 11-46%)
+      // A esperança volta
+      const t2 = setTimeout(() => {
+          if (completedRef.current) return;
+          const randomJump = Math.random() * (46 - 11) + 11;
+          targetPercentRef.current = randomJump;
+          animationSpeedRef.current = 0.1; // Salto rápido
+          setStatusLabel("Carregando dados");
+          setSubLabel("Obtendo pacotes do servidor...");
+          setCurrentIcon('cloud');
+      }, 16000);
+
+      // FASE 4: 17s (Creep -> 81% em 34s)
+      // A parte lenta e "maquiavélica"
+      const t3 = setTimeout(() => {
+          if (completedRef.current) return;
+          targetPercentRef.current = 81;
+          animationSpeedRef.current = 4.0; // MUITO Lento (Fricção alta) para demorar ~34s
+          setStatusLabel("Baixando Histórico");
+          setSubLabel("Isso pode levar alguns instantes...");
+          setCurrentIcon('db');
+      }, 17000);
+
+      // FASE 5: 51s (Finalize -> 100% em 15s)
+      // A reta final
+      const t4 = setTimeout(() => {
+          if (completedRef.current) return;
+          targetPercentRef.current = 100;
+          animationSpeedRef.current = 0.8; // Velocidade média
+          setStatusLabel("Finalizando a sincronização");
+          setSubLabel("Organizando mensagens...");
+          setCurrentIcon('refresh');
+      }, 51000);
+
+      // FASE 6: 66s (Conclusão Forçada)
+      // Se a internet cair ou o backend travar, a gente mente que acabou pra liberar a UI.
+      const t5 = setTimeout(() => {
+          forceComplete();
+      }, 66000);
+
+      timeoutsRef.current.push(t1, t2, t3, t4, t5);
+  };
+
+  // --- BUSCA DE DADOS REAIS (Override) ---
   const fetchStatus = async () => {
-    if (!forcedSyncId || closingRef.current) return;
+    if (!forcedSyncId || closingRef.current || completedRef.current) return;
 
     const supabase = createClient();
     const { data } = await supabase
@@ -66,67 +148,84 @@ export function GlobalSyncIndicator() {
         .single();
 
     if (data) {
-        // Se desconectou, aborta
+        // Se desconectou, aborta drama e mostra erro
         if (data.status === 'disconnected') {
              setStatusLabel('Erro de Conexão');
-             targetPercentRef.current = 100; // Força fechar para não travar a tela
+             setSubLabel('Tentando reconectar...');
              return;
         }
 
-        // Define o novo alvo baseado no banco
-        let newTarget = data.sync_percent || 0;
-        
-        // Se completou no banco, alvo é 100
+        // Se o backend disser que acabou, ACABOU.
         if (data.sync_status === 'completed') {
-            newTarget = 100;
-            setStatusLabel('Finalizando...');
-        } else if (data.sync_status === 'importing_messages') {
-            setStatusLabel('Baixando Histórico');
-            setSubLabel('Recuperando conversas antigas...');
-        } else {
-            setStatusLabel('Preparando Ambiente');
+            forceComplete();
+            return;
         }
-
-        // Só atualiza se for maior (nunca volta a barra)
-        if (newTarget > targetPercentRef.current) {
-            targetPercentRef.current = newTarget;
+        
+        // Se o backend estiver enviando progresso real e for MAIOR que o nosso fake, usamos o real
+        // Mas mantemos o label fake para consistência visual se o real não tiver label
+        if (data.sync_percent && data.sync_percent > currentPercentRef.current) {
+             // Apenas ajustamos o alvo, o animate cuida de chegar lá
+             // Mas não mudamos labels para não quebrar a "magia" do roteiro, a menos que seja 100
+             if (data.sync_percent > targetPercentRef.current) {
+                 targetPercentRef.current = data.sync_percent;
+             }
         }
     }
   };
 
-  // --- GATILHO DE FECHAMENTO (Regra Obrigatória) ---
-  useEffect(() => {
-      // Se visualmente chegou a 99.5% ou mais, consideramos 100% e fechamos
-      if (displayPercent >= 99.5 && !closingRef.current) {
-          setIsComplete(true);
-          setStatusLabel('Histórico 100% Concluído');
-          setSubLabel('Tudo pronto!');
-          closingRef.current = true;
+  const forceComplete = () => {
+      if (closingRef.current) return;
+      completedRef.current = true;
+      targetPercentRef.current = 100;
+      currentPercentRef.current = 100; // Pula animação se for force complete
+      setDisplayPercent(100);
+      
+      setIsComplete(true);
+      setStatusLabel('Sincronização Concluída');
+      setSubLabel('Sistema pronto para uso.');
+      setCurrentIcon('check');
+      
+      closingRef.current = true;
 
-          // Cleanup imediato dos timers
-          if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-          if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+      // Limpa tudo
+      timeoutsRef.current.forEach(clearTimeout);
+      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+      if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
 
-          // Delay para o usuário ver o "100%" verde
+      // Delay para fechar
+      setTimeout(() => {
+          setIsVisible(false);
           setTimeout(() => {
-              setIsVisible(false);
-              setTimeout(() => {
-                  setShow(false);
-                  clearSyncAnimation();
-                  closingRef.current = false;
-                  // Reseta refs
-                  currentPercentRef.current = 0;
-                  targetPercentRef.current = 0;
-              }, 500);
-          }, 2000);
-      }
-  }, [displayPercent, clearSyncAnimation]);
+              setShow(false);
+              clearSyncAnimation();
+              
+              // Reset Total para próxima vez
+              closingRef.current = false;
+              completedRef.current = false;
+              currentPercentRef.current = 0;
+              targetPercentRef.current = 0;
+              setDisplayPercent(0);
+          }, 500);
+      }, 3000); // 3s exibindo "Concluído"
+  };
 
-  // --- CICLO DE VIDA (INIT) ---
+  // --- WATCHER DE ESTADO ---
+  useEffect(() => {
+      // Se visualmente chegou a 100%, dispara conclusão
+      if (displayPercent >= 99.9 && !closingRef.current && !completedRef.current) {
+          // Só consideramos concluído se estivermos na Fase 5 ou 6, ou se o backend mandou
+          // (Evita que a fase 1 de 99% dispare o fechamento)
+          // Verificação: Se o label for "Preparando", NÃO fecha.
+          if (statusLabel !== "Preparando") {
+              forceComplete();
+          }
+      }
+  }, [displayPercent]);
+
+  // --- INIT ---
   useEffect(() => {
     if (!forcedSyncId) {
         if (show && !closingRef.current) {
-             // Fecha se perder o ID externamente
              closingRef.current = true;
              setIsVisible(false);
              setTimeout(() => { setShow(false); clearSyncAnimation(); closingRef.current = false; }, 500);
@@ -142,40 +241,41 @@ export function GlobalSyncIndicator() {
         currentPercentRef.current = 0;
         targetPercentRef.current = 0;
         setDisplayPercent(0);
-        setStatusLabel('Iniciando Sincronização');
-        setSubLabel('Aguarde...');
         setIsComplete(false);
         closingRef.current = false;
+        completedRef.current = false;
 
-        // Inicia Loop de Animação
+        // Inicia
+        startDirector();
         animationFrameRef.current = requestAnimationFrame(animate);
-
-        // Inicia Polling a cada 5 segundos
-        pollIntervalRef.current = setInterval(fetchStatus, 5000);
+        pollIntervalRef.current = setInterval(fetchStatus, 3000); // Check real a cada 3s
     }
 
     return () => {
         if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
         if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+        timeoutsRef.current.forEach(clearTimeout);
     };
   }, [forcedSyncId, show, clearSyncAnimation]);
 
   if (!show) return null;
 
-  // Definição de Cores e Ícones
-  let barColor = 'bg-slate-500';
-  let Icon = Loader2;
-  
-  if (isComplete) {
-      barColor = 'bg-emerald-500';
-      Icon = CheckCircle2;
-  } else if (displayPercent > 5) {
-      barColor = 'bg-gradient-to-r from-blue-600 to-cyan-400';
-      Icon = DownloadCloud;
-  } else {
-      barColor = 'bg-slate-500';
-      Icon = Hourglass;
-  }
+  // Renderização de Ícones Dinâmicos
+  const renderIcon = () => {
+      switch(currentIcon) {
+          case 'cloud': return <DownloadCloud className="w-6 h-6 animate-bounce text-blue-400" />;
+          case 'db': return <Database className="w-6 h-6 animate-pulse text-purple-400" />;
+          case 'wifi': return <Wifi className="w-6 h-6 animate-pulse text-yellow-400" />;
+          case 'refresh': return <RefreshCw className="w-6 h-6 animate-spin text-orange-400" />;
+          case 'check': return <CheckCircle2 className="w-6 h-6 text-emerald-500" />;
+          default: return <Loader2 className="w-6 h-6 animate-spin text-white" />;
+      }
+  };
+
+  let barColor = 'bg-blue-600';
+  if (isComplete) barColor = 'bg-emerald-500';
+  else if (displayPercent > 80) barColor = 'bg-purple-500';
+  else if (displayPercent < 10) barColor = 'bg-yellow-500';
 
   return (
     <div className={cn(
@@ -189,14 +289,14 @@ export function GlobalSyncIndicator() {
 
         <div className="flex items-center justify-between mb-4 relative z-10">
           <div className="flex items-center gap-4">
-            <div className={`p-3 rounded-xl transition-colors duration-500 shadow-inner ${isComplete ? 'bg-emerald-500/10 text-emerald-500' : 'bg-zinc-800 text-blue-400'}`}>
-               <Icon className={`w-6 h-6 ${!isComplete ? 'animate-pulse' : ''}`} />
+            <div className={`p-3 rounded-xl transition-all duration-500 shadow-inner bg-zinc-800 border border-zinc-700/50`}>
+               {renderIcon()}
             </div>
             <div className="flex flex-col min-w-0">
               <span className="text-base font-bold text-white leading-tight mb-1 truncate">
                 {statusLabel}
               </span>
-              <span className="text-xs text-zinc-400 font-medium truncate max-w-[180px]">
+              <span className="text-xs text-zinc-400 font-medium truncate max-w-[180px] animate-pulse">
                 {subLabel}
               </span>
             </div>
@@ -210,13 +310,16 @@ export function GlobalSyncIndicator() {
         <div className="h-2 w-full bg-zinc-800 rounded-full overflow-hidden relative z-10">
             <div 
               className={`h-full transition-all duration-100 ease-linear relative ${barColor}`}
-              style={{ width: `${Math.max(5, displayPercent)}%` }} 
+              style={{ width: `${Math.max(2, displayPercent)}%` }} 
             >
                 {!isComplete && (
-                    <div className="absolute inset-0 bg-white/20 w-full animate-[shimmer_1.5s_infinite] -skew-x-12" />
+                    <div className="absolute inset-0 bg-white/30 w-full animate-[shimmer_1s_infinite] -skew-x-12" />
                 )}
             </div>
         </div>
+        
+        {/* Debug Info (Oculto) - Para saber se é fake ou real */}
+        {/* <div className="absolute bottom-1 right-1 text-[8px] text-zinc-800">{targetPercentRef.current.toFixed(0)}</div> */}
       </div>
     </div>
   );
