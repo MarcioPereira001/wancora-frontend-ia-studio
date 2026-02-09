@@ -58,6 +58,22 @@ const checkDisconnectError = (errorBody: string) => {
     }
 };
 
+// Logger Helper para erros de API
+const logApiError = (method: string, url: string, status: number, requestBody: any, responseBody: string) => {
+    // Trunca corpos muito grandes para não estourar o banco
+    const safeResBody = responseBody.length > 2000 ? responseBody.substring(0, 2000) + '...[TRUNCATED]' : responseBody;
+    const safeReqBody = requestBody ? (JSON.stringify(requestBody).length > 1000 ? JSON.stringify(requestBody).substring(0, 1000) + '...' : requestBody) : null;
+
+    SystemLogger.error(`API ${method} Error: ${status}`, {
+        url,
+        method,
+        status,
+        requestBody: safeReqBody,
+        body: safeResBody, // Renomeado para 'body' para ficar consistente com LogViewer
+        userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'Server-Side'
+    });
+};
+
 export const api = {
   get: async (endpoint: string) => {
     const url = cleanUrl(endpoint);
@@ -73,14 +89,7 @@ export const api = {
         const errorBody = await response.text();
         console.error(`API Error ${response.status} on ${url}:`, errorBody);
         checkDisconnectError(errorBody);
-        
-        // LOG AUTOMÁTICO NO BANCO (Network Error)
-        SystemLogger.error(`API GET Failed: ${endpoint}`, {
-            status: response.status,
-            body: errorBody.substring(0, 200),
-            url
-        });
-
+        logApiError('GET', url, response.status, null, errorBody);
         throw new Error(`API Error ${response.status}: ${errorBody}`);
       }
       
@@ -89,7 +98,7 @@ export const api = {
       console.error(`GET ${endpoint} failed:`, error);
       // Loga exceções de rede (ex: servidor offline)
       if (!error.message?.includes('API Error')) {
-          SystemLogger.error(`Network Error GET: ${endpoint}`, { message: error.message });
+          SystemLogger.error(`Network Exception GET: ${endpoint}`, { message: error.message, url });
       }
       throw error;
     }
@@ -110,15 +119,7 @@ export const api = {
         const errorBody = await response.text();
         console.error(`API Error ${response.status} on ${url}:`, errorBody);
         checkDisconnectError(errorBody);
-
-        // LOG AUTOMÁTICO NO BANCO
-        SystemLogger.error(`API POST Failed: ${endpoint}`, {
-            status: response.status,
-            requestBody: JSON.stringify(body).substring(0, 200),
-            responseBody: errorBody.substring(0, 200),
-            url
-        });
-
+        logApiError('POST', url, response.status, body, errorBody);
         throw new Error(`API Error ${response.status}: ${errorBody}`);
       }
 
@@ -127,39 +128,33 @@ export const api = {
     } catch (error: any) {
       console.error(`POST ${endpoint} failed:`, error);
       if (!error.message?.includes('API Error')) {
-          SystemLogger.error(`Network Error POST: ${endpoint}`, { message: error.message });
+          SystemLogger.error(`Network Exception POST: ${endpoint}`, { message: error.message, url, body });
       }
       throw error;
     }
   },
 
-  delete: async (endpoint: string) => {
+  delete: async (endpoint: string, body?: any) => {
     const url = cleanUrl(endpoint);
     try {
         const headers = await getHeaders();
         
         const response = await fetch(url, {
             method: 'DELETE',
-            headers
+            headers,
+            body: body ? JSON.stringify(body) : undefined
         });
         if (!response.ok) {
             const errorBody = await response.text();
             checkDisconnectError(errorBody);
-            
-            // LOG AUTOMÁTICO
-            SystemLogger.error(`API DELETE Failed: ${endpoint}`, {
-                status: response.status,
-                body: errorBody.substring(0, 200),
-                url
-            });
-
+            logApiError('DELETE', url, response.status, body, errorBody);
             throw new Error(`API Error: ${response.statusText}`);
         }
         return true;
     } catch (error: any) {
         console.error(`DELETE ${endpoint} failed:`, error);
         if (!error.message?.includes('API Error')) {
-            SystemLogger.error(`Network Error DELETE: ${endpoint}`, { message: error.message });
+            SystemLogger.error(`Network Exception DELETE: ${endpoint}`, { message: error.message, url });
         }
         throw error;
     }

@@ -5,7 +5,8 @@ import { createClient } from '@/utils/supabase/client';
 import { SystemLog } from '@/types';
 import { 
     AlertOctagon, AlertTriangle, Info, Terminal, 
-    Search, Filter, PauseCircle, PlayCircle, Trash2, ChevronDown, ChevronRight
+    Search, Filter, PauseCircle, PlayCircle, Trash2, ChevronDown, ChevronRight,
+    Globe, Database, Server
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -18,7 +19,7 @@ export function LogViewer() {
     const [loading, setLoading] = useState(true);
     const [isPaused, setIsPaused] = useState(false);
     
-    // Alterado para Set para suportar múltiplos logs abertos ao mesmo tempo
+    // Set para múltiplos logs abertos
     const [expandedLogIds, setExpandedLogIds] = useState<Set<string>>(new Set());
     
     // Filtros
@@ -27,11 +28,9 @@ export function LogViewer() {
 
     const logsRef = useRef<SystemLog[]>([]); 
 
-    // Carregamento Inicial
     useEffect(() => {
         fetchLogs();
 
-        // Realtime Subscription
         const channel = supabase.channel('admin-logs-monitor')
             .on('postgres_changes', { 
                 event: 'INSERT', 
@@ -91,7 +90,8 @@ export function LogViewer() {
         
         const matchesSearch = !searchTerm || 
             log.message.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            log.source.toLowerCase().includes(searchTerm.toLowerCase());
+            log.source.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            JSON.stringify(log.metadata).toLowerCase().includes(searchTerm.toLowerCase());
 
         return matchesLevel && matchesSearch;
     });
@@ -113,6 +113,15 @@ export function LogViewer() {
             default: return <Info className="w-4 h-4" />;
         }
     };
+
+    const getSourceIcon = (source: string) => {
+        switch(source) {
+            case 'frontend': return <Globe className="w-3 h-3 mr-1" />;
+            case 'database': return <Database className="w-3 h-3 mr-1" />;
+            case 'backend': return <Server className="w-3 h-3 mr-1" />;
+            default: return <Terminal className="w-3 h-3 mr-1" />;
+        }
+    }
 
     return (
         <div className="bg-[#0f0f10] border border-zinc-800 rounded-xl overflow-hidden flex flex-col h-[600px] shadow-2xl">
@@ -148,7 +157,7 @@ export function LogViewer() {
                         <Input 
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
-                            placeholder="Buscar logs..."
+                            placeholder="Buscar logs (msg, json)..."
                             className="w-64 h-9 pl-9 bg-zinc-950 border-zinc-800 text-xs font-mono focus:border-zinc-700"
                         />
                     </div>
@@ -210,8 +219,8 @@ export function LogViewer() {
                                     {format(new Date(log.created_at), 'HH:mm:ss.SSS')}
                                 </div>
 
-                                <div className="w-24 shrink-0 font-bold uppercase tracking-wider text-zinc-400">
-                                    [{log.source}]
+                                <div className="w-24 shrink-0 font-bold uppercase tracking-wider text-zinc-400 flex items-center">
+                                    {getSourceIcon(log.source)} {log.source}
                                 </div>
 
                                 <div className="flex-1 truncate text-zinc-300 group-hover:text-white">
@@ -229,27 +238,62 @@ export function LogViewer() {
                                     <table className="w-full text-left text-zinc-400">
                                         <tbody>
                                             <tr className="border-b border-zinc-900">
-                                                <td className="py-2 font-bold w-32">Timestamp</td>
-                                                <td className="py-2 text-zinc-300">{format(new Date(log.created_at), "dd/MM/yyyy HH:mm:ss")}</td>
+                                                <td className="py-2 font-bold w-32 align-top">Mensagem</td>
+                                                <td className="py-2 text-white break-words whitespace-pre-wrap">{log.message}</td>
                                             </tr>
-                                            <tr className="border-b border-zinc-900">
-                                                <td className="py-2 font-bold">Company ID</td>
-                                                <td className="py-2 text-zinc-300">{log.company_id || 'N/A'}</td>
-                                            </tr>
-                                            <tr className="border-b border-zinc-900">
-                                                <td className="py-2 font-bold">User ID</td>
-                                                <td className="py-2 text-zinc-300">{log.user_id || 'N/A'}</td>
-                                            </tr>
-                                            <tr>
-                                                <td className="py-2 font-bold align-top">Metadata</td>
-                                                <td className="py-2">
-                                                    <pre className="text-[10px] text-green-400 overflow-auto max-h-60 custom-scrollbar">
-                                                        {JSON.stringify(log.metadata, null, 2)}
-                                                    </pre>
-                                                </td>
-                                            </tr>
+                                            {/* Exibição Inteligente de Metadata */}
+                                            {log.metadata && (
+                                                <>
+                                                 {/* Se for erro de Rede (API) */}
+                                                 {(log.metadata.url || log.metadata.status) && (
+                                                     <tr className="border-b border-zinc-900 bg-red-900/10">
+                                                         <td className="py-2 font-bold text-red-400">Network Error</td>
+                                                         <td className="py-2">
+                                                             <div className="flex gap-4">
+                                                                 <span className="font-bold text-red-300">{log.metadata.method || 'GET'}</span>
+                                                                 <span className="text-zinc-300">{log.metadata.url}</span>
+                                                                 <span className="font-bold text-red-500">{log.metadata.status}</span>
+                                                             </div>
+                                                             {log.metadata.body && (
+                                                                 <div className="mt-2 text-zinc-400 bg-black p-2 rounded border border-zinc-800">
+                                                                    <strong>Response Body:</strong><br/>
+                                                                    {typeof log.metadata.body === 'string' ? log.metadata.body.substring(0, 500) : JSON.stringify(log.metadata.body)}
+                                                                 </div>
+                                                             )}
+                                                         </td>
+                                                     </tr>
+                                                 )}
+
+                                                 {/* Stack Trace */}
+                                                 {(log.metadata.stack || log.metadata.componentStack) && (
+                                                     <tr className="border-b border-zinc-900">
+                                                         <td className="py-2 font-bold align-top text-yellow-500">Stack Trace</td>
+                                                         <td className="py-2">
+                                                             <pre className="text-[10px] text-yellow-200/70 overflow-x-auto whitespace-pre-wrap max-h-40 custom-scrollbar bg-zinc-900/50 p-2 rounded">
+                                                                 {log.metadata.stack || log.metadata.componentStack}
+                                                             </pre>
+                                                         </td>
+                                                     </tr>
+                                                 )}
+
+                                                 {/* Raw Metadata */}
+                                                 <tr>
+                                                     <td className="py-2 font-bold align-top">Raw Metadata</td>
+                                                     <td className="py-2">
+                                                         <pre className="text-[10px] text-green-400 overflow-auto max-h-60 custom-scrollbar">
+                                                             {JSON.stringify(log.metadata, null, 2)}
+                                                         </pre>
+                                                     </td>
+                                                 </tr>
+                                                </>
+                                            )}
                                         </tbody>
                                     </table>
+                                    <div className="mt-2 text-[10px] text-zinc-600 flex gap-4">
+                                        <span>User ID: {log.user_id || 'N/A'}</span>
+                                        <span>Company ID: {log.company_id || 'N/A'}</span>
+                                        <span>ID Log: {log.id}</span>
+                                    </div>
                                 </div>
                             )}
                         </div>
