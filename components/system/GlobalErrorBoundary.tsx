@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { Component, ErrorInfo, ReactNode } from 'react';
@@ -14,7 +13,7 @@ interface State {
   hasError: boolean;
 }
 
-export class GlobalErrorBoundary extends React.Component<Props, State> {
+export class GlobalErrorBoundary extends Component<Props, State> {
   public state: State = {
     hasError: false
   };

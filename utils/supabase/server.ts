@@ -1,5 +1,5 @@
 
-import { createServerClient, type CookieOptions } from '@supabase/ssr'
+import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 
 export async function createClient() {
@@ -9,10 +9,10 @@ export async function createClient() {
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   if (!url || !key) {
-      // Em vez de crashar, retorna um cliente "morto" ou lança erro controlado
-      // Lançar erro aqui é melhor para debug do que passar string vazia que falha internamente
-      console.error("❌ Erro Fatal: Variáveis de ambiente do Supabase não encontradas no servidor.");
-      // throw new Error("Supabase credentials missing"); 
+      console.error("❌ Erro Fatal: Variáveis de ambiente do Supabase não encontradas.");
+      // Retorna um objeto vazio ou lança erro controlado, dependendo da estratégia.
+      // Aqui, vamos tentar criar com strings vazias para não quebrar a importação, 
+      // mas as chamadas falharão graciosamente.
   }
 
   return createServerClient(
@@ -20,23 +20,18 @@ export async function createClient() {
     key || '',
     {
       cookies: {
-        get(name: string) {
-          return cookieStore.get(name)?.value
+        getAll() {
+          return cookieStore.getAll()
         },
-        set(name: string, value: string, options: CookieOptions) {
+        setAll(cookiesToSet) {
           try {
-            cookieStore.set({ name, value, ...options })
-          } catch (error) {
-            // The `set` method was called from a Server Component.
-            // This can be ignored if you have middleware refreshing user sessions.
-          }
-        },
-        remove(name: string, options: CookieOptions) {
-          try {
-            cookieStore.set({ name, value: '', ...options })
-          } catch (error) {
-            // The `delete` method was called from a Server Component.
-            // This can be ignored if you have middleware refreshing user sessions.
+            cookiesToSet.forEach(({ name, value, options }) =>
+              cookieStore.set(name, value, options)
+            )
+          } catch {
+            // The `setAll` method was called from a Server Component.
+            // This can be ignored if you have middleware refreshing
+            // user sessions.
           }
         },
       },
