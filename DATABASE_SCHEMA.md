@@ -320,6 +320,41 @@ Espelho local dos metadados do Drive para navegação instantânea (0ms latency)
 * `updated_at`: timestamptz
 * **Constraint:** `UNIQUE(company_id, google_id)`
 
+### `system_logs` (Telemetria & Erros) [NOVO]
+A caixa preta do sistema. Grava erros de frontend, backend e workers.
+* `id`: uuid (PK)
+* `level`: text ('info', 'warn', 'error', 'fatal')
+* `source`: text ('frontend', 'backend', 'worker', 'baileys')
+* `message`: text
+* `metadata`: jsonb (Stack trace, payload, user_agent, path)
+* `company_id`: uuid (Nullable)
+* `user_id`: uuid (Nullable)
+* `created_at`: timestamptz
+
+### `feedbacks` (Suporte & Bugs) [NOVO]
+Canal direto do usuário para o Admin.
+* `id`: uuid (PK)
+* `user_id`: uuid (FK -> profiles)
+* `company_id`: uuid (FK -> companies)
+* `type`: text ('bug', 'suggestion', 'other')
+* `content`: text
+* `status`: text ('pending', 'viewed', 'resolved')
+* `created_at`: timestamptz
+
+### `referrals` (Growth) [NOVO]
+Sistema de indicação.
+* `id`: uuid (PK)
+* `referrer_id`: uuid (FK -> profiles) - Quem indicou.
+* `referred_user_id`: uuid (FK -> profiles) - Quem entrou.
+* `status`: text ('pending', 'approved', 'paid')
+* `created_at`: timestamptz
+
+### `profiles` (Extensão Admin)
+* ... colunas existentes ...
+* `super_admin`: boolean (Default: false) - **[CRÍTICO]** Flag de acesso ao /auth/login-admin.
+* `referral_code`: text (Unique) - Código de indicação do usuário.
+* `referred_by`: uuid (FK -> profiles) - Quem indicou este usuário.
+
 ---
 
 ## 2. Funções RPC (Server-Side Logic)

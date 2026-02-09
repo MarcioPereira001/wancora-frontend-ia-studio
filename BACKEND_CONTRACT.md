@@ -24,6 +24,7 @@ wancora-backend/
 │   └── 📄 schemas.js             # Schemas de validação Zod para payloads
 ├── 📁 middleware/
 │   ├── 📄 auth.js                # Autenticação JWT e Validação Multi-Tenant (RBAC)
+│   ├── 📄 errorHandler.js        # [NOVO] Captura global de exceções e gravação no banco
 │   ├── 📄 limiter.js             # Rate Limiting (Redis) e Proteção DDoS
 │   └── 📄 validator.js           # Middleware de validação de Schema
 ├── 📁 routes/
@@ -59,6 +60,7 @@ wancora-backend/
 │   └── 📄 redisClient.js         # Infra: Conexão Singleton com Redis
 ├── 📁 utils/
 │   ├── 📄 audioConverter.js      # Conversão de áudio para OGG/Opus (FFmpeg)
+│   ├── 📄 logger.js              # [NOVO] Utilitário de gravação de logs no Supabase (SystemLogs)
 │   └── 📄 wppParsers.js          # Helpers de normalização (JID, Unwrap)
 ├── 📁 workers/
 │   ├── 📄 agendaWorker.js        # [NOVO] Cron job para lembretes de agendamento (Redis Lock)
@@ -547,6 +549,13 @@ Em caso de falha, a API retorna:
 
 500: Erro interno (Redis, Banco ou Baileys crash).```
 
+### 6.1. Telemetria de Erros (System Logs)
+O Backend implementa um padrão de "Observabilidade Silenciosa".
+1.  Qualquer exceção não tratada (`uncaughtException`, `unhandledRejection`) ou erro 500 em rotas é interceptado.
+2.  O erro é gravado na tabela `system_logs` via `utils/logger.js` com nível `error` ou `fatal`.
+3.  O payload inclui: Stack Trace, ID da Empresa, Rota e Body da requisição.
+4.  O processo **não** é encerrado (crash) para garantir disponibilidade, a menos que seja um erro irrecuperável de startup.
+
 ---
 
 ## 7. 🛠️ Normalização de Dados (Parsers)
@@ -556,7 +565,6 @@ O backend expõe utilitários para tratar a complexidade das mensagens do WhatsA
 * **Media Handling:** O sistema realiza o download e upload para o Supabase Storage apenas para mensagens em tempo real, preservando a performance durante a sincronização de histórico.
 
 ---
-
 
 ## 8. 📝 DICIONÁRIO DE LOGS E STATUS REAIS (MONITORAMENTO SIMPLIFICADO)
 Esta seção detalha os indicadores técnicos emitidos pelo Backend para monitoramento do fluxo de dados em tempo real.

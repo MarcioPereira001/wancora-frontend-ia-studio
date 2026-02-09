@@ -2,6 +2,7 @@
 import { BACKEND_URL } from '../config';
 import { createClient } from '@/utils/supabase/client';
 import { useRealtimeStore } from '@/store/useRealtimeStore';
+import { SystemLogger } from '@/lib/logger'; // Integração Logger
 
 // Se estiver no browser, prefira usar o proxy relativo (/api/v1) para evitar CORS
 // Se estiver no server side, use a URL completa
@@ -59,9 +60,9 @@ const checkDisconnectError = (errorBody: string) => {
 
 export const api = {
   get: async (endpoint: string) => {
+    const url = cleanUrl(endpoint);
     try {
       const headers = await getHeaders();
-      const url = cleanUrl(endpoint);
       
       const response = await fetch(url, {
         method: 'GET',
@@ -72,20 +73,32 @@ export const api = {
         const errorBody = await response.text();
         console.error(`API Error ${response.status} on ${url}:`, errorBody);
         checkDisconnectError(errorBody);
+        
+        // LOG AUTOMÁTICO NO BANCO (Network Error)
+        SystemLogger.error(`API GET Failed: ${endpoint}`, {
+            status: response.status,
+            body: errorBody.substring(0, 200),
+            url
+        });
+
         throw new Error(`API Error ${response.status}: ${errorBody}`);
       }
       
       return await response.json();
-    } catch (error) {
+    } catch (error: any) {
       console.error(`GET ${endpoint} failed:`, error);
+      // Loga exceções de rede (ex: servidor offline)
+      if (!error.message?.includes('API Error')) {
+          SystemLogger.error(`Network Error GET: ${endpoint}`, { message: error.message });
+      }
       throw error;
     }
   },
 
   post: async (endpoint: string, body: any) => {
+    const url = cleanUrl(endpoint);
     try {
       const headers = await getHeaders();
-      const url = cleanUrl(endpoint);
 
       const response = await fetch(url, {
         method: 'POST',
@@ -97,21 +110,33 @@ export const api = {
         const errorBody = await response.text();
         console.error(`API Error ${response.status} on ${url}:`, errorBody);
         checkDisconnectError(errorBody);
+
+        // LOG AUTOMÁTICO NO BANCO
+        SystemLogger.error(`API POST Failed: ${endpoint}`, {
+            status: response.status,
+            requestBody: JSON.stringify(body).substring(0, 200),
+            responseBody: errorBody.substring(0, 200),
+            url
+        });
+
         throw new Error(`API Error ${response.status}: ${errorBody}`);
       }
 
       const text = await response.text();
       return text ? JSON.parse(text) : {};
-    } catch (error) {
+    } catch (error: any) {
       console.error(`POST ${endpoint} failed:`, error);
+      if (!error.message?.includes('API Error')) {
+          SystemLogger.error(`Network Error POST: ${endpoint}`, { message: error.message });
+      }
       throw error;
     }
   },
 
   delete: async (endpoint: string) => {
+    const url = cleanUrl(endpoint);
     try {
         const headers = await getHeaders();
-        const url = cleanUrl(endpoint);
         
         const response = await fetch(url, {
             method: 'DELETE',
@@ -120,11 +145,22 @@ export const api = {
         if (!response.ok) {
             const errorBody = await response.text();
             checkDisconnectError(errorBody);
+            
+            // LOG AUTOMÁTICO
+            SystemLogger.error(`API DELETE Failed: ${endpoint}`, {
+                status: response.status,
+                body: errorBody.substring(0, 200),
+                url
+            });
+
             throw new Error(`API Error: ${response.statusText}`);
         }
         return true;
-    } catch (error) {
+    } catch (error: any) {
         console.error(`DELETE ${endpoint} failed:`, error);
+        if (!error.message?.includes('API Error')) {
+            SystemLogger.error(`Network Error DELETE: ${endpoint}`, { message: error.message });
+        }
         throw error;
     }
   }

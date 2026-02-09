@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -12,14 +11,15 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
 
 export function LogViewer() {
     const supabase = createClient();
     const [logs, setLogs] = useState<SystemLog[]>([]);
     const [loading, setLoading] = useState(true);
     const [isPaused, setIsPaused] = useState(false);
-    const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
+    
+    // Alterado para Set para suportar múltiplos abertos
+    const [expandedLogIds, setExpandedLogIds] = useState<Set<string>>(new Set());
     
     // Filtros
     const [filterLevel, setFilterLevel] = useState<'all' | 'error' | 'warn' | 'info'>('all');
@@ -76,6 +76,16 @@ export function LogViewer() {
         // Limpa visualmente primeiro
         setLogs([]);
         await supabase.from('system_logs').delete().neq('id', '00000000-0000-0000-0000-000000000000'); // Delete all
+    };
+
+    const toggleLog = (id: string) => {
+        const newSet = new Set(expandedLogIds);
+        if (newSet.has(id)) {
+            newSet.delete(id);
+        } else {
+            newSet.add(id);
+        }
+        setExpandedLogIds(newSet);
     };
 
     // Filtragem no Frontend (para performance de UI)
@@ -185,13 +195,13 @@ export function LogViewer() {
                 )}
 
                 {filteredLogs.map(log => {
-                    const isExpanded = expandedLogId === log.id;
+                    const isExpanded = expandedLogIds.has(log.id);
                     const style = getLevelColor(log.level);
                     
                     return (
                         <div key={log.id} className="group">
                             <div 
-                                onClick={() => setExpandedLogId(isExpanded ? null : log.id)}
+                                onClick={() => toggleLog(log.id)}
                                 className={cn(
                                     "flex items-center gap-3 p-2 rounded border border-transparent hover:bg-zinc-900 cursor-pointer transition-colors",
                                     isExpanded ? "bg-zinc-900 border-zinc-800" : ""
@@ -220,7 +230,7 @@ export function LogViewer() {
 
                             {/* Detalhes Expandidos (JSON View) */}
                             {isExpanded && (
-                                <div className="ml-11 mt-1 mb-2 p-4 bg-[#050505] rounded-lg border border-zinc-800 overflow-x-auto">
+                                <div className="ml-11 mt-1 mb-2 p-4 bg-[#050505] rounded-lg border border-zinc-800 overflow-x-auto animate-in slide-in-from-top-1">
                                     <table className="w-full text-left text-zinc-400">
                                         <tbody>
                                             <tr className="border-b border-zinc-900">

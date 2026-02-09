@@ -341,6 +341,16 @@ Um ambiente desktop simulado dentro do navegador para produtividade máxima.
     * Exporta e Salva como `.xlsx` (Excel) usando `exceljs` no cliente.
 * **Visualizador de Mídia:** Preview nativo de imagens e vídeos armazenados na nuvem.
 
+### 👁️ Módulo 8: Observabilidade & Super Admin (God Mode)
+Uma camada de infraestrutura invisível para monitoramento e gestão do SaaS.
+
+*   **Rota Secreta:** `/auth/login-admin`. Acessível apenas por usuários com `super_admin = true`.
+*   **Telemetria Unificada:**
+    *   **Frontend:** `GlobalErrorBoundary` captura crashes do React e envia para o banco silenciosamente via `SystemLogger`.
+    *   **Backend:** Middleware de erro global captura falhas do Express/Baileys e grava em `system_logs`.
+*   **Painel Matrix:** Interface em tempo real para visualizar logs, filtrar erros críticos e monitorar saúde do sistema sem acesso SSH.
+*   **Gestão de Tenants:** Capacidade de bloquear empresas (`status: blocked`), alterar planos manualmente e acessar contas de usuários (Impersonate) para suporte.
+
 ---
 
 ## 4. Fluxos Críticos (Core Business Rules)
