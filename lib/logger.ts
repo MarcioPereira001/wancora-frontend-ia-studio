@@ -52,7 +52,7 @@ export const SystemLogger = {
             });
         } catch (e) {
             // Se falhar o log, falha silenciosamente para não travar o app
-            // console.error("Falha no logger interno:", e); 
+            // console.warn("Falha no logger interno:", e); 
         }
     },
 
@@ -64,32 +64,39 @@ export const SystemLogger = {
     initGlobalHandlers: () => {
         if (typeof window === 'undefined') return;
 
+        // 1. Erros não tratados (Crash)
         window.onerror = (msg, url, line, col, error) => {
-            SystemLogger.error(msg as string, {
+            SystemLogger.error(`Global Error: ${msg}`, {
                 stack: error?.stack,
                 location: `${url}:${line}:${col}`
             });
-            return false; // Deixa o erro propagar
+            return false; // Deixa o erro propagar para o console dev
         };
 
+        // 2. Promises Rejeitadas (Async/Await sem try/catch)
         window.onunhandledrejection = (event) => {
             SystemLogger.error(`Unhandled Promise Rejection: ${event.reason}`, {
                 reason: event.reason
             });
         };
         
-        // Interceptador de console.error para produção
-        if (process.env.NODE_ENV === 'production') {
-            const originalConsoleError = console.error;
-            console.error = (...args) => {
-                // Filtra erros de extensão/React internals irrelevantes
-                const msg = args.map(a => String(a)).join(' ');
-                if (!msg.includes('Extension') && !msg.includes('hydration')) {
-                    SystemLogger.error('Console Error Intercepted', { args });
-                }
-                // Em produção, podemos optar por não mostrar no console original se quisermos "esconder"
-                // originalConsoleError.apply(console, args); 
-            };
-        }
+        // 3. CONSOLE INTERCEPTOR (Captura erros silenciosos e de libs terceiras)
+        const originalConsoleError = console.error;
+        console.error = (...args) => {
+            originalConsoleError.apply(console, args); // Mantém funcionamento no DevTools
+            
+            // Evita loop infinito se o erro vier do próprio Supabase ou extensão
+            const msg = args.map(a => String(a)).join(' ');
+            if (msg.includes('extension') || msg.includes('Extension') || msg.includes('hydration')) return;
+
+            // Extrai objeto de erro se existir
+            const errorObj = args.find(a => a instanceof Error);
+            
+            SystemLogger.error('Console Error Intercepted', { 
+                message: msg.substring(0, 500),
+                stack: errorObj?.stack,
+                args: args.map(a => typeof a === 'object' ? 'Object' : a) // Simplifica args para não estourar JSON
+            });
+        };
     }
 };
