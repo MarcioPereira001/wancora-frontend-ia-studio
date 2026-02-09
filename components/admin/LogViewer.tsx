@@ -18,16 +18,14 @@ export function LogViewer() {
     const [loading, setLoading] = useState(true);
     const [isPaused, setIsPaused] = useState(false);
     
-    // Alterado para Set para suportar múltiplos abertos
+    // Alterado para Set para suportar múltiplos logs abertos ao mesmo tempo
     const [expandedLogIds, setExpandedLogIds] = useState<Set<string>>(new Set());
     
     // Filtros
     const [filterLevel, setFilterLevel] = useState<'all' | 'error' | 'warn' | 'info'>('all');
     const [searchTerm, setSearchTerm] = useState('');
 
-    // Refs para controle de scroll e buffer
-    const scrollRef = useRef<HTMLDivElement>(null);
-    const logsRef = useRef<SystemLog[]>([]); // Ref para manter estado atual no callback do realtime
+    const logsRef = useRef<SystemLog[]>([]); 
 
     // Carregamento Inicial
     useEffect(() => {
@@ -40,13 +38,12 @@ export function LogViewer() {
                 schema: 'public', 
                 table: 'system_logs' 
             }, (payload) => {
-                if (isPaused) return; // Se pausado, ignora novos (para leitura)
+                if (isPaused) return; 
 
                 const newLog = payload.new as SystemLog;
                 
-                // Adiciona ao topo
                 setLogs(prev => {
-                    const updated = [newLog, ...prev].slice(0, 200); // Mantém apenas os últimos 200 na memória
+                    const updated = [newLog, ...prev].slice(0, 200); 
                     logsRef.current = updated;
                     return updated;
                 });
@@ -54,7 +51,7 @@ export function LogViewer() {
             .subscribe();
 
         return () => { supabase.removeChannel(channel); };
-    }, [isPaused]); // Re-bind se pause mudar? Não, controlamos no callback.
+    }, [isPaused]); 
 
     const fetchLogs = async () => {
         setLoading(true);
@@ -73,9 +70,8 @@ export function LogViewer() {
 
     const handleClearLogs = async () => {
         if (!confirm('Isso limpará os logs do banco de dados. Tem certeza?')) return;
-        // Limpa visualmente primeiro
         setLogs([]);
-        await supabase.from('system_logs').delete().neq('id', '00000000-0000-0000-0000-000000000000'); // Delete all
+        await supabase.from('system_logs').delete().neq('id', '00000000-0000-0000-0000-000000000000'); 
     };
 
     const toggleLog = (id: string) => {
@@ -88,7 +84,6 @@ export function LogViewer() {
         setExpandedLogIds(newSet);
     };
 
-    // Filtragem no Frontend (para performance de UI)
     const filteredLogs = logs.filter(log => {
         const matchesLevel = filterLevel === 'all' || 
             (filterLevel === 'error' && (log.level === 'error' || log.level === 'fatal')) ||
@@ -181,7 +176,7 @@ export function LogViewer() {
             </div>
 
             {/* Logs List */}
-            <div className="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-1 bg-black/40 font-mono text-xs relative" ref={scrollRef}>
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-1 bg-black/40 font-mono text-xs relative">
                 {loading && (
                     <div className="absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm z-10">
                         <div className="text-zinc-400">Carregando telemetria...</div>
@@ -190,7 +185,7 @@ export function LogViewer() {
                 
                 {filteredLogs.length === 0 && !loading && (
                     <div className="text-center py-20 text-zinc-600 italic">
-                        Nenhum log encontrado para os filtros atuais.
+                        Nenhum log encontrado.
                     </div>
                 )}
 

@@ -26,8 +26,9 @@ export async function getAdminClients() {
         .order('created_at', { ascending: false });
 
     if (error) {
-        console.error("Admin Fetch Error:", error);
-        throw new Error("Falha ao buscar clientes.");
+        console.error("Admin Fetch Error (getAdminClients):", error.message);
+        // Não lança erro genérico para facilitar o debug no frontend
+        return []; 
     }
     return companies;
 }
@@ -38,7 +39,7 @@ export async function toggleCompanyStatus(companyId: string, currentStatus: stri
         .from('companies')
         .update({ status: newStatus })
         .eq('id', companyId);
-    if (error) throw new Error("Erro ao atualizar status.");
+    if (error) throw new Error("Erro ao atualizar status: " + error.message);
     revalidatePath('/admin/users');
     return { success: true, newStatus };
 }
@@ -48,7 +49,7 @@ export async function updateCompanyPlan(companyId: string, newPlan: string) {
         .from('companies')
         .update({ plan: newPlan })
         .eq('id', companyId);
-    if (error) throw new Error("Erro ao atualizar plano.");
+    if (error) throw new Error("Erro ao atualizar plano: " + error.message);
     revalidatePath('/admin/users');
     return { success: true };
 }
@@ -74,7 +75,7 @@ export async function getAdminFeedbacks() {
         `)
         .order('created_at', { ascending: false });
 
-    if (error) throw new Error("Erro ao buscar feedbacks");
+    if (error) throw new Error("Erro ao buscar feedbacks: " + error.message);
     return data;
 }
 
