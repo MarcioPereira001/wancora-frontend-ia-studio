@@ -480,3 +480,124 @@ A tabela `products` serve como um cache de leitura. Não editamos produtos pelo 
 
 ---
 
+## Último SQL implementado:
+
+```SQL
+-- ============================================================
+-- 1. INFRAESTRUTURA DE LOGS (CAIXA PRETA)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.system_logs (
+    id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+    level text CHECK (level IN ('info', 'warn', 'error', 'fatal')),
+    source text CHECK (source IN ('frontend', 'backend', 'worker', 'baileys', 'database')),
+    message text,
+    metadata jsonb DEFAULT '{}',
+    company_id uuid REFERENCES public.companies(id) ON DELETE SET NULL,
+    user_id uuid REFERENCES public.profiles(id) ON DELETE SET NULL,
+    created_at timestamptz DEFAULT now()
+);
+
+-- Garante que o frontend possa escrever logs (RLS)
+ALTER TABLE public.system_logs ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Permitir insert público logs" ON public.system_logs FOR INSERT WITH CHECK (true);
+CREATE POLICY "Permitir leitura admin" ON public.system_logs FOR SELECT USING (
+    EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND super_admin = true)
+);
+
+-- ============================================================
+-- 2. SUPORTE E FEEDBACK
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.feedbacks (
+    id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id uuid REFERENCES public.profiles(id) ON DELETE CASCADE,
+    company_id uuid REFERENCES public.companies(id) ON DELETE CASCADE,
+    type text CHECK (type IN ('bug', 'suggestion', 'other')),
+    content text,
+    status text CHECK (status IN ('pending', 'viewed', 'resolved')) DEFAULT 'pending',
+    created_at timestamptz DEFAULT now()
+);
+
+-- ============================================================
+-- 3. SISTEMA DE INDICAÇÃO (GROWTH)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.referrals (
+    id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+    referrer_id uuid REFERENCES public.profiles(id),
+    referred_user_id uuid REFERENCES public.profiles(id),
+    status text CHECK (status IN ('pending', 'approved', 'paid')) DEFAULT 'pending',
+    created_at timestamptz DEFAULT now()
+);
+
+-- ============================================================
+-- 4. EXTENSÕES DE TABELAS EXISTENTES
+-- ============================================================
+
+-- Adiciona Super Admin e Código de Indicação aos Perfis
+DO $$ 
+BEGIN 
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'profiles' AND column_name = 'super_admin') THEN
+        ALTER TABLE public.profiles ADD COLUMN super_admin boolean DEFAULT false;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'profiles' AND column_name = 'referral_code') THEN
+        ALTER TABLE public.profiles ADD COLUMN referral_code text UNIQUE;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'profiles' AND column_name = 'referred_by') THEN
+        ALTER TABLE public.profiles ADD COLUMN referred_by uuid REFERENCES public.profiles(id);
+    END IF;
+END $$;
+
+-- Adiciona Retenção de Dados às Empresas
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'companies' AND column_name = 'storage_retention_days') THEN
+        ALTER TABLE public.companies ADD COLUMN storage_retention_days integer DEFAULT 30;
+    END IF;
+END $$;
+
+-- ============================================================
+-- 5. TABELAS TÉCNICAS (WHATSAPP & DRIVE)
+-- ============================================================
+
+-- Cache de Produtos do WhatsApp
+CREATE TABLE IF NOT EXISTS public.products (
+    id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+    company_id uuid REFERENCES public.companies(id) ON DELETE CASCADE,
+    product_id text NOT NULL,
+    name text,
+    description text,
+    price numeric,
+    currency text,
+    image_url text,
+    is_hidden boolean DEFAULT false,
+    created_at timestamptz DEFAULT now(),
+    UNIQUE(company_id, product_id)
+);
+
+-- Mapeamento de Identidade (LID Resolver - Anti-Bug iOS)
+CREATE TABLE IF NOT EXISTS public.identity_map (
+    lid_jid text NOT NULL,
+    phone_jid text NOT NULL,
+    company_id uuid REFERENCES public.companies(id) ON DELETE CASCADE,
+    created_at timestamptz DEFAULT now(),
+    PRIMARY KEY (lid_jid, company_id)
+);
+
+-- Logs de Webhook
+CREATE TABLE IF NOT EXISTS public.webhook_logs (
+    id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+    instance_id uuid REFERENCES public.instances(id) ON DELETE SET NULL,
+    event_type text,
+    status integer,
+    payload jsonb,
+    response_body text,
+    created_at timestamptz DEFAULT now()
+);
+
+-- ============================================================
+-- 6. ÍNDICES DE PERFORMANCE (TURBO MODE)
+-- ============================================================
+CREATE INDEX IF NOT EXISTS idx_messages_remote_jid_company ON public.messages(company_id, remote_jid);
+CREATE INDEX IF NOT EXISTS idx_contacts_last_message ON public.contacts(company_id, last_message_at DESC);
+CREATE INDEX IF NOT EXISTS idx_leads_company_phone ON public.leads(company_id, phone);
+CREATE INDEX IF NOT EXISTS idx_system_logs_created_at ON public.system_logs(created_at DESC);
+```

@@ -3,7 +3,7 @@ import React from 'react';
 import { createClient } from '@/utils/supabase/server';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
-import { ShieldAlert, Activity, Users, Home, LogOut } from 'lucide-react';
+import { ShieldAlert, Activity, Users, Home, MessageSquare, Settings } from 'lucide-react';
 
 export default async function AdminLayout({
   children,
@@ -47,6 +47,12 @@ export default async function AdminLayout({
                 </Link>
                 <Link href="/admin/users" className="hover:text-red-400 transition-colors flex items-center gap-2">
                     <Users className="w-4 h-4" /> CLIENTES
+                </Link>
+                <Link href="/admin/feedbacks" className="hover:text-red-400 transition-colors flex items-center gap-2">
+                    <MessageSquare className="w-4 h-4" /> FEEDBACKS
+                </Link>
+                <Link href="/admin/settings" className="hover:text-red-400 transition-colors flex items-center gap-2">
+                    <Settings className="w-4 h-4" /> CONFIG
                 </Link>
                 <Link href="/dashboard" className="hover:text-white transition-colors flex items-center gap-2 border-l border-zinc-800 pl-6">
                     <Home className="w-4 h-4" /> APP

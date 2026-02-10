@@ -11,8 +11,10 @@ import { GlobalSyncIndicator } from '@/components/layout/GlobalSyncIndicator';
 import { DisconnectAlert } from '@/components/modals/DisconnectAlert';
 import { VersionGuard } from '@/components/system/VersionGuard';
 import { FocusGuard } from '@/components/system/FocusGuard';
-import { GlobalErrorBoundary } from '@/components/system/GlobalErrorBoundary'; // NOVO
-import { LoggerInitializer } from '@/components/system/LoggerInitializer'; // NOVO (Wrapper client)
+import { GlobalErrorBoundary } from '@/components/system/GlobalErrorBoundary';
+import { LoggerInitializer } from '@/components/system/LoggerInitializer';
+import { MaintenanceGuard } from '@/components/system/MaintenanceGuard'; // NOVO
+import { SystemBroadcast } from '@/components/layout/SystemBroadcast'; // NOVO
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 const jetbrains = JetBrains_Mono({ subsets: ["latin"], variable: "--font-jetbrains" });
@@ -41,9 +43,11 @@ export default function RootLayout({
             <ToastProvider>
                 <AuthProvider>
                 <RealtimeProvider>
+                    <MaintenanceGuard /> {/* NOVO: Bloqueio de Segurança */}
                     <VersionGuard />
                     <FocusGuard />
-                    <LoggerInitializer /> {/* Inicializa Listeners */}
+                    <LoggerInitializer />
+                    <SystemBroadcast /> {/* NOVO: Avisos Globais */}
                     {children}
                     <GlobalSyncIndicator />
                     <DisconnectAlert />
