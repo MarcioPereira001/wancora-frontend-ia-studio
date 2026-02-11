@@ -46,6 +46,18 @@ export async function getBusySlots(ruleId: string, date: string) {
   return data;
 }
 
+// Helper para logar erros críticos direto no banco (bypassing backend se ele estiver off)
+async function logCriticalError(source: string, message: string, meta: any) {
+    const supabase = await createClient();
+    await supabase.from('system_logs').insert({
+        level: 'fatal',
+        source: 'frontend',
+        message: `[${source}] ${message}`,
+        metadata: meta,
+        created_at: new Date().toISOString()
+    });
+}
+
 export async function bookAppointment(formData: BookingData) {
   const supabase = await createClient();
   const validation = BookingSchema.safeParse(formData);
@@ -76,6 +88,7 @@ export async function bookAppointment(formData: BookingData) {
       });
 
       if (error) {
+          await logCriticalError('BookingRPC', error.message, { code: error.code, details: error.details });
           console.error("❌ [Booking] Erro RPC:", error);
           if (error.code === '42725') return { error: `Erro interno de configuração (Função duplicada).` };
           if (error.code === 'P0001') return { error: error.message };
@@ -83,6 +96,7 @@ export async function bookAppointment(formData: BookingData) {
       }
 
       if (data && data.error) {
+          await logCriticalError('BookingLogic', data.error, data);
           console.error("❌ [Booking] Erro Lógico RPC:", data.error);
           return { error: `${data.error}` };
       }
@@ -93,9 +107,11 @@ export async function bookAppointment(formData: BookingData) {
           const { data: appData } = await supabase.from('appointments').select('company_id').eq('id', data.id).single();
           
           if (appData) {
+               const targetUrl = `${API_URL}/appointments/confirm`;
                try {
-                   console.log(`🔔 [Booking] Chamando backend...`);
-                   const response = await fetch(`${API_URL}/appointments/confirm`, {
+                   console.log(`🔔 [Booking] Chamando backend: ${targetUrl}`);
+                   
+                   const response = await fetch(targetUrl, {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ 
@@ -104,27 +120,33 @@ export async function bookAppointment(formData: BookingData) {
                       })
                    });
                    
-                   const responseData = await response.json();
-                   debugInfo = responseData.debug || { message: "Sem debug do backend" };
-                   
                    if (!response.ok) {
-                       console.error(`❌ [Booking] Falha Backend:`, responseData);
-                       debugInfo.error = responseData.error;
-                   } else {
-                       console.log(`✅ [Booking] Backend Sucesso:`, debugInfo);
+                       const errorText = await response.text();
+                       throw new Error(`HTTP ${response.status}: ${errorText}`);
                    }
 
+                   const responseData = await response.json();
+                   debugInfo = responseData.debug || { message: "Backend OK" };
+                   console.log(`✅ [Booking] Backend Sucesso:`, debugInfo);
+
                } catch (fetchErr: any) {
+                   // AQUI ESTÁ O FIX: Grava no banco que o backend falhou
+                   await logCriticalError('BookingWebhook', 'Falha ao chamar Backend API', {
+                       url: targetUrl,
+                       error: fetchErr.message,
+                       appointmentId: data.id
+                   });
                    console.error("❌ [Booking] Erro fetch API:", fetchErr);
-                   debugInfo = { error: fetchErr.message, type: 'FETCH_ERROR' };
+                   debugInfo = { error: fetchErr.message, type: 'BACKEND_UNREACHABLE' };
                }
           }
       }
 
-      // Retorna sucesso E o debug para o cliente
+      // Retorna sucesso E o debug para o cliente (O agendamento foi criado, mesmo se o aviso falhou)
       return { success: true, debug: debugInfo };
 
   } catch (err: any) {
+      await logCriticalError('BookingFatal', err.message, { stack: err.stack });
       console.error("❌ [Booking] Exception Fatal:", err);
       return { error: "Erro inesperado.", debug: { exception: err.message } };
   }
