@@ -1,4 +1,3 @@
-
 'use server';
 
 import { createClient } from '@/utils/supabase/server';
@@ -52,7 +51,7 @@ export async function bookAppointment(formData: BookingData) {
   const validation = BookingSchema.safeParse(formData);
 
   if (!validation.success) {
-    return { error: "Dados inválidos: " + validation.error.errors[0].message };
+    return { error: "Dados inválidos: " + validation.error.issues[0].message };
   }
 
   const { slug, date, time, name, phone, email, notes } = validation.data;
