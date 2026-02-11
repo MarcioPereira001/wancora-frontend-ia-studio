@@ -122,7 +122,7 @@ export async function impersonateByEmail(email: string) {
 
     try {
         // Gera um Magic Link com validade curta (60s)
-        const { data, error } = await supabaseAdmin.auth.admin.generateLink({
+        const { data, error } = await (supabaseAdmin.auth as any).admin.generateLink({
             type: 'magiclink',
             email: email,
             options: {
