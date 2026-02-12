@@ -15,7 +15,7 @@ export function useSound() {
     try {
         const soundSrc = SOUNDS[type];
         
-        if (soundSrc) {
+        if (soundSrc && typeof window !== 'undefined') {
             const audio = new Audio(soundSrc);
             audio.volume = 0.5;
             
@@ -25,12 +25,13 @@ export function useSound() {
             if (playPromise !== undefined) {
                 playPromise.catch(error => {
                     // Ignora erros de interrupção ou autoplay bloqueado para não poluir logs
-                    // Silencio total
+                    // Silencio total ou log debug apenas
+                    // console.debug("Audio playback blocked:", error);
                 });
             }
         }
     } catch (error) {
-      // Falha silenciosa
+      // Falha silenciosa total para não travar a UI
     }
   }, []);
 

@@ -37,24 +37,20 @@ export default function PublicSchedulePage() {
   const [rule, setRule] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   
-  // Fluxo: 0=Date, 1=Time, 2=Form, 3=Success
   const [step, setStep] = useState(0);
   
-  // Calendar State
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [slots, setSlots] = useState<any[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
 
-  // Form State
   const [formData, setFormData] = useState({
       name: '',
       email: '',
       notes: ''
   });
   
-  // Phone State
   const [selectedCountry, setSelectedCountry] = useState(COUNTRIES[0]); // Default BR
   const [phoneNumber, setPhoneNumber] = useState('');
   const [isCountryOpen, setIsCountryOpen] = useState(false);
@@ -64,7 +60,6 @@ export default function PublicSchedulePage() {
 
   const [bookingLoading, setBookingLoading] = useState(false);
 
-  // Fecha dropdown ao clicar fora
   useEffect(() => {
       const handleClickOutside = (event: MouseEvent) => {
           if (countryDropdownRef.current && !countryDropdownRef.current.contains(event.target as Node)) {
@@ -75,7 +70,6 @@ export default function PublicSchedulePage() {
       return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Fetch Rule Initial
   useEffect(() => {
       const fetchRule = async () => {
           const data = await getPublicRule(slug);
@@ -85,13 +79,11 @@ export default function PublicSchedulePage() {
       fetchRule();
   }, [slug]);
 
-  // Fetch Slots when Date Selected
   useEffect(() => {
       if (selectedDate && rule) {
           const fetchSlots = async () => {
               setLoadingSlots(true);
               const dateStr = format(selectedDate, 'yyyy-MM-dd');
-              
               const dayOfWeek = selectedDate.getDay();
               
               if (!rule.days_of_week.includes(dayOfWeek)) {
@@ -111,7 +103,6 @@ export default function PublicSchedulePage() {
       }
   }, [selectedDate, rule]);
 
-  // --- MÁSCARA INTELIGENTE ---
   const handlePhoneInput = (e: React.ChangeEvent<HTMLInputElement>) => {
       const raw = e.target.value.replace(/\D/g, '');
       const limit = selectedCountry.limit;
@@ -149,7 +140,6 @@ export default function PublicSchedulePage() {
 
       const fullPhone = `${selectedCountry.code}${rawPhone}`;
 
-      // Date Logic
       const localDateTimeStr = `${format(selectedDate, 'yyyy-MM-dd')}T${selectedTime}:00`;
       const localDateObj = new Date(localDateTimeStr);
 
@@ -161,8 +151,6 @@ export default function PublicSchedulePage() {
 
       const dateToSend = `${utcYear}-${utcMonth}-${utcDay}`;
       const timeToSend = `${utcHours}:${utcMinutes}`;
-
-      console.log("Enviando agendamento...", { fullPhone, dateToSend, timeToSend });
 
       const result = await bookAppointment({
           slug,
@@ -177,21 +165,10 @@ export default function PublicSchedulePage() {
       setBookingLoading(false);
 
       if (result.error) {
-          console.error("Erro retornado:", result.error, result.debug);
           addToast({ type: 'error', title: 'Falha ao Agendar', message: result.error });
       } else {
-          // DEBUG: Mostra o log completo do backend no console do browser
-          console.group("✅ WANCORA DEBUG: Agendamento");
-          console.log("Status:", "Sucesso");
-          if(result.debug) {
-             console.log("Backend Logs:", result.debug.logs);
-             console.log("Debug Completo:", result.debug);
-          } else {
-             console.log("Sem logs de debug do backend.");
-          }
-          console.groupEnd();
-          
-          setStep(3); // Success
+          // Success
+          setStep(3); 
       }
   };
 
@@ -235,7 +212,6 @@ export default function PublicSchedulePage() {
       return (
           <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center gap-4">
               <Loader2 className="w-12 h-12 text-primary animate-spin" />
-              <p className="text-zinc-500 animate-pulse text-sm">Carregando...</p>
           </div>
       );
   }
@@ -346,7 +322,7 @@ export default function PublicSchedulePage() {
             <div className="flex-1 overflow-y-auto custom-scrollbar p-6 md:p-10">
             <AnimatePresence mode="wait">
                 
-                {/* STEPS 0, 1 e 2 (Mantidos do original) */}
+                {/* STEPS 0, 1 e 2 */}
                 {step === 0 && (
                     <motion.div key="step0" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full flex flex-col">
                         <div className="flex items-center justify-between mb-8">
@@ -498,12 +474,6 @@ export default function PublicSchedulePage() {
             </div>
         </div>
       </motion.div>
-      <div className="mt-8 text-center opacity-40 hover:opacity-100 transition-opacity">
-          <a href="https://wancora.com.br" target="_blank" className="flex items-center justify-center gap-2 text-xs font-medium text-zinc-500">
-              <span className="w-2 h-2 bg-primary rounded-full"></span>
-              Powered by Wancora CRM
-          </a>
-      </div>
     </div>
   );
 }
