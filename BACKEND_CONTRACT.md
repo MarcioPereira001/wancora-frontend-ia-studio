@@ -15,58 +15,73 @@ Repositsório original: https://github.com/DestravaVendas/wancora-backend.git
 wancora-backend/
 ├── 📁 auth/
 │   └── 📄 supabaseAuth.js        # Persistência de sessão Baileys no Supabase (JSONB fix)
+│
 ├── 📁 controllers/
 │   ├── 📄 appointmentController.js # [NOVO] Lógica de confirmação imediata de agendamentos
 │   ├── 📄 campaignController.js    # Controle de criação e disparo de campanhas
 │   ├── 📄 cloudController.js       # [NOVO] Controlador do Google Drive, Uploads e Conversões
 │   └── 📄 whatsappController.js    # Facade para sessão, mensagens, grupos e catálogo
+│
 ├── 📁 lib/
 │   └── 📄 schemas.js             # Schemas de validação Zod para payloads
+│
 ├── 📁 middleware/
 │   ├── 📄 auth.js                # Autenticação JWT e Validação Multi-Tenant (RBAC)
 │   ├── 📄 errorHandler.js        # [NOVO] Captura global de exceções e gravação no banco
 │   ├── 📄 limiter.js             # Rate Limiting (Redis) e Proteção DDoS
 │   └── 📄 validator.js           # Middleware de validação de Schema
+│
 ├── 📁 routes/
 │   ├── 📄 automation.routes.js   # Rotas de automação (campanhas, agenda)
 │   ├── 📄 cloud.routes.js        # [NOVO] Rotas de Cloud/Drive (Upload, List, Sync)
 │   ├── 📄 management.routes.js   # Rotas de gestão (grupos, comunidades, catálogo)
 │   ├── 📄 message.routes.js      # Rotas de mensageria (envio, voto, reação)
 │   └── 📄 session.routes.js      # Rotas de sessão (QR, status, logout)
+│
 ├── 📁 services/
 │   ├── 📁 ai/
 │   │   └── 📄 transcriber.js     # [NOVO] Transcrição de áudio via Gemini Flash
+│   │
 │   ├── 📁 baileys/
 │   │   ├── 📁 handlers/
 │   │   │   ├── 📄 contactHandler.js  # Lógica de presença e upsert de contatos
 │   │   │   ├── 📄 historyHandler.js  # Processamento de histórico inicial (Sync Barrier)
 │   │   │   ├── 📄 mediaHandler.js    # Download e upload de mídia (Sharp optimization)
 │   │   │   └── 📄 messageHandler.js  # Processamento central de mensagens
+│   │   │dentro de pasta .../baileys/
 │   │   ├── 📄 catalog.js         # Sincronização de Produtos do WhatsApp Business
 │   │   ├── 📄 community.js       # Gestão de Grupos e Comunidades
 │   │   ├── 📄 connection.js      # Core: Gestão de sockets e reconexão
 │   │   ├── 📄 listener.js        # Configuração de eventos do socket
 │   │   ├── 📄 messageQueue.js    # Fila de processamento de mensagens recebidas
 │   │   └── 📄 sender.js          # Protocolo de envio (Com suporte a Streaming do Drive)
+│   │   
 │   ├── 📁 crm/
 │   │   └── 📄 sync.js            # Integração com banco de dados (Leads/Contacts/Locks)
+│   │
 │   ├── 📁 google/                # [NOVO] Módulo de Integração Drive
 │   │   ├── 📄 authService.js     # OAuth2, Refresh Tokens e Autenticação
 │   │   └── 📄 driveService.js    # Lógica de Arquivos, Lixeira, Upload e Conversão DOCX
+│   │
 │   ├── 📁 integrations/
 │   │   └── 📄 webhook.js         # Disparo de webhooks externos
+│   │
 │   ├── 📁 scheduler/
 │   │   └── 📄 sentinel.js        # Agente de IA (Gemini) com suporte a Tools (Busca de Arq)
+│   │dentro de pasta .../services/
 │   └── 📄 redisClient.js         # Infra: Conexão Singleton com Redis
+│
 ├── 📁 utils/
 │   ├── 📄 audioConverter.js      # Conversão de áudio para OGG/Opus (FFmpeg)
 │   ├── 📄 logger.js              # [NOVO] Utilitário de gravação de logs no Supabase (SystemLogs)
 │   └── 📄 wppParsers.js          # Helpers de normalização (JID, Unwrap)
+│
 ├── 📁 workers/
 │   ├── 📄 agendaWorker.js        # [NOVO] Cron job para lembretes de agendamento (Redis Lock)
 │   ├── 📄 campaignQueue.js       # Definição da fila BullMQ
 │   ├── 📄 campaignWorker.js      # Processador de disparo em massa
 │   └── 📄 retentionWorker.js     # [NOVO] Worker de Ciclo de Vida (Mover mídia para Drive)
+│dentro da raiz
 ├── 📄 .gitignore
 ├── 📄 .slugignore
 ├── 📄 Dockerfile.txt             # Definição de Container

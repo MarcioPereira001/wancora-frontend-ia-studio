@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -5,19 +6,22 @@ import { createClient } from '@/utils/supabase/client';
 import { SystemLog } from '@/types';
 import { 
     AlertOctagon, AlertTriangle, Info, Terminal, 
-    Search, Filter, PauseCircle, PlayCircle, Trash2, ChevronDown, ChevronRight,
-    Globe, Database, Server
+    Search, PauseCircle, PlayCircle, Trash2, ChevronDown, ChevronRight,
+    Globe, Database, Server, Loader2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
+import { useToast } from '@/hooks/useToast';
 
 export function LogViewer() {
     const supabase = createClient();
+    const { addToast } = useToast();
     const [logs, setLogs] = useState<SystemLog[]>([]);
     const [loading, setLoading] = useState(true);
     const [isPaused, setIsPaused] = useState(false);
+    const [isClearing, setIsClearing] = useState(false);
     
     // Set para múltiplos logs abertos
     const [expandedLogIds, setExpandedLogIds] = useState<Set<string>>(new Set());
@@ -68,9 +72,24 @@ export function LogViewer() {
     };
 
     const handleClearLogs = async () => {
-        if (!confirm('Isso limpará os logs do banco de dados. Tem certeza?')) return;
-        setLogs([]);
-        await supabase.from('system_logs').delete().neq('id', '00000000-0000-0000-0000-000000000000'); 
+        if (!confirm('ATENÇÃO: Isso apagará TODO o histórico de logs do sistema permanentemente. Continuar?')) return;
+        
+        setIsClearing(true);
+        try {
+            // O filtro neq id '000...' é um trick seguro para permitir delete 'all' onde o where é obrigatório em alguns clientes, 
+            // embora o supabase js permita delete sem filtro, é boa prática.
+            const { error } = await supabase.from('system_logs').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+            
+            if (error) throw error;
+
+            setLogs([]);
+            addToast({ type: 'success', title: 'Sistema Limpo', message: 'Todos os logs foram removidos do banco de dados.' });
+        } catch (e: any) {
+            console.error(e);
+            addToast({ type: 'error', title: 'Erro ao Limpar', message: e.message || 'Verifique as permissões RLS no Supabase.' });
+        } finally {
+            setIsClearing(false);
+        }
     };
 
     const toggleLog = (id: string) => {
@@ -176,10 +195,11 @@ export function LogViewer() {
                         size="icon" 
                         variant="ghost" 
                         onClick={handleClearLogs}
+                        disabled={isClearing}
                         className="h-9 w-9 text-zinc-600 hover:text-red-500 hover:bg-red-500/10"
                         title="Limpar Logs"
                     >
-                        <Trash2 className="w-5 h-5" />
+                        {isClearing ? <Loader2 className="w-4 h-4 animate-spin text-red-500" /> : <Trash2 className="w-5 h-5" />}
                     </Button>
                 </div>
             </div>
