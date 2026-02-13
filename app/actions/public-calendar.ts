@@ -102,53 +102,42 @@ export async function bookAppointment(formData: BookingData) {
           return { error: `${data.error}` };
       }
 
-      // 2. Disparar Notificação (Webhook Interno)
-      // AWAIT EXPLÍCITO para capturar o log do backend
+      // 2. Disparar Notificação (Webhook Interno para o Backend)
+      // Este passo é crucial. Se o backend estiver online, ele envia a mensagem.
       if (data?.id) {
           const { data: appData } = await supabase.from('appointments').select('company_id').eq('id', data.id).single();
           
           if (appData) {
                const targetUrl = `${API_URL}/appointments/confirm`;
-               try {
-                   console.log(`🔔 [Booking] Chamando backend: ${targetUrl}`);
-                   
-                   const response = await fetch(targetUrl, {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ 
-                          appointmentId: data.id,
-                          companyId: appData.company_id
-                      })
-                   });
-                   
-                   if (!response.ok) {
-                       const errorText = await response.text();
-                       throw new Error(`HTTP ${response.status}: ${errorText}`);
+               
+               // Executa fetch sem esperar o retorno total da UI, mas loga erro se falhar
+               fetch(targetUrl, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ 
+                      appointmentId: data.id,
+                      companyId: appData.company_id
+                  })
+               }).then(async (res) => {
+                   if (!res.ok) {
+                       const txt = await res.text();
+                       console.error(`❌ [Booking] Backend rejeitou confirmação: ${res.status} - ${txt}`);
+                       await logCriticalError('BookingAPI', `Backend Error ${res.status}`, { response: txt });
+                   } else {
+                       console.log(`✅ [Booking] Confirmação disparada com sucesso.`);
                    }
-
-                   const responseData = await response.json();
-                   debugInfo = responseData.debug || { message: "Backend OK" };
-                   console.log(`✅ [Booking] Backend Sucesso:`, debugInfo);
-
-               } catch (fetchErr: any) {
-                   // AQUI ESTÁ O FIX: Grava no banco que o backend falhou
-                   await logCriticalError('BookingWebhook', 'Falha ao chamar Backend API', {
-                       url: targetUrl,
-                       error: fetchErr.message,
-                       appointmentId: data.id
-                   });
-                   console.error("❌ [Booking] Erro fetch API:", fetchErr);
-                   debugInfo = { error: fetchErr.message, type: 'BACKEND_UNREACHABLE' };
-               }
+               }).catch(async (fetchErr) => {
+                   console.error("❌ [Booking] Backend inalcançável:", fetchErr);
+                   await logCriticalError('BookingAPI', 'Backend Unreachable', { error: fetchErr.message });
+               });
           }
       }
 
-      // Retorna sucesso E o debug para o cliente (O agendamento foi criado, mesmo se o aviso falhou)
-      return { success: true, debug: debugInfo };
+      return { success: true };
 
   } catch (err: any) {
       await logCriticalError('BookingFatal', err.message, { stack: err.stack });
       console.error("❌ [Booking] Exception Fatal:", err);
-      return { error: "Erro inesperado.", debug: { exception: err.message } };
+      return { error: "Erro inesperado ao processar agendamento." };
   }
 }
