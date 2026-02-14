@@ -3,14 +3,14 @@
 
 import React, { useEffect, useState } from 'react';
 import { useAuthStore } from '@/store/useAuthStore';
-import { useRealtimeStore } from '@/store/useRealtimeStore'; // Import adicionado
+import { useRealtimeStore } from '@/store/useRealtimeStore'; 
 import { useToast } from '@/hooks/useToast';
 import { getMyAvailability, saveAvailabilityRules, type AvailabilityFormData } from '@/app/actions/calendar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Calendar, Clock, Globe, Save, Loader2, Copy, Bell, MessageSquare, Plus, Trash2, Send } from 'lucide-react';
+import { Calendar, Clock, Globe, Save, Loader2, Copy, Bell, MessageSquare, Plus, Trash2, Send, Smartphone } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { createClient } from '@/utils/supabase/client';
 import { api } from '@/services/api';
@@ -50,6 +50,7 @@ export default function CalendarSettingsPage() {
 
   // Notification State
   const [notifConfig, setNotifConfig] = useState<any>({
+      sending_session_id: '', // Campo Novo
       admin_phone: '',
       admin_notifications: [],
       lead_notifications: []
@@ -81,6 +82,7 @@ export default function CalendarSettingsPage() {
             } else {
                 // Defaults
                 setNotifConfig({
+                    sending_session_id: '',
                     admin_phone: '',
                     admin_notifications: [{ 
                         id: 'default-1', type: 'on_booking', active: true, 
@@ -173,7 +175,8 @@ export default function CalendarSettingsPage() {
       if(!phone || !text) return;
       
       // Busca uma sessão válida (conectada)
-      const activeSession = instances.find(i => i.status === 'connected')?.session_id || 'default';
+      // Prioriza a selecionada, senão pega qualquer uma
+      const activeSession = notifConfig.sending_session_id || instances.find(i => i.status === 'connected')?.session_id || 'default';
 
       try {
           await api.post('/message/send', {
@@ -306,6 +309,29 @@ export default function CalendarSettingsPage() {
 
         {activeTab === 'notifications' && (
             <div className="space-y-6 animate-in slide-in-from-right-4">
+                
+                {/* SELETOR DE INSTÂNCIA */}
+                <Card className="bg-zinc-900/50 border-zinc-800">
+                    <CardHeader>
+                        <CardTitle className="text-lg text-white flex items-center gap-2"><Smartphone className="w-5 h-5 text-green-500" /> Dispositivo de Envio</CardTitle>
+                        <CardDescription>Escolha por qual WhatsApp os avisos serão enviados.</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <select 
+                            value={notifConfig.sending_session_id || ''}
+                            onChange={e => setNotifConfig({ ...notifConfig, sending_session_id: e.target.value })}
+                            className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2.5 text-sm text-white"
+                        >
+                            <option value="">Automático (Qualquer online)</option>
+                            {instances.map(inst => (
+                                <option key={inst.id} value={inst.session_id}>
+                                    {inst.name} ({inst.status === 'connected' ? 'Online' : 'Offline'})
+                                </option>
+                            ))}
+                        </select>
+                    </CardContent>
+                </Card>
+
                 {/* Config Admin */}
                 <Card className="bg-zinc-900/50 border-zinc-800">
                     <CardHeader>
