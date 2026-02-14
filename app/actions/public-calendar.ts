@@ -60,13 +60,12 @@ export async function bookAppointment(formData: BookingData) {
       if (data?.error) return { error: data.error };
 
       // 2. Disparar Webhook para Backend (Fire and Forget)
-      // CRÍTICO: Não usamos 'await' aqui. O backend processa em background.
-      // Se o backend estiver off, o usuário ainda vê "Sucesso" no agendamento.
       if (data?.id) {
           const { data: appData } = await supabase.from('appointments').select('company_id').eq('id', data.id).single();
           
           if (appData) {
                const endpoint = `${API_URL}/appointments/confirm`;
+               console.log(`[Booking] Disparando webhook para: ${endpoint}`);
                
                // Fetch sem await
                fetch(endpoint, {
@@ -76,7 +75,10 @@ export async function bookAppointment(formData: BookingData) {
                       appointmentId: data.id,
                       companyId: appData.company_id
                   })
-               }).catch(e => console.error("[Booking] Falha silenciosa no envio (Fire&Forget):", e.message));
+               }).then(res => {
+                   if (!res.ok) console.error(`[Booking] Erro Backend: ${res.status} ${res.statusText}`);
+                   else console.log(`[Booking] Webhook enviado com sucesso.`);
+               }).catch(e => console.error("[Booking] Falha de conexão com Backend:", e.message));
           }
       }
 
