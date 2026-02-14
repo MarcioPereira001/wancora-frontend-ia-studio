@@ -54,20 +54,21 @@ export async function bookAppointment(formData: BookingData) {
 
       if (error) {
           console.error("[Booking] RPC Error:", error);
-          return { error: "Erro ao salvar agendamento. Tente novamente." };
+          return { error: "Erro ao salvar agendamento." };
       }
 
       if (data?.error) return { error: data.error };
 
       // 2. Disparar Webhook para Backend (Fire and Forget)
-      // Não usamos 'await' aqui para não fazer o usuário esperar o envio do WhatsApp
+      // CRÍTICO: Não usamos 'await' aqui. O backend processa em background.
+      // Se o backend estiver off, o usuário ainda vê "Sucesso" no agendamento.
       if (data?.id) {
           const { data: appData } = await supabase.from('appointments').select('company_id').eq('id', data.id).single();
           
           if (appData) {
                const endpoint = `${API_URL}/appointments/confirm`;
                
-               // Dispara fetch sem bloquear retorno
+               // Fetch sem await
                fetch(endpoint, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
@@ -75,7 +76,7 @@ export async function bookAppointment(formData: BookingData) {
                       appointmentId: data.id,
                       companyId: appData.company_id
                   })
-               }).catch(e => console.error("[Booking] Falha silenciosa no envio:", e.message));
+               }).catch(e => console.error("[Booking] Falha silenciosa no envio (Fire&Forget):", e.message));
           }
       }
 
