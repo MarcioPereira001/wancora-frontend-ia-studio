@@ -8,7 +8,7 @@ import { generateSlots } from '@/utils/calendar';
 import { 
     Calendar as CalendarIcon, Clock, CheckCircle2, User, 
     Phone, Mail, FileText, ChevronLeft, ChevronRight, Loader2, 
-    MapPin, ChevronDown
+    MapPin, ChevronDown, Target, ArrowLeft
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -93,6 +93,7 @@ export default function PublicSchedulePage() {
               }
 
               const busy = await getBusySlots(rule.rule_id, dateStr);
+              // A função generateSlots já filtra horários passados
               const generated = generateSlots(dateStr, rule, busy);
               setSlots(generated);
               setLoadingSlots(false);
@@ -167,7 +168,6 @@ export default function PublicSchedulePage() {
       if (result.error) {
           addToast({ type: 'error', title: 'Falha ao Agendar', message: result.error });
       } else {
-          // Success
           setStep(3); 
       }
   };
@@ -273,7 +273,8 @@ export default function PublicSchedulePage() {
                     </div>
                 </div>
 
-                <h1 className="text-2xl font-bold text-white mb-6 leading-tight">{rule.name}</h1>
+                <h1 className="text-2xl font-bold text-white mb-2 leading-tight">{rule.name}</h1>
+                <p className="text-sm text-zinc-400 mb-6">{rule.event_goal || 'Reunião'}</p>
                 
                 <div className="space-y-4">
                     <div className="flex items-center gap-3 text-zinc-400 text-sm bg-zinc-900/50 p-3 rounded-xl border border-zinc-800/50">
@@ -282,7 +283,10 @@ export default function PublicSchedulePage() {
                     </div>
                     <div className="flex items-center gap-3 text-zinc-400 text-sm bg-zinc-900/50 p-3 rounded-xl border border-zinc-800/50">
                         <MapPin className="w-5 h-5 text-blue-500" />
-                        <span className="font-medium">Google Meet / Online</span>
+                        <div className="flex flex-col">
+                             <span className="font-medium capitalize">{rule.event_location_type || 'Online'}</span>
+                             <span className="text-[10px] text-zinc-500">{rule.event_location_details || 'Link enviado após agendar'}</span>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -355,10 +359,15 @@ export default function PublicSchedulePage() {
 
                 {step === 1 && (
                     <motion.div key="step1" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full flex flex-col">
-                        <h2 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
-                            <Clock className="w-5 h-5 text-primary" />
-                            Horários Disponíveis
-                        </h2>
+                        <div className="flex items-center gap-3 mb-6">
+                            <Button variant="ghost" size="icon" onClick={() => setStep(0)} className="text-zinc-500 hover:text-white -ml-3">
+                                <ArrowLeft className="w-5 h-5" />
+                            </Button>
+                            <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                                <Clock className="w-5 h-5 text-primary" />
+                                Horários Disponíveis
+                            </h2>
+                        </div>
                         {loadingSlots ? (
                             <div className="flex-1 flex flex-col items-center justify-center gap-4 py-12">
                                 <Loader2 className="w-10 h-10 text-zinc-600 animate-spin" />
@@ -367,7 +376,7 @@ export default function PublicSchedulePage() {
                         ) : slots.length === 0 ? (
                             <div className="text-center py-12 bg-zinc-900/30 rounded-2xl border border-zinc-800 border-dashed">
                                 <p className="text-zinc-400">Nenhum horário disponível.</p>
-                                <Button variant="link" onClick={() => setStep(0)} className="text-primary mt-2">Voltar</Button>
+                                <Button variant="link" onClick={() => setStep(0)} className="text-primary mt-2">Escolher outra data</Button>
                             </div>
                         ) : (
                             <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
@@ -393,10 +402,16 @@ export default function PublicSchedulePage() {
 
                 {step === 2 && (
                     <motion.div key="step2" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6 max-w-md mx-auto">
-                         <h2 className="text-xl font-bold text-white mb-2 flex items-center gap-2">
-                            <FileText className="w-5 h-5 text-primary" />
-                            Preencha seus dados
-                        </h2>
+                        <div className="flex items-center gap-3 mb-2">
+                            <Button variant="ghost" size="icon" onClick={() => setStep(1)} className="text-zinc-500 hover:text-white -ml-3">
+                                <ArrowLeft className="w-5 h-5" />
+                            </Button>
+                            <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                                <FileText className="w-5 h-5 text-primary" />
+                                Preencha seus dados
+                            </h2>
+                        </div>
+
                         <div className="space-y-5">
                             <div className="space-y-1.5">
                                 <label className="text-xs font-bold text-zinc-400 uppercase ml-1">Qual o seu nome?</label>
@@ -457,7 +472,7 @@ export default function PublicSchedulePage() {
                         </div>
                         <h2 className="text-4xl font-bold text-white mb-4 tracking-tight">Agendado!</h2>
                         <div className="bg-zinc-900/50 p-6 rounded-2xl border border-zinc-800 max-w-sm w-full mb-8">
-                            <p className="text-zinc-400 text-sm mb-1">Sua reunião foi confirmada para</p>
+                            <p className="text-zinc-400 text-sm mb-1">{rule.event_goal} confirmada para</p>
                             <p className="text-xl font-bold text-white capitalize">{format(selectedDate!, "EEEE, d 'de' MMMM", { locale: ptBR })}</p>
                             <div className="text-3xl font-mono font-bold text-primary mt-2">{selectedTime}</div>
                         </div>

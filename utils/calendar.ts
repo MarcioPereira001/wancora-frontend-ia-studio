@@ -1,4 +1,5 @@
 
+
 /**
  * Utilitário de Lógica de Calendário (Robust Edition)
  * Responsável por gerar slots e validar colisões com suporte a eventos cross-day.
@@ -63,6 +64,11 @@ export function generateSlots(
   }));
 
   let currentSlotStart = new Date(workStart);
+  
+  // Agora (para filtrar passado)
+  const now = new Date();
+  // Margem de segurança de 30min para não agendar muito em cima da hora
+  const minFutureTime = new Date(now.getTime() + 30 * 60000);
 
   // 3. Iterar gerando slots
   while (addMinutes(currentSlotStart, duration) <= workEnd) {
@@ -70,31 +76,23 @@ export function generateSlots(
       const slotEndTime = addMinutes(currentSlotStart, duration).getTime();
       
       // Janela Efetiva do Slot (Incluindo Buffer Antes se necessário para colisão)
-      // A colisão deve considerar o tempo real ocupado pelo slot
       const effectiveStart = slotStartTime - (bufferBefore * 60000);
-      const effectiveEnd = slotEndTime; // Buffer after é tempo morto depois, já garantido pelo step
+      const effectiveEnd = slotEndTime;
 
       // 4. Detecção de Colisão Robusta
       const isBusy = busyIntervals.some(busy => {
-          // Lógica de Interseção de Intervalos:
-          // (Slot começa antes do Busy terminar) E (Slot termina depois do Busy começar)
           return effectiveStart < busy.end && effectiveEnd > busy.start;
       });
 
-      // 5. Validação de Passado (Se for hoje)
-      let isPast = false;
-      const now = new Date();
-      // Adiciona uma margem de segurança de 30min para não agendar muito em cima
-      const nowWithMargin = new Date(now.getTime() + 30 * 60000); 
-      
-      if (slotStartTime < nowWithMargin.getTime()) {
-          isPast = true;
+      // 5. Validação de Passado (Oculta se já passou)
+      // Se a data do slot for menor que agora + margem, considera passado.
+      // O filtro aqui é crítico para não exibir horários inúteis
+      if (slotStartTime > minFutureTime.getTime()) {
+           slots.push({
+              time: currentSlotStart.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              available: !isBusy
+          });
       }
-
-      slots.push({
-          time: currentSlotStart.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          available: !isBusy && !isPast
-      });
 
       // Próximo slot: Início atual + Duração + Buffer Depois
       currentSlotStart = addMinutes(currentSlotStart, step);

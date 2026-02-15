@@ -268,6 +268,8 @@ export interface Appointment {
   category?: string;
   reminder_sent?: boolean;
   confirmation_sent?: boolean;
+  send_notifications?: boolean;
+  custom_notification_config?: any;
 }
 
 // --- ADMIN & LOGS TYPES ---

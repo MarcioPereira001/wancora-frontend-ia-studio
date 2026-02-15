@@ -338,14 +338,13 @@ Payload enviado para o seu n8n/Typebot:
 
 ### 3.7. Automação de Agenda (Automation Service)
 `POST /appointments/confirm` (Disparo Imediato)
-Acionado pelo Frontend público (`/agendar/[slug]`) logo após criar um agendamento.
+Acionado pelo Frontend público (`/agendar/[slug]`) ou interno logo após criar um agendamento.
 * **Função:** Lê as regras de `notification_config` do usuário e dispara as mensagens do tipo `on_booking` (Confirmação imediata) para o Admin e para o Lead.
-* **Body:** `{ "appointmentId": "uuid", "companyId": "uuid" }`
+* **Body:**
 ```json
 {
   "appointmentId": "uuid",
   "companyId": "uuid",
-  "sessionId": "string" // Opcional (O backend resolve a sessão ativa se omitido)
 }```
 
 ### 3.8. Cloud Drive (Google Integration)
@@ -566,10 +565,10 @@ Em caso de falha, a API retorna:
 
 ### 6.1. Telemetria de Erros (System Logs)
 O Backend implementa um padrão de "Observabilidade Silenciosa".
-1.  Qualquer exceção não tratada (`uncaughtException`, `unhandledRejection`) ou erro 500 em rotas é interceptado.
-2.  O erro é gravado na tabela `system_logs` via `utils/logger.js` com nível `error` ou `fatal`.
-3.  O payload inclui: Stack Trace, ID da Empresa, Rota e Body da requisição.
-4.  O processo **não** é encerrado (crash) para garantir disponibilidade, a menos que seja um erro irrecuperável de startup.
+1.  Qualquer exceção não tratada (`uncaughtException`, `unhandledRejection`) ou erro 500 em rotas é interceptado pelo middleware `errorHandler.js`.
+2.  O erro é gravado na tabela `system_logs` via `utils/logger.js`.
+3.  **Console Hijacking:** `console.error` e `console.warn` originais foram sobrescritos para também enviar cópias para o banco de dados, permitindo debug remoto sem acesso ao terminal do servidor.
+4.  O payload inclui: Stack Trace, ID da Empresa, Rota, Body e User ID.
 
 ---
 

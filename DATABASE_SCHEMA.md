@@ -220,8 +220,10 @@ Unificação de calendário e gerenciador de tarefas.
 * `meet_link`: text
 * `origin`: text (Default: 'internal')
 * `ai_summary`: text
-* `reminder_sent`: boolean (Controle para o Worker não enviar duplicado)
-* `confirmation_sent`: boolean (Controle de envio imediato `on_booking`)
+* `reminder_sent`: boolean (Default: false) - Evita disparo duplicado pelo Worker.
+* `confirmation_sent`: boolean (Default: false) - Controle de envio imediato.
+* `send_notifications`: boolean (Default: true) - Toggle por evento.
+* `custom_notification_config`: jsonb - Sobrescreve a regra global se preenchido.
 
 ### `availability_rules` (Agendamento Inteligente)
 Define as regras de horários para o sistema de agendamento (tipo Calendly).
@@ -237,17 +239,20 @@ Define as regras de horários para o sistema de agendamento (tipo Calendly).
 * `buffer_before`: integer
 * `buffer_after`: integer
 * `is_active`: boolean
+* `event_goal`: text (Default: 'Reunião') - Ex: "Consulta", "Mentoria".
+* `event_location_type`: text ('online', 'presencial')
+* `event_location_details`: text (Ex: "Google Meet", "Rua X...").
 * `notification_config`: jsonb (CRÍTICO) - Configurações de automação.
   * Schema:
     ```json
     { 
+      "sending_session_id": "uuid_ou_null",
       "admin_phone": "5511999999999", 
       "admin_notifications": [
-        { "id": "uuid", "type": "on_booking", "active": true, "template": "Novo agendamento de [lead_name]..." },
-        { "id": "uuid", "type": "before_event", "time_amount": 1, "time_unit": "hours", "template": "Falta 1h..." }
+        { "id": "uuid", "type": "on_booking", "active": true, "template": "Novo agendamento..." }
       ], 
       "lead_notifications": [
-        { "id": "uuid", "type": "before_event", "time_amount": 30, "time_unit": "minutes", "template": "Olá [lead_name], sua reunião começa em 30min." }
+        { "id": "uuid", "type": "on_booking", "active": true, "template": "Confirmação..." }
       ] 
     }
     ```
@@ -320,6 +325,15 @@ Espelho local dos metadados do Drive para navegação instantânea (0ms latency)
 * `updated_at`: timestamptz
 * **Constraint:** `UNIQUE(company_id, google_id)`
 
+### `system_config` (Global Settings) [NOVO]
+Configurações globais do SaaS (Singleton).
+* `id`: uuid (PK, Default Zero UUID)
+* `maintenance_mode`: boolean (Default: false) - Kill Switch global.
+* `broadcast_active`: boolean (Default: false)
+* `broadcast_message`: text
+* `broadcast_level`: text ('info', 'warning', 'error')
+* `updated_at`: timestamptz
+
 ### `system_logs` (Telemetria & Erros) [NOVO]
 A caixa preta do sistema. Grava erros de frontend, backend e workers.
 * `id`: uuid (PK)
@@ -351,7 +365,7 @@ Sistema de indicação.
 
 ### `profiles` (Extensão Admin)
 * ... colunas existentes ...
-* `super_admin`: boolean (Default: false) - **[CRÍTICO]** Flag de acesso ao /auth/login-admin.
+* `super_admin`: boolean (Default: false) - **[CRÍTICO]** Flag de acesso ao painel /admin.
 * `referral_code`: text (Unique) - Código de indicação do usuário.
 * `referred_by`: uuid (FK -> profiles) - Quem indicou este usuário.
 

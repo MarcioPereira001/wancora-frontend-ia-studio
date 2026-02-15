@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Calendar, Clock, Globe, Save, Loader2, Copy, Bell, MessageSquare, Plus, Trash2, Send, Smartphone } from 'lucide-react';
+import { Calendar, Globe, Save, Loader2, Copy, Bell, MessageSquare, Plus, Trash2, Send, Smartphone, MapPin, Target } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { createClient } from '@/utils/supabase/client';
 import { api } from '@/services/api';
@@ -29,13 +29,13 @@ const DURATIONS = [15, 30, 45, 60, 90, 120];
 
 export default function CalendarSettingsPage() {
   const { user } = useAuthStore();
-  const { instances } = useRealtimeStore(); // Hook para pegar sessões ativas
+  const { instances } = useRealtimeStore(); 
   const { addToast } = useToast();
   const supabase = createClient();
   
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState<'general' | 'notifications'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'appearance' | 'notifications'>('general');
   
   // Data State
   const [formData, setFormData] = useState<AvailabilityFormData>({
@@ -45,18 +45,20 @@ export default function CalendarSettingsPage() {
     start_hour: '09:00',
     end_hour: '18:00',
     slot_duration: 30,
-    is_active: true
+    is_active: true,
+    event_goal: 'Reunião',
+    event_location_type: 'online',
+    event_location_details: 'Google Meet'
   });
 
   // Notification State
   const [notifConfig, setNotifConfig] = useState<any>({
-      sending_session_id: '', // Campo Novo
+      sending_session_id: '',
       admin_phone: '',
       admin_notifications: [],
       lead_notifications: []
   });
 
-  // Search State for Admin Phone
   const [adminSearch, setAdminSearch] = useState('');
   const [adminSuggestions, setAdminSuggestions] = useState<any[]>([]);
 
@@ -73,14 +75,20 @@ export default function CalendarSettingsPage() {
                 start_hour: data.start_hour ? data.start_hour.slice(0, 5) : '09:00',
                 end_hour: data.end_hour ? data.end_hour.slice(0, 5) : '18:00',
                 slot_duration: data.slot_duration,
-                is_active: data.is_active
+                is_active: data.is_active,
+                event_goal: data.event_goal || 'Reunião',
+                event_location_type: data.event_location_type || 'online',
+                event_location_details: data.event_location_details || 'Google Meet'
             });
             // Load Notifications
             if (data.notification_config) {
-                setNotifConfig(data.notification_config);
+                setNotifConfig({
+                    ...data.notification_config,
+                    // Garante fallback se estiver vazio
+                    sending_session_id: data.notification_config.sending_session_id || '' 
+                });
                 setAdminSearch(data.notification_config.admin_phone || '');
             } else {
-                // Defaults
                 setNotifConfig({
                     sending_session_id: '',
                     admin_phone: '',
@@ -111,7 +119,6 @@ export default function CalendarSettingsPage() {
   const handleSave = async () => {
       setIsSaving(true);
       try {
-          // Merge notification config into payload
           const payload = { ...formData, notification_config: notifConfig };
           
           const result = await saveAvailabilityRules(payload);
@@ -130,7 +137,7 @@ export default function CalendarSettingsPage() {
 
   const searchAdminContact = async (query: string) => {
       setAdminSearch(query);
-      setNotifConfig({...notifConfig, admin_phone: query}); // Allow direct typing
+      setNotifConfig({...notifConfig, admin_phone: query}); 
       if (query.length < 3 || !user?.company_id) return;
       const { data } = await supabase.from('contacts')
         .select('name, jid')
@@ -173,14 +180,10 @@ export default function CalendarSettingsPage() {
 
   const testNotification = async (phone: string, text: string) => {
       if(!phone || !text) return;
-      
-      // Busca uma sessão válida (conectada)
-      // Prioriza a selecionada, senão pega qualquer uma
       const activeSession = notifConfig.sending_session_id || instances.find(i => i.status === 'connected')?.session_id || 'default';
-
       try {
           await api.post('/message/send', {
-              sessionId: activeSession, // Usa a sessão real encontrada
+              sessionId: activeSession, 
               companyId: user?.company_id,
               to: phone,
               type: 'text',
@@ -188,7 +191,7 @@ export default function CalendarSettingsPage() {
           });
           addToast({ type: 'success', title: 'Enviado', message: 'Mensagem de teste enviada.' });
       } catch (e) {
-          addToast({ type: 'error', title: 'Erro', message: 'Falha ao enviar teste. Verifique se o WhatsApp está conectado.' });
+          addToast({ type: 'error', title: 'Erro', message: 'Falha ao enviar teste.' });
       }
   };
 
@@ -217,6 +220,9 @@ export default function CalendarSettingsPage() {
       <div className="flex border-b border-zinc-800">
           <button onClick={() => setActiveTab('general')} className={cn("px-6 py-3 text-sm font-bold border-b-2 transition-colors", activeTab === 'general' ? "border-primary text-primary" : "border-transparent text-zinc-500 hover:text-white")}>
               Geral & Horários
+          </button>
+          <button onClick={() => setActiveTab('appearance')} className={cn("px-6 py-3 text-sm font-bold border-b-2 transition-colors", activeTab === 'appearance' ? "border-primary text-primary" : "border-transparent text-zinc-500 hover:text-white")}>
+              Página Pública
           </button>
           <button onClick={() => setActiveTab('notifications')} className={cn("px-6 py-3 text-sm font-bold border-b-2 transition-colors", activeTab === 'notifications' ? "border-primary text-primary" : "border-transparent text-zinc-500 hover:text-white")}>
               Automação de Avisos
@@ -307,10 +313,73 @@ export default function CalendarSettingsPage() {
             </div>
         )}
 
+        {/* NOVA ABA: APARÊNCIA PÚBLICA */}
+        {activeTab === 'appearance' && (
+             <div className="space-y-6 animate-in slide-in-from-right-4">
+                 <Card className="bg-zinc-900/50 border-zinc-800">
+                    <CardHeader>
+                        <CardTitle className="text-lg text-white">Informações do Evento</CardTitle>
+                        <CardDescription>Estes dados aparecerão no link público de agendamento.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                        <div>
+                            <label className="text-xs font-bold text-zinc-500 uppercase mb-1 flex items-center gap-2">
+                                <Target className="w-3 h-3" /> Objetivo do Evento
+                            </label>
+                            <Input 
+                                value={formData.event_goal} 
+                                onChange={e => setFormData({...formData, event_goal: e.target.value})} 
+                                placeholder="Ex: Reunião, Sessão de Terapia, Consulta..."
+                                className="bg-zinc-950 border-zinc-800"
+                            />
+                        </div>
+
+                        <div>
+                            <label className="text-xs font-bold text-zinc-500 uppercase mb-1 flex items-center gap-2">
+                                <MapPin className="w-3 h-3" /> Tipo de Local
+                            </label>
+                            <div className="flex bg-zinc-950 p-1 rounded-lg border border-zinc-800 mb-2">
+                                <button 
+                                    onClick={() => setFormData({...formData, event_location_type: 'online'})} 
+                                    className={cn("flex-1 py-1.5 text-xs font-medium rounded-md transition-colors", formData.event_location_type === 'online' ? "bg-zinc-800 text-white shadow" : "text-zinc-500")}
+                                >
+                                    Online
+                                </button>
+                                <button 
+                                    onClick={() => setFormData({...formData, event_location_type: 'presencial'})} 
+                                    className={cn("flex-1 py-1.5 text-xs font-medium rounded-md transition-colors", formData.event_location_type === 'presencial' ? "bg-zinc-800 text-white shadow" : "text-zinc-500")}
+                                >
+                                    Presencial
+                                </button>
+                            </div>
+                            
+                            <label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Detalhes do Local / Plataforma</label>
+                            <Input 
+                                value={formData.event_location_details} 
+                                onChange={e => setFormData({...formData, event_location_details: e.target.value})} 
+                                placeholder={formData.event_location_type === 'online' ? "Ex: Google Meet, Zoom..." : "Ex: Escritório Central, Rua X..."}
+                                className="bg-zinc-950 border-zinc-800"
+                            />
+                        </div>
+                    </CardContent>
+                 </Card>
+
+                 {/* Preview */}
+                 <div className="p-4 bg-black/20 rounded-xl border border-zinc-800 flex flex-col items-center text-center opacity-70 hover:opacity-100 transition-opacity">
+                     <p className="text-xs text-zinc-500 uppercase font-bold mb-2">Prévia no Link Público</p>
+                     <h3 className="text-xl font-bold text-white">{formData.name}</h3>
+                     <div className="flex gap-4 mt-2 text-sm text-zinc-400">
+                         <span className="flex items-center gap-1"><Target className="w-3 h-3" /> {formData.event_goal}</span>
+                         <span className="flex items-center gap-1"><MapPin className="w-3 h-3" /> {formData.event_location_details}</span>
+                     </div>
+                 </div>
+             </div>
+        )}
+
         {activeTab === 'notifications' && (
             <div className="space-y-6 animate-in slide-in-from-right-4">
                 
-                {/* SELETOR DE INSTÂNCIA */}
+                {/* SELETOR DE INSTÂNCIA - CORRIGIDO */}
                 <Card className="bg-zinc-900/50 border-zinc-800">
                     <CardHeader>
                         <CardTitle className="text-lg text-white flex items-center gap-2"><Smartphone className="w-5 h-5 text-green-500" /> Dispositivo de Envio</CardTitle>
@@ -320,15 +389,20 @@ export default function CalendarSettingsPage() {
                         <select 
                             value={notifConfig.sending_session_id || ''}
                             onChange={e => setNotifConfig({ ...notifConfig, sending_session_id: e.target.value })}
-                            className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2.5 text-sm text-white"
+                            className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2.5 text-sm text-white focus:ring-1 focus:ring-primary outline-none"
                         >
-                            <option value="">Automático (Qualquer online)</option>
+                            <option value="">Automático (Qualquer instância online)</option>
                             {instances.map(inst => (
                                 <option key={inst.id} value={inst.session_id}>
                                     {inst.name} ({inst.status === 'connected' ? 'Online' : 'Offline'})
                                 </option>
                             ))}
                         </select>
+                        {notifConfig.sending_session_id && (
+                            <p className="text-xs text-green-500 mt-2 flex items-center gap-1">
+                                <Save className="w-3 h-3" /> Instância selecionada será salva.
+                            </p>
+                        )}
                     </CardContent>
                 </Card>
 
@@ -350,13 +424,6 @@ export default function CalendarSettingsPage() {
                                             {c.name} - {c.jid.split('@')[0]}
                                         </div>
                                     ))}
-                                </div>
-                            )}
-                            {notifConfig.admin_phone && (
-                                <div className="mt-2 flex gap-2">
-                                    <Button size="sm" variant="secondary" onClick={() => testNotification(notifConfig.admin_phone, "Teste de configuração de avisos.")} className="text-xs h-7">
-                                        <Send className="w-3 h-3 mr-1" /> Testar Envio
-                                    </Button>
                                 </div>
                             )}
                         </div>
