@@ -13,6 +13,17 @@ const NotificationTriggerSchema = z.object({
     active: z.boolean()
 });
 
+const ThemeConfigSchema = z.object({
+    mode: z.enum(['dark', 'light']).default('dark'),
+    backgroundType: z.enum(['solid', 'gradient']).default('gradient'),
+    backgroundColor: z.string().optional(),
+    gradientColors: z.array(z.string()).max(3).default(["#09090b", "#18181b"]),
+    gradientDirection: z.string().default("to bottom right"),
+    primaryColor: z.string().default("#22c55e"),
+    textColor: z.string().default("#ffffff"),
+    cardColor: z.string().default("rgba(24, 24, 27, 0.6)")
+});
+
 const AvailabilitySchema = z.object({
   id: z.string().optional(),
   name: z.string().min(3, "Nome deve ter pelo menos 3 caracteres"),
@@ -29,9 +40,11 @@ const AvailabilitySchema = z.object({
   event_goal: z.string().default('Reunião'),
   event_location_type: z.enum(['online', 'presencial']).default('online'),
   event_location_details: z.string().optional(),
+  cover_url: z.string().optional().nullable(),
+  theme_config: ThemeConfigSchema.optional(),
 
   notification_config: z.object({
-      sending_session_id: z.string().optional(), // CORREÇÃO: Adicionado ao Schema
+      sending_session_id: z.string().optional(), 
       admin_phone: z.string().optional().nullable(),
       admin_notifications: z.array(NotificationTriggerSchema).optional(),
       lead_notifications: z.array(NotificationTriggerSchema).optional()
@@ -98,10 +111,19 @@ export async function saveAvailabilityRules(formData: AvailabilityFormData) {
       slot_duration: payload.slot_duration,
       is_active: payload.is_active,
       
-      // Novos campos
+      // Novos campos visuais
       event_goal: payload.event_goal,
       event_location_type: payload.event_location_type,
       event_location_details: payload.event_location_details,
+      cover_url: payload.cover_url,
+      theme_config: payload.theme_config || {
+        mode: 'dark',
+        backgroundType: 'gradient',
+        gradientColors: ["#09090b", "#18181b"],
+        primaryColor: "#22c55e",
+        textColor: "#ffffff",
+        cardColor: "rgba(24, 24, 27, 0.6)"
+      },
 
       updated_at: new Date().toISOString()
   };

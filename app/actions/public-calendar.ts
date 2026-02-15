@@ -21,8 +21,39 @@ export type BookingData = z.infer<typeof BookingSchema>;
 
 export async function getPublicRule(slug: string) {
   const supabase = await createClient();
-  const { data } = await supabase.rpc('get_public_availability_by_slug', { p_slug: slug });
-  return data?.[0] || null;
+  
+  // RPC atualizada ou Select direto para garantir que novos campos venham
+  // Fallback para select direto caso a RPC antiga não retorne os campos novos
+  const { data: rpcData, error } = await supabase.rpc('get_public_availability_by_slug', { p_slug: slug });
+  
+  if (rpcData && rpcData.length > 0) {
+      // Se a RPC já retorna tudo (SELECT *), ótimo.
+      return rpcData[0];
+  }
+
+  // Fallback: Busca manual se a RPC falhar ou estiver desatualizada no banco
+  const { data: tableData } = await supabase
+    .from('availability_rules')
+    .select(`
+        *,
+        profiles:user_id (name, avatar_url, email),
+        companies:company_id (name)
+    `)
+    .eq('slug', slug)
+    .eq('is_active', true)
+    .single();
+
+  if (tableData) {
+      return {
+          ...tableData,
+          owner_name: tableData.profiles?.name,
+          owner_avatar: tableData.profiles?.avatar_url,
+          company_name: tableData.companies?.name,
+          rule_id: tableData.id // Compatibilidade com frontend
+      };
+  }
+
+  return null;
 }
 
 export async function getBusySlots(ruleId: string, date: string) {
@@ -54,7 +85,7 @@ export async function bookAppointment(formData: BookingData) {
 
       if (error) {
           console.error("[Booking] RPC Error:", error);
-          return { error: "Erro ao salvar agendamento." };
+          return { error: "Erro ao salvar agendamento. Tente outro horário." };
       }
 
       if (data?.error) return { error: data.error };
@@ -65,8 +96,6 @@ export async function bookAppointment(formData: BookingData) {
           
           if (appData) {
                const endpoint = `${API_URL}/appointments/confirm`;
-               console.log(`[Booking] Disparando webhook para: ${endpoint}`);
-               
                // Fetch sem await
                fetch(endpoint, {
                   method: 'POST',
@@ -75,9 +104,6 @@ export async function bookAppointment(formData: BookingData) {
                       appointmentId: data.id,
                       companyId: appData.company_id
                   })
-               }).then(res => {
-                   if (!res.ok) console.error(`[Booking] Erro Backend: ${res.status} ${res.statusText}`);
-                   else console.log(`[Booking] Webhook enviado com sucesso.`);
                }).catch(e => console.error("[Booking] Falha de conexão com Backend:", e.message));
           }
       }

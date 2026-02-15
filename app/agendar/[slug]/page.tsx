@@ -8,7 +8,7 @@ import { generateSlots } from '@/utils/calendar';
 import { 
     Calendar as CalendarIcon, Clock, CheckCircle2, User, 
     Phone, Mail, FileText, ChevronLeft, ChevronRight, Loader2, 
-    MapPin, ChevronDown, Target, ArrowLeft
+    MapPin, ChevronDown, ArrowLeft
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -86,14 +86,15 @@ export default function PublicSchedulePage() {
               const dateStr = format(selectedDate, 'yyyy-MM-dd');
               const dayOfWeek = selectedDate.getDay();
               
-              if (!rule.days_of_week.includes(dayOfWeek)) {
+              // Verifica se o dia da semana está ativo
+              // Se days_of_week for null/undefined, assume todos (fallback)
+              if (rule.days_of_week && !rule.days_of_week.includes(dayOfWeek)) {
                   setSlots([]);
                   setLoadingSlots(false);
                   return;
               }
 
-              const busy = await getBusySlots(rule.rule_id, dateStr);
-              // A função generateSlots já filtra horários passados
+              const busy = await getBusySlots(rule.rule_id || rule.id, dateStr);
               const generated = generateSlots(dateStr, rule, busy);
               setSlots(generated);
               setLoadingSlots(false);
@@ -172,18 +173,30 @@ export default function PublicSchedulePage() {
       }
   };
 
+  // --- RENDERIZADORES DE CALENDÁRIO ---
   const renderCalendar = () => {
       const startDate = startOfWeek(currentMonth, { weekStartsOn: 0 });
       const days = [];
       let day = startDate;
 
+      const theme = rule?.theme_config || {};
+      const primaryColor = theme.primaryColor || '#22c55e';
+      const textColor = theme.textColor || '#ffffff';
+
+      // 5 semanas = 35 dias
       for (let i = 0; i < 35; i++) {
           const cloneDay = day;
           const isMonthMatch = isSameMonth(cloneDay, currentMonth);
           const isSelected = selectedDate ? isSameDay(cloneDay, selectedDate) : false;
           const isToday = isSameDay(cloneDay, new Date());
+          
           const isAvailableDay = rule?.days_of_week?.includes(cloneDay.getDay());
-          const isPast = cloneDay < new Date(new Date().setHours(0,0,0,0));
+          
+          // Bloqueia passado
+          const todayStart = new Date();
+          todayStart.setHours(0,0,0,0);
+          const isPast = cloneDay < todayStart;
+          
           const isDisabled = !isAvailableDay || isPast;
 
           days.push(
@@ -193,12 +206,15 @@ export default function PublicSchedulePage() {
                   onClick={() => !isDisabled && setSelectedDate(cloneDay)}
                   className={cn(
                       "h-10 w-full rounded-full flex items-center justify-center text-sm font-medium transition-all relative",
-                      !isMonthMatch && "text-zinc-700 opacity-50",
-                      isDisabled && "text-zinc-700 cursor-not-allowed opacity-30",
-                      !isDisabled && !isSelected && "text-zinc-300 hover:bg-zinc-800 hover:text-white",
-                      isSelected && "bg-primary text-black font-bold shadow-[0_0_15px_rgba(34,197,94,0.4)] scale-110 z-10",
-                      isToday && !isSelected && "border border-primary/50 text-primary"
+                      isDisabled && "opacity-20 cursor-not-allowed",
+                      !isDisabled && !isSelected && "hover:bg-white/10"
                   )}
+                  style={{
+                      color: isSelected ? '#000' : (isMonthMatch ? textColor : `${textColor}60`),
+                      backgroundColor: isSelected ? primaryColor : 'transparent',
+                      fontWeight: isSelected ? 'bold' : 'normal',
+                      border: isToday && !isSelected ? `1px solid ${primaryColor}60` : 'none'
+                  }}
               >
                   {format(cloneDay, 'd')}
               </button>
@@ -210,7 +226,7 @@ export default function PublicSchedulePage() {
 
   if (loading) {
       return (
-          <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center gap-4">
+          <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-zinc-950">
               <Loader2 className="w-12 h-12 text-primary animate-spin" />
           </div>
       );
@@ -223,98 +239,123 @@ export default function PublicSchedulePage() {
                   <CalendarIcon className="w-10 h-10 opacity-50" />
               </div>
               <div>
-                <h1 className="text-2xl font-bold text-white mb-2">Link Inválido</h1>
-                <p className="text-sm max-w-xs mx-auto">Verifique o endereço digitado.</p>
+                <h1 className="text-2xl font-bold text-white mb-2">Link Inválido ou Inativo</h1>
+                <p className="text-sm max-w-xs mx-auto">Verifique o endereço digitado ou entre em contato com o profissional.</p>
               </div>
           </div>
       );
   }
 
+  // --- ENGINE DE TEMA (APLICAÇÃO DE CORES) ---
+  const theme = rule.theme_config || {};
+  
+  const bgStyle = theme.backgroundType === 'solid' 
+      ? { backgroundColor: theme.backgroundColor || theme.gradientColors?.[0] || '#09090b' }
+      : { backgroundImage: `linear-gradient(${theme.gradientDirection || 'to bottom right'}, ${(theme.gradientColors || ['#09090b', '#18181b']).join(', ')})` };
+  
+  const textColor = theme.textColor || '#ffffff';
+  const primaryColor = theme.primaryColor || '#22c55e';
+  const cardColor = theme.cardColor || 'rgba(24, 24, 27, 0.6)';
+
   const progress = ((step) / 3) * 100;
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col md:items-center md:justify-center p-0 md:p-6 font-sans">
+    <div className="min-h-screen flex flex-col md:items-center md:justify-center p-0 md:p-6 font-sans overflow-y-auto" style={{ ...bgStyle, color: textColor }}>
       
-      <div className="fixed top-0 left-0 right-0 h-1 bg-zinc-900 z-50 md:hidden">
+      {/* Barra de Progresso Mobile */}
+      <div className="fixed top-0 left-0 right-0 h-1 z-50 md:hidden" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}>
           <motion.div 
-            className="h-full bg-primary" 
+            className="h-full" 
+            style={{ backgroundColor: primaryColor }}
             initial={{ width: 0 }} 
             animate={{ width: `${progress}%` }} 
             transition={{ duration: 0.5 }}
           />
       </div>
 
+      {/* Main Card Container */}
       <motion.div 
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="w-full max-w-4xl bg-[#09090b] md:border border-zinc-800 md:rounded-3xl shadow-2xl overflow-hidden flex flex-col md:flex-row md:min-h-[600px] h-[100dvh] md:h-auto relative"
+        className="w-full max-w-4xl shadow-2xl overflow-hidden flex flex-col md:flex-row md:min-h-[600px] h-[100dvh] md:h-auto relative md:rounded-3xl border border-white/10"
+        style={{ backgroundColor: cardColor, backdropFilter: 'blur(12px)' }}
       >
         
-        {/* --- SIDEBAR --- */}
-        <div className="w-full md:w-[35%] bg-zinc-900/60 p-6 md:p-8 border-b md:border-b-0 md:border-r border-zinc-800 flex flex-col justify-between shrink-0 relative overflow-hidden">
-            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-primary/0 via-primary/50 to-primary/0 opacity-20"></div>
-            <div className="absolute -bottom-20 -left-20 w-64 h-64 bg-primary/5 rounded-full blur-3xl pointer-events-none"></div>
+        {/* --- LEFT SIDEBAR (INFO & CAPA) --- */}
+        <div className="w-full md:w-[35%] border-b md:border-b-0 md:border-r border-white/10 flex flex-col justify-between shrink-0 relative overflow-hidden bg-black/20">
+            
+            {/* Foto de Capa (Background do Topo) */}
+            {rule.cover_url && (
+                <div className="absolute top-0 left-0 w-full h-32 z-0">
+                    <img src={rule.cover_url} className="w-full h-full object-cover opacity-80 mask-image-gradient-b" alt="Capa" />
+                    <div className="absolute inset-0 bg-gradient-to-b from-transparent to-[rgba(0,0,0,0.9)]"></div>
+                </div>
+            )}
 
-            <div>
-                <div className="flex items-center gap-4 mb-6">
-                    <div className="relative">
+            <div className="relative z-10 p-6 md:p-8 flex flex-col h-full">
+                {/* Header Perfil */}
+                <div className={cn("flex items-center gap-4 mb-6", rule.cover_url ? "mt-16" : "mt-0")}>
+                    <div className="relative shrink-0">
                         {rule.owner_avatar ? (
-                            <img src={rule.owner_avatar} className="w-14 h-14 rounded-full border-2 border-zinc-800 object-cover" alt="Avatar" />
+                            <img src={rule.owner_avatar} className="w-16 h-16 rounded-full border-4 border-black/50 object-cover shadow-lg bg-zinc-800" alt="Avatar" />
                         ) : (
-                            <div className="w-14 h-14 rounded-full bg-zinc-800 flex items-center justify-center border border-zinc-700 text-zinc-500 font-bold text-lg">
-                                {(rule.company_name || 'C').charAt(0)}
+                            <div className="w-16 h-16 rounded-full bg-zinc-800 flex items-center justify-center border-4 border-black/50 font-bold text-lg text-white">
+                                {(rule.company_name || rule.name || 'C').charAt(0)}
                             </div>
                         )}
-                        <div className="absolute bottom-0 right-0 w-4 h-4 bg-green-500 border-2 border-zinc-900 rounded-full"></div>
+                        <div className="absolute bottom-1 right-1 w-4 h-4 rounded-full border-2 border-black" style={{ backgroundColor: primaryColor }}></div>
                     </div>
                     <div>
-                        <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">{rule.company_name}</p>
-                        <h3 className="text-base font-bold text-white">{rule.owner_name || 'Consultor'}</h3>
+                        <p className="text-[10px] font-bold uppercase tracking-wider opacity-70 mb-0.5">{rule.company_name || 'Profissional'}</p>
+                        <h3 className="text-lg font-bold leading-tight">{rule.owner_name || 'Consultor'}</h3>
                     </div>
                 </div>
 
-                <h1 className="text-2xl font-bold text-white mb-2 leading-tight">{rule.name}</h1>
-                <p className="text-sm text-zinc-400 mb-6">{rule.event_goal || 'Reunião'}</p>
+                <h1 className="text-2xl font-bold mb-2 leading-tight">{rule.name}</h1>
+                <p className="text-sm mb-6 opacity-70">{rule.event_goal || 'Reunião de Alinhamento'}</p>
                 
-                <div className="space-y-4">
-                    <div className="flex items-center gap-3 text-zinc-400 text-sm bg-zinc-900/50 p-3 rounded-xl border border-zinc-800/50">
-                        <Clock className="w-5 h-5 text-primary" />
+                {/* Detalhes do Evento */}
+                <div className="space-y-3 mt-auto mb-6">
+                    <div className="flex items-center gap-3 text-sm p-3 rounded-xl border border-white/5" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+                        <Clock className="w-5 h-5" style={{ color: primaryColor }} />
                         <span className="font-medium">{rule.slot_duration} min</span>
                     </div>
-                    <div className="flex items-center gap-3 text-zinc-400 text-sm bg-zinc-900/50 p-3 rounded-xl border border-zinc-800/50">
-                        <MapPin className="w-5 h-5 text-blue-500" />
+                    <div className="flex items-center gap-3 text-sm p-3 rounded-xl border border-white/5" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+                        <MapPin className="w-5 h-5 text-blue-400" />
                         <div className="flex flex-col">
                              <span className="font-medium capitalize">{rule.event_location_type || 'Online'}</span>
-                             <span className="text-[10px] text-zinc-500">{rule.event_location_details || 'Link enviado após agendar'}</span>
+                             <span className="text-[10px] opacity-60">{rule.event_location_details || 'Link enviado após agendar'}</span>
                         </div>
                     </div>
                 </div>
+                
+                {/* Resumo Dinâmico (Footer Sidebar) */}
+                <AnimatePresence>
+                {selectedDate && selectedTime && (
+                    <motion.div 
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 10 }}
+                        className="pt-4 border-t border-white/10"
+                    >
+                        <p className="text-[10px] uppercase font-bold mb-1 opacity-50">Selecionado</p>
+                        <div>
+                            <div className="text-sm font-bold capitalize mb-0.5" style={{ color: primaryColor }}>{format(selectedDate, "EEEE, d 'de' MMMM", { locale: ptBR })}</div>
+                            <div className="text-2xl font-mono font-bold">{selectedTime}</div>
+                        </div>
+                    </motion.div>
+                )}
+                </AnimatePresence>
             </div>
-
-            <AnimatePresence>
-            {selectedDate && selectedTime && (
-                <motion.div 
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: 20 }}
-                    className="mt-8 pt-6 border-t border-zinc-800"
-                >
-                    <p className="text-xs text-zinc-500 uppercase font-bold mb-2">Resumo</p>
-                    <div className="text-zinc-200">
-                        <div className="text-lg font-bold capitalize text-primary">{format(selectedDate, "EEEE, d 'de' MMMM", { locale: ptBR })}</div>
-                        <div className="text-3xl font-mono font-bold">{selectedTime}</div>
-                    </div>
-                </motion.div>
-            )}
-            </AnimatePresence>
         </div>
 
-        {/* --- MAIN CONTENT --- */}
-        <div className="flex-1 relative bg-black/20 flex flex-col h-full overflow-hidden">
+        {/* --- RIGHT CONTENT (CALENDAR & FORM) --- */}
+        <div className="flex-1 relative flex flex-col h-full overflow-hidden">
             
+            {/* Mobile Back Button (Quando em passos avançados) */}
             {step > 0 && step < 3 && (
-                <div className="md:hidden flex items-center p-4 border-b border-zinc-800 bg-zinc-900/80 backdrop-blur z-20 sticky top-0">
-                    <button onClick={() => setStep(step - 1)} className="p-2 -ml-2 text-zinc-400 hover:text-white">
+                <div className="md:hidden flex items-center p-4 border-b border-white/10 z-20 sticky top-0 backdrop-blur-md" style={{ backgroundColor: 'rgba(0,0,0,0.2)' }}>
+                    <button onClick={() => setStep(step - 1)} className="p-2 -ml-2 hover:opacity-80">
                         <ChevronLeft className="w-6 h-6" />
                     </button>
                     <span className="font-bold text-sm ml-2">
@@ -326,57 +367,59 @@ export default function PublicSchedulePage() {
             <div className="flex-1 overflow-y-auto custom-scrollbar p-6 md:p-10">
             <AnimatePresence mode="wait">
                 
-                {/* STEPS 0, 1 e 2 */}
+                {/* STEP 0: CALENDAR GRID */}
                 {step === 0 && (
                     <motion.div key="step0" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full flex flex-col">
                         <div className="flex items-center justify-between mb-8">
-                            <h2 className="text-xl font-bold text-white capitalize flex items-center gap-2">
-                                <CalendarIcon className="w-5 h-5 text-zinc-500" />
+                            <h2 className="text-xl font-bold capitalize flex items-center gap-2">
+                                <CalendarIcon className="w-5 h-5 opacity-60" />
                                 {format(currentMonth, 'MMMM yyyy', { locale: ptBR })}
                             </h2>
-                            <div className="flex gap-2 bg-zinc-900 rounded-lg p-1 border border-zinc-800">
-                                <button onClick={() => setCurrentMonth(subWeeks(currentMonth, 4))} className="p-2 hover:bg-zinc-800 rounded-md text-zinc-400 hover:text-white transition-colors">
+                            <div className="flex gap-2 rounded-lg p-1 border border-white/10 bg-white/5">
+                                <button onClick={() => setCurrentMonth(subWeeks(currentMonth, 4))} className="p-2 hover:bg-white/10 rounded-md transition-colors">
                                     <ChevronLeft className="w-5 h-5" />
                                 </button>
-                                <button onClick={() => setCurrentMonth(addWeeks(currentMonth, 4))} className="p-2 hover:bg-zinc-800 rounded-md text-zinc-400 hover:text-white transition-colors">
+                                <button onClick={() => setCurrentMonth(addWeeks(currentMonth, 4))} className="p-2 hover:bg-white/10 rounded-md transition-colors">
                                     <ChevronRight className="w-5 h-5" />
                                 </button>
                             </div>
                         </div>
                         <div className="grid grid-cols-7 gap-y-4 gap-x-2 text-center mb-2">
                             {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map(d => (
-                                <div key={d} className="text-xs font-bold text-zinc-500 uppercase">{d}</div>
+                                <div key={d} className="text-xs font-bold uppercase opacity-50">{d}</div>
                             ))}
                         </div>
                         <div className="grid grid-cols-7 gap-y-4 gap-x-2">
                             {renderCalendar()}
                         </div>
-                        <div className="mt-8 text-center text-xs text-zinc-600">
+                        <div className="mt-8 text-center text-xs opacity-50">
                             Fuso Horário: Horário Padrão de Brasília
                         </div>
                     </motion.div>
                 )}
 
+                {/* STEP 1: TIME SLOTS */}
                 {step === 1 && (
                     <motion.div key="step1" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full flex flex-col">
-                        <div className="flex items-center gap-3 mb-6">
-                            <Button variant="ghost" size="icon" onClick={() => setStep(0)} className="text-zinc-500 hover:text-white -ml-3">
+                        <div className="flex items-center gap-3 mb-6 hidden md:flex">
+                            <Button variant="ghost" size="icon" onClick={() => setStep(0)} className="hover:bg-white/10 -ml-3" style={{ color: textColor }}>
                                 <ArrowLeft className="w-5 h-5" />
                             </Button>
-                            <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                                <Clock className="w-5 h-5 text-primary" />
+                            <h2 className="text-xl font-bold flex items-center gap-2">
+                                <Clock className="w-5 h-5" style={{ color: primaryColor }} />
                                 Horários Disponíveis
                             </h2>
                         </div>
+                        
                         {loadingSlots ? (
                             <div className="flex-1 flex flex-col items-center justify-center gap-4 py-12">
-                                <Loader2 className="w-10 h-10 text-zinc-600 animate-spin" />
-                                <span className="text-zinc-500 text-sm">Buscando disponibilidade...</span>
+                                <Loader2 className="w-10 h-10 opacity-50 animate-spin" />
+                                <span className="opacity-50 text-sm">Buscando disponibilidade...</span>
                             </div>
                         ) : slots.length === 0 ? (
-                            <div className="text-center py-12 bg-zinc-900/30 rounded-2xl border border-zinc-800 border-dashed">
-                                <p className="text-zinc-400">Nenhum horário disponível.</p>
-                                <Button variant="link" onClick={() => setStep(0)} className="text-primary mt-2">Escolher outra data</Button>
+                            <div className="text-center py-12 bg-white/5 rounded-2xl border border-white/10 border-dashed">
+                                <p className="opacity-50">Nenhum horário disponível para este dia.</p>
+                                <Button variant="link" onClick={() => setStep(0)} className="mt-2" style={{ color: primaryColor }}>Escolher outra data</Button>
                             </div>
                         ) : (
                             <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
@@ -388,9 +431,26 @@ export default function PublicSchedulePage() {
                                         className={cn(
                                             "py-3 rounded-xl text-sm font-bold font-mono border transition-all duration-200 active:scale-95",
                                             slot.available 
-                                                ? "bg-zinc-900 border-zinc-800 text-zinc-200 hover:bg-zinc-800 hover:border-zinc-600 hover:text-white hover:shadow-lg hover:shadow-primary/5"
-                                                : "bg-zinc-950/30 border-transparent text-zinc-700 cursor-not-allowed line-through opacity-50"
+                                                ? "hover:shadow-lg hover:border-opacity-50"
+                                                : "opacity-20 cursor-not-allowed line-through bg-black/20 border-transparent"
                                         )}
+                                        style={slot.available ? {
+                                            backgroundColor: 'rgba(255,255,255,0.05)',
+                                            borderColor: 'rgba(255,255,255,0.1)',
+                                            color: textColor
+                                        } : {}}
+                                        onMouseEnter={(e) => {
+                                            if(slot.available) {
+                                                e.currentTarget.style.backgroundColor = primaryColor;
+                                                e.currentTarget.style.color = '#000';
+                                            }
+                                        }}
+                                        onMouseLeave={(e) => {
+                                            if(slot.available) {
+                                                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+                                                e.currentTarget.style.color = textColor;
+                                            }
+                                        }}
                                     >
                                         {slot.time}
                                     </button>
@@ -400,64 +460,70 @@ export default function PublicSchedulePage() {
                     </motion.div>
                 )}
 
+                {/* STEP 2: FORM */}
                 {step === 2 && (
                     <motion.div key="step2" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6 max-w-md mx-auto">
-                        <div className="flex items-center gap-3 mb-2">
-                            <Button variant="ghost" size="icon" onClick={() => setStep(1)} className="text-zinc-500 hover:text-white -ml-3">
+                        <div className="flex items-center gap-3 mb-2 hidden md:flex">
+                            <Button variant="ghost" size="icon" onClick={() => setStep(1)} className="hover:bg-white/10 -ml-3" style={{ color: textColor }}>
                                 <ArrowLeft className="w-5 h-5" />
                             </Button>
-                            <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                                <FileText className="w-5 h-5 text-primary" />
+                            <h2 className="text-xl font-bold flex items-center gap-2">
+                                <FileText className="w-5 h-5" style={{ color: primaryColor }} />
                                 Preencha seus dados
                             </h2>
                         </div>
 
                         <div className="space-y-5">
                             <div className="space-y-1.5">
-                                <label className="text-xs font-bold text-zinc-400 uppercase ml-1">Qual o seu nome?</label>
+                                <label className="text-xs font-bold uppercase ml-1 opacity-60">Qual o seu nome?</label>
                                 <div className="relative">
-                                    <User className="absolute left-3 top-3 w-5 h-5 text-zinc-500" />
-                                    <Input value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="pl-10 bg-zinc-900 border-zinc-800 h-12 text-base rounded-xl focus:ring-primary/50 text-white" placeholder="Digite aqui..." autoFocus />
+                                    <User className="absolute left-3 top-3 w-5 h-5 opacity-50" />
+                                    <Input value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="pl-10 bg-black/20 border-white/10 h-12 text-base rounded-xl focus:ring-1 text-white placeholder:text-white/30" style={{ '--tw-ring-color': primaryColor } as any} placeholder="Digite aqui..." autoFocus />
                                 </div>
                             </div>
                             <div className="space-y-1.5 relative z-20">
-                                <label className="text-xs font-bold text-zinc-400 uppercase ml-1">Seu WhatsApp (Para confirmação)</label>
+                                <label className="text-xs font-bold uppercase ml-1 opacity-60">Seu WhatsApp (Para confirmação)</label>
                                 <div className="flex gap-2">
                                     <div className="relative" ref={countryDropdownRef}>
-                                        <button type="button" className="h-12 bg-zinc-900 border border-zinc-800 rounded-xl px-3 flex items-center gap-2 hover:border-zinc-600 transition-colors min-w-[90px]" onClick={() => setIsCountryOpen(!isCountryOpen)}>
+                                        <button type="button" className="h-12 bg-black/20 border border-white/10 rounded-xl px-3 flex items-center gap-2 hover:border-white/30 transition-colors min-w-[90px]" onClick={() => setIsCountryOpen(!isCountryOpen)}>
                                             <span className="text-xl">{selectedCountry.flag}</span>
-                                            <span className="text-sm font-bold text-zinc-300">+{selectedCountry.code}</span>
-                                            <ChevronDown className="w-3 h-3 text-zinc-500 ml-auto" />
+                                            <span className="text-sm font-bold opacity-80">+{selectedCountry.code}</span>
+                                            <ChevronDown className="w-3 h-3 opacity-50 ml-auto" />
                                         </button>
                                         {isCountryOpen && (
-                                            <div className="absolute top-14 left-0 w-56 bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl z-50 max-h-60 overflow-y-auto custom-scrollbar p-1">
+                                            <div className="absolute top-14 left-0 w-56 bg-[#18181b] border border-zinc-700 rounded-xl shadow-2xl z-50 max-h-60 overflow-y-auto custom-scrollbar p-1">
                                                 {COUNTRIES.map(c => (
-                                                    <button key={c.code} type="button" className="w-full flex items-center gap-3 px-3 py-2 hover:bg-zinc-800 rounded-lg transition-colors text-left" onClick={() => { setSelectedCountry(c); setIsCountryOpen(false); setPhoneNumber(''); phoneInputRef.current?.focus(); }}>
+                                                    <button key={c.code} type="button" className="w-full flex items-center gap-3 px-3 py-2 hover:bg-white/10 rounded-lg transition-colors text-left" onClick={() => { setSelectedCountry(c); setIsCountryOpen(false); setPhoneNumber(''); phoneInputRef.current?.focus(); }}>
                                                         <span className="text-lg">{c.flag}</span>
-                                                        <div className="flex flex-col"><span className="text-sm text-white font-medium">{c.label}</span><span className="text-xs text-zinc-500">+{c.code}</span></div>
+                                                        <div className="flex flex-col"><span className="text-sm font-medium text-white">{c.label}</span><span className="text-xs text-zinc-500">+{c.code}</span></div>
                                                     </button>
                                                 ))}
                                             </div>
                                         )}
                                     </div>
                                     <div className="relative flex-1">
-                                        <Phone className="absolute left-3 top-3.5 w-5 h-5 text-zinc-500" />
-                                        <Input ref={phoneInputRef} value={phoneNumber} onChange={handlePhoneInput} className="pl-10 bg-zinc-900 border-zinc-800 h-12 text-base rounded-xl focus:ring-primary/50 text-white font-mono" placeholder={selectedCountry.mask} />
+                                        <Phone className="absolute left-3 top-3.5 w-5 h-5 opacity-50" />
+                                        <Input ref={phoneInputRef} value={phoneNumber} onChange={handlePhoneInput} className="pl-10 bg-black/20 border-white/10 h-12 text-base rounded-xl focus:ring-1 text-white font-mono placeholder:text-white/30" style={{ '--tw-ring-color': primaryColor } as any} placeholder={selectedCountry.mask} />
                                     </div>
                                 </div>
                             </div>
                             <div className="space-y-1.5">
-                                <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Email (Opcional)</label>
+                                <label className="text-xs font-bold uppercase ml-1 opacity-60">Email (Opcional)</label>
                                 <div className="relative">
-                                    <Mail className="absolute left-3 top-3 w-5 h-5 text-zinc-500" />
-                                    <Input value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className="pl-10 bg-zinc-900 border-zinc-800 h-12 text-base rounded-xl focus:ring-primary/50 text-white" placeholder="seu@email.com" />
+                                    <Mail className="absolute left-3 top-3 w-5 h-5 opacity-50" />
+                                    <Input value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className="pl-10 bg-black/20 border-white/10 h-12 text-base rounded-xl focus:ring-1 text-white placeholder:text-white/30" style={{ '--tw-ring-color': primaryColor } as any} placeholder="seu@email.com" />
                                 </div>
                             </div>
                             <div className="space-y-1.5">
-                                <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Observações</label>
-                                <Textarea value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} className="bg-zinc-900 border-zinc-800 min-h-[100px] rounded-xl focus:ring-primary/50 p-3 text-white" placeholder="Gostaria de falar sobre..." />
+                                <label className="text-xs font-bold uppercase ml-1 opacity-60">Observações</label>
+                                <Textarea value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} className="bg-black/20 border-white/10 min-h-[100px] rounded-xl focus:ring-1 p-3 text-white placeholder:text-white/30" style={{ '--tw-ring-color': primaryColor } as any} placeholder="Gostaria de falar sobre..." />
                             </div>
-                            <Button onClick={handleBooking} disabled={bookingLoading} className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-bold h-12 rounded-xl text-base shadow-[0_0_25px_rgba(34,197,94,0.3)] mt-4 transition-all active:scale-95">
+                            <Button 
+                                onClick={handleBooking} 
+                                disabled={bookingLoading} 
+                                className="w-full h-12 rounded-xl text-base shadow-lg mt-4 transition-all active:scale-95 font-bold text-black"
+                                style={{ backgroundColor: primaryColor, boxShadow: `0 0 25px ${primaryColor}40` }}
+                            >
                                 {bookingLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Finalizar Agendamento'}
                             </Button>
                         </div>
@@ -467,19 +533,19 @@ export default function PublicSchedulePage() {
                 {/* STEP 3: SUCCESS */}
                 {step === 3 && (
                     <motion.div key="step3" initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} className="h-full flex flex-col items-center justify-center text-center p-4">
-                        <div className="w-24 h-24 bg-green-500/10 rounded-full flex items-center justify-center mb-8 border border-green-500/30 shadow-[0_0_60px_rgba(34,197,94,0.4)] animate-in zoom-in duration-500">
-                            <CheckCircle2 className="w-12 h-12 text-green-500" />
+                        <div className="w-24 h-24 rounded-full flex items-center justify-center mb-8 border border-white/10 shadow-2xl animate-in zoom-in duration-500" style={{ backgroundColor: `${primaryColor}20` }}>
+                            <CheckCircle2 className="w-12 h-12" style={{ color: primaryColor }} />
                         </div>
-                        <h2 className="text-4xl font-bold text-white mb-4 tracking-tight">Agendado!</h2>
-                        <div className="bg-zinc-900/50 p-6 rounded-2xl border border-zinc-800 max-w-sm w-full mb-8">
-                            <p className="text-zinc-400 text-sm mb-1">{rule.event_goal} confirmada para</p>
-                            <p className="text-xl font-bold text-white capitalize">{format(selectedDate!, "EEEE, d 'de' MMMM", { locale: ptBR })}</p>
-                            <div className="text-3xl font-mono font-bold text-primary mt-2">{selectedTime}</div>
+                        <h2 className="text-4xl font-bold mb-4 tracking-tight">Agendado!</h2>
+                        <div className="bg-white/5 p-6 rounded-2xl border border-white/10 max-w-sm w-full mb-8">
+                            <p className="text-sm mb-1 opacity-70">{rule.event_goal} confirmada para</p>
+                            <p className="text-xl font-bold capitalize">{format(selectedDate!, "EEEE, d 'de' MMMM", { locale: ptBR })}</p>
+                            <div className="text-3xl font-mono font-bold mt-2" style={{ color: primaryColor }}>{selectedTime}</div>
                         </div>
-                        <p className="text-zinc-500 text-sm max-w-xs mb-8">
+                        <p className="text-sm max-w-xs mb-8 opacity-70">
                             Enviamos os detalhes para o seu WhatsApp.
                         </p>
-                        <Button variant="outline" onClick={() => window.location.reload()} className="border-zinc-700 bg-transparent hover:bg-zinc-800 rounded-xl text-white">
+                        <Button variant="outline" onClick={() => window.location.reload()} className="border-white/20 bg-transparent hover:bg-white/10 rounded-xl" style={{ color: textColor }}>
                             Fazer novo agendamento
                         </Button>
                     </motion.div>
