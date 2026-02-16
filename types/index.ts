@@ -293,3 +293,54 @@ export interface Feedback {
     created_at: string;
     user?: { name: string; email: string };
 }
+
+// --- AI AGENTS TYPES (NOVO MÓDULO V5) ---
+
+export type AgentLevel = 'junior' | 'pleno' | 'senior';
+
+export interface AgentFile {
+    id: string; // Google Drive ID ou Storage Path
+    name: string;
+    type: 'text' | 'image' | 'audio' | 'pdf';
+    url?: string;
+}
+
+export interface AgentPersonalityConfig {
+    role?: string; // Ex: "Vendedor", "Suporte"
+    tone?: string; // Ex: "Formal", "Empático"
+    negative_prompts?: string[]; // O que não fazer
+    escape_rules?: string[]; // Quando chamar humano
+}
+
+export interface AgentToolsConfig {
+    drive_integration?: boolean;
+    calendar_integration?: boolean;
+    reporting_phones?: string[]; // Para Sênior (Relatórios)
+}
+
+export interface Agent {
+    id: string;
+    company_id: string;
+    name: string;
+    level: AgentLevel;
+    
+    // Core Prompt (Compilado)
+    prompt_instruction: string; 
+    
+    // Configurações Modulares (JSONB no Banco)
+    personality_config: AgentPersonalityConfig;
+    knowledge_config: {
+        text_files: AgentFile[];
+        media_files: AgentFile[];
+    };
+    flow_config: any; // Dados do React Flow (Nodes/Edges)
+    tools_config: AgentToolsConfig;
+    
+    // Status
+    is_active: boolean;
+    transcription_enabled: boolean;
+    model: string; // Ex: 'gemini-3-flash-preview'
+    
+    // Base legada (Manter para compatibilidade até migração total)
+    knowledge_base?: string; 
+}

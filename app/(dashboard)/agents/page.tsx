@@ -1,370 +1,228 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
-import { Bot, Save, Play, Zap, Loader2, Send, Trash2, Sparkles } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Modal } from '@/components/ui/Modal';
-import { optimizePromptAction, simulateChatAction } from '@/app/actions/gemini';
-import { createClient } from '@/utils/supabase/client';
-import { useToast } from '@/hooks/useToast';
+import React, { useState, useEffect } from 'react';
 import { useAuthStore } from '@/store/useAuthStore';
-
-interface ChatMessage {
-    role: 'user' | 'model';
-    text: string;
-}
+import { createClient } from '@/utils/supabase/client';
+import { Agent, AgentLevel } from '@/types';
+import { JuniorAgentForm } from '@/components/agents/JuniorAgentForm';
+import { AgentFlowBuilder } from '@/components/agents/AgentFlowBuilder';
+import { Loader2, Bot, Plus, Trash2, Cpu, Zap, ShieldCheck, ArrowLeft } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { useToast } from '@/hooks/useToast';
+import { cn } from '@/lib/utils';
 
 export default function AgentsPage() {
-  const { addToast } = useToast();
-  const { user } = useAuthStore(); // Usando store para garantir company_id
-  const [prompt, setPrompt] = useState("Você é um assistente de suporte útil para o Wancora CRM. Seja educado e conciso.");
-  const [agentName, setAgentName] = useState("Agente Principal");
-  const [knowledgeBase, setKnowledgeBase] = useState("");
-  const [isActive, setIsActive] = useState(false);
-  
-  const [isOptimizing, setIsOptimizing] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-
-  // Simulator State
-  const [isSimulatorOpen, setIsSimulatorOpen] = useState(false);
-  const [simMessages, setSimMessages] = useState<ChatMessage[]>([]);
-  const [simInput, setSimInput] = useState("");
-  const [isSimLoading, setIsSimLoading] = useState(false);
-  const simEndRef = useRef<HTMLDivElement>(null);
-  
+  const { user } = useAuthStore();
   const supabase = createClient();
+  const { addToast } = useToast();
+  
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    if (!user?.company_id) return;
+  // Nível selecionado para criação
+  const [selectedLevel, setSelectedLevel] = useState<AgentLevel>('junior');
 
-    const loadAgent = async () => {
-        try {
-            const { data } = await supabase
-                .from('agents')
-                .select('*')
-                .eq('company_id', user.company_id) // Filtro explícito de segurança
-                .limit(1)
-                .maybeSingle();
-            
-            if (data) {
-                setPrompt(data.prompt_instruction || "");
-                setAgentName(data.name);
-                setKnowledgeBase(data.knowledge_base || "");
-                setIsActive(data.is_active);
-            }
-        } catch (e) {
-            console.log("Nenhum agente configurado, usando padrões.");
-        } finally {
-            setIsLoading(false);
-        }
-    };
-    loadAgent();
-  }, [supabase, user?.company_id]);
-
-  useEffect(() => {
-      if(isSimulatorOpen) {
-          simEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-      }
-  }, [simMessages, isSimulatorOpen]);
-
-  const handleSave = async () => {
-    if (!user?.company_id) {
-        addToast({ type: 'error', title: 'Erro', message: 'Sessão inválida. Recarregue a página.' });
-        return;
-    }
-
-    setIsSaving(true);
-    try {
-        // Verifica existência usando company_id
-        const { data: existingAgent } = await supabase
-            .from('agents')
-            .select('id')
-            .eq('company_id', user.company_id)
-            .limit(1)
-            .maybeSingle();
-
-        let error;
-        if (existingAgent) {
-             const { error: updError } = await supabase
-                .from('agents')
-                .update({ 
-                    name: agentName,
-                    prompt_instruction: prompt,
-                    knowledge_base: knowledgeBase,
-                    is_active: isActive
-                })
-                .eq('id', existingAgent.id);
-             error = updError;
-        } else {
-             const { error: insError } = await supabase
-                .from('agents')
-                .insert({ 
-                    name: agentName,
-                    prompt_instruction: prompt,
-                    knowledge_base: knowledgeBase,
-                    is_active: isActive,
-                    company_id: user.company_id 
-                });
-             error = insError;
-        }
-
-        if (error) throw error;
-        addToast({
-            type: 'success',
-            title: 'Agente salvo!',
-            message: 'As configurações de IA foram atualizadas com sucesso.'
-        });
-    } catch (e: any) {
-        addToast({ type: 'error', title: 'Erro ao salvar', message: e.message });
-    } finally {
-        setIsSaving(false);
-    }
-  };
-
-  const handleOptimize = async () => {
-    setIsOptimizing(true);
-    try {
-        const result = await optimizePromptAction(prompt);
-        if (result.error) throw new Error(result.error);
-        
-        setPrompt(result.text || prompt);
-        addToast({ type: 'success', title: 'Prompt Otimizado', message: 'A IA melhorou sua instrução.' });
-    } catch (e) {
-        addToast({ type: 'error', title: 'Erro na Otimização', message: 'Falha na conexão com o servidor de IA.' });
-    } finally {
-        setIsOptimizing(false);
-    }
-  };
-
-  const handleSimulateSend = async () => {
-      if(!simInput.trim()) return;
-      
-      const userMsg: ChatMessage = { role: 'user', text: simInput };
-      const newHistory = [...simMessages, userMsg];
-      
-      setSimMessages(newHistory);
-      setSimInput("");
-      setIsSimLoading(true);
-
+  const fetchAgents = async () => {
+      if (!user?.company_id) return;
+      setLoading(true);
       try {
-          const apiHistory = newHistory.map(m => ({
-              role: m.role,
-              parts: [{ text: m.text }]
-          }));
-
-          const result = await simulateChatAction(apiHistory, prompt, knowledgeBase);
-          setSimMessages(prev => [...prev, { role: 'model', text: result.text || "Erro..." }]);
-      } catch (error) {
-          setSimMessages(prev => [...prev, { role: 'model', text: "Erro ao conectar com o cérebro do agente." }]);
+          const { data } = await supabase
+              .from('agents')
+              .select('*')
+              .eq('company_id', user.company_id)
+              .order('name');
+          
+          setAgents((data as Agent[]) || []);
+          
+          // Se já tem agentes e não selecionou, seleciona o primeiro
+          if (data && data.length > 0 && !selectedAgent && !isCreating) {
+              // setSelectedAgent(data[0] as Agent); // Opcional: auto-select
+          }
       } finally {
-          setIsSimLoading(false);
+          setLoading(false);
       }
   };
 
-  const resetSimulator = () => {
-      setSimMessages([{ role: 'model', text: `Olá! Eu sou ${agentName}. Como posso ajudar você hoje?` }]);
+  useEffect(() => {
+      fetchAgents();
+  }, [user?.company_id]);
+
+  const handleDelete = async (id: string) => {
+      if(!confirm("Tem certeza? Isso apagará o agente.")) return;
+      await supabase.from('agents').delete().eq('id', id);
+      addToast({ type: 'success', title: 'Apagado', message: 'Agente removido.' });
+      fetchAgents();
+      if(selectedAgent?.id === id) setSelectedAgent(null);
   };
 
-  if (isLoading) {
+  // Renderização do CONSTRUTOR CORRETO
+  const renderBuilder = () => {
+      const targetLevel = selectedAgent ? selectedAgent.level : selectedLevel;
+      const key = selectedAgent?.id || 'new'; // Força remontagem ao trocar
+
+      if (targetLevel === 'junior') {
+          return (
+              <React.Fragment key={key}>
+                  <JuniorAgentForm 
+                      initialData={selectedAgent} 
+                      companyId={user?.company_id || ''}
+                      onSuccess={() => { fetchAgents(); setIsCreating(false); setSelectedAgent(null); }}
+                  />
+              </React.Fragment>
+          );
+      } else {
+          return (
+              <React.Fragment key={key}>
+                  <AgentFlowBuilder 
+                      initialData={selectedAgent}
+                      companyId={user?.company_id || ''}
+                      level={targetLevel}
+                      onSuccess={() => { fetchAgents(); setIsCreating(false); setSelectedAgent(null); }}
+                  />
+              </React.Fragment>
+          );
+      }
+  };
+
+  // Se não tiver selecionado nada, mostra lista
+  if (!selectedAgent && !isCreating) {
       return (
-          <div className="flex justify-center items-center h-full">
-              <Loader2 className="animate-spin w-8 h-8 text-primary" />
+          <div className="max-w-6xl mx-auto p-8 space-y-8 animate-in fade-in">
+              <div className="flex justify-between items-center">
+                  <div>
+                      <h1 className="text-3xl font-bold text-white flex items-center gap-3">
+                          <Bot className="w-8 h-8 text-primary" /> Meus Agentes
+                      </h1>
+                      <p className="text-zinc-400 mt-1">Gerencie a inteligência da sua operação.</p>
+                  </div>
+                  <Button onClick={() => setIsCreating(true)} className="bg-primary hover:bg-primary/90 text-white">
+                      <Plus className="w-4 h-4 mr-2" /> Novo Agente
+                  </Button>
+              </div>
+
+              {loading ? (
+                  <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-zinc-500" /></div>
+              ) : agents.length === 0 ? (
+                  <div className="text-center py-20 bg-zinc-900/30 rounded-xl border border-dashed border-zinc-800">
+                      <Bot className="w-16 h-16 text-zinc-700 mx-auto mb-4" />
+                      <h3 className="text-zinc-300 font-bold text-lg">Nenhum agente criado</h3>
+                      <p className="text-zinc-500 mt-2 mb-6">Crie seu primeiro funcionário digital agora.</p>
+                      <Button onClick={() => setIsCreating(true)}>Criar Agente</Button>
+                  </div>
+              ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {agents.map(agent => (
+                          <div key={agent.id} className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-5 hover:border-zinc-700 transition-all group relative">
+                              <div className="flex justify-between items-start mb-4">
+                                  <div className={cn("p-2 rounded-lg", 
+                                      agent.level === 'junior' ? "bg-blue-500/10 text-blue-500" : 
+                                      agent.level === 'pleno' ? "bg-green-500/10 text-green-500" : 
+                                      "bg-purple-500/10 text-purple-500"
+                                  )}>
+                                      {agent.level === 'junior' ? <Bot size={20} /> : agent.level === 'pleno' ? <Zap size={20} /> : <Cpu size={20} />}
+                                  </div>
+                                  <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                      <button onClick={() => handleDelete(agent.id)} className="p-2 hover:bg-red-500/10 text-zinc-500 hover:text-red-500 rounded"><Trash2 size={16} /></button>
+                                  </div>
+                              </div>
+                              <h3 className="text-lg font-bold text-white mb-1">{agent.name}</h3>
+                              <div className="flex items-center gap-2 mb-4">
+                                  <span className={cn("text-[10px] uppercase font-bold px-2 py-0.5 rounded border", 
+                                      agent.level === 'junior' ? "border-blue-500/30 text-blue-400" : 
+                                      agent.level === 'pleno' ? "border-green-500/30 text-green-400" : 
+                                      "border-purple-500/30 text-purple-400"
+                                  )}>
+                                      Nível {agent.level}
+                                  </span>
+                                  <span className={cn("text-[10px] font-mono", agent.is_active ? "text-green-500" : "text-zinc-500")}>
+                                      {agent.is_active ? '● Ativo' : '○ Pausado'}
+                                  </span>
+                              </div>
+                              <Button variant="outline" className="w-full border-zinc-700 hover:bg-zinc-800" onClick={() => setSelectedAgent(agent)}>
+                                  Configurar
+                              </Button>
+                          </div>
+                      ))}
+                  </div>
+              )}
           </div>
-      )
+      );
   }
 
+  // TELA DE SELEÇÃO DE NÍVEL (Se estiver criando novo)
+  if (isCreating && !selectedAgent) {
+      return (
+          <div className="max-w-5xl mx-auto p-8 animate-in zoom-in-95">
+              <div className="flex items-center gap-4 mb-8">
+                  <Button variant="ghost" onClick={() => setIsCreating(false)}><ArrowLeft className="w-5 h-5 mr-2" /> Voltar</Button>
+                  <h1 className="text-2xl font-bold text-white">Escolha o Nível do Agente</h1>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {/* JUNIOR */}
+                  <div 
+                      onClick={() => { setSelectedLevel('junior'); setSelectedAgent({ level: 'junior' } as any); }}
+                      className="bg-zinc-900 border border-zinc-800 hover:border-blue-500/50 p-6 rounded-2xl cursor-pointer transition-all hover:-translate-y-1 group"
+                  >
+                      <div className="w-14 h-14 bg-blue-500/10 rounded-full flex items-center justify-center text-blue-500 mb-4 group-hover:scale-110 transition-transform">
+                          <Bot size={32} />
+                      </div>
+                      <h3 className="text-xl font-bold text-white mb-2">Junior</h3>
+                      <p className="text-sm text-zinc-400 mb-4">Ideal para triagem, FAQ e atendimento inicial simples.</p>
+                      <ul className="text-xs text-zinc-500 space-y-2">
+                          <li className="flex gap-2"><Check size={14} className="text-blue-500" /> Configuração via Formulário</li>
+                          <li className="flex gap-2"><Check size={14} className="text-blue-500" /> Respostas Curtas</li>
+                          <li className="flex gap-2"><Check size={14} className="text-blue-500" /> 2 Arquivos de Conhecimento</li>
+                      </ul>
+                  </div>
+
+                  {/* PLENO */}
+                  <div 
+                      onClick={() => { setSelectedLevel('pleno'); setSelectedAgent({ level: 'pleno' } as any); }}
+                      className="bg-zinc-900 border border-zinc-800 hover:border-green-500/50 p-6 rounded-2xl cursor-pointer transition-all hover:-translate-y-1 group relative overflow-hidden"
+                  >
+                      <div className="absolute top-0 right-0 bg-green-500 text-black text-[10px] font-bold px-3 py-1 rounded-bl-xl">POPULAR</div>
+                      <div className="w-14 h-14 bg-green-500/10 rounded-full flex items-center justify-center text-green-500 mb-4 group-hover:scale-110 transition-transform">
+                          <Zap size={32} />
+                      </div>
+                      <h3 className="text-xl font-bold text-white mb-2">Pleno</h3>
+                      <p className="text-sm text-zinc-400 mb-4">Para vendas consultivas e qualificação avançada.</p>
+                      <ul className="text-xs text-zinc-500 space-y-2">
+                          <li className="flex gap-2"><Check size={14} className="text-green-500" /> Construtor Visual de Fluxo</li>
+                          <li className="flex gap-2"><Check size={14} className="text-green-500" /> Técnicas de Vendas (SPIN/BANT)</li>
+                          <li className="flex gap-2"><Check size={14} className="text-green-500" /> 10 Arquivos de Mídia</li>
+                      </ul>
+                  </div>
+
+                  {/* SENIOR */}
+                  <div 
+                      onClick={() => { setSelectedLevel('senior'); setSelectedAgent({ level: 'senior' } as any); }}
+                      className="bg-zinc-900 border border-zinc-800 hover:border-purple-500/50 p-6 rounded-2xl cursor-pointer transition-all hover:-translate-y-1 group"
+                  >
+                      <div className="w-14 h-14 bg-purple-500/10 rounded-full flex items-center justify-center text-purple-500 mb-4 group-hover:scale-110 transition-transform">
+                          <Cpu size={32} />
+                      </div>
+                      <h3 className="text-xl font-bold text-white mb-2">Sênior</h3>
+                      <p className="text-sm text-zinc-400 mb-4">Agente autônomo com ferramentas e integrações.</p>
+                      <ul className="text-xs text-zinc-500 space-y-2">
+                          <li className="flex gap-2"><Check size={14} className="text-purple-500" /> Construtor Full + Integrações</li>
+                          <li className="flex gap-2"><Check size={14} className="text-purple-500" /> Acesso a Agenda e Drive</li>
+                          <li className="flex gap-2"><Check size={14} className="text-purple-500" /> Raciocínio Complexo (Gemini Pro)</li>
+                      </ul>
+                  </div>
+              </div>
+          </div>
+      );
+  }
+
+  // MODO EDIÇÃO / CRIAÇÃO
   return (
-    <div className="max-w-4xl mx-auto space-y-8 animate-in slide-in-from-bottom-4 duration-500">
-      <div>
-        <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-            <Bot className="w-8 h-8 text-primary" />
-            Configuração de Agentes IA
-        </h1>
-        <p className="text-zinc-400 text-sm mt-1">Configure seus agentes autônomos (Tabela: agents).</p>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2 space-y-6">
-            <div className="bg-card border border-border rounded-xl p-6 relative overflow-hidden">
-                <div className="absolute top-0 right-0 p-4 opacity-10">
-                    <Zap className="w-32 h-32 text-primary" />
-                </div>
-                
-                <div className="space-y-4 relative z-10">
-                    <div>
-                        <label className="block text-sm font-medium text-zinc-300 mb-2">Nome do Agente</label>
-                        <input 
-                            type="text" 
-                            value={agentName}
-                            onChange={(e) => setAgentName(e.target.value)}
-                            className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2 text-zinc-100 focus:ring-1 focus:ring-primary outline-none transition-all"
-                        />
-                    </div>
-                    
-                    <div>
-                        <div className="flex justify-between items-center mb-2">
-                            <label className="block text-sm font-medium text-zinc-300">Instrução do Sistema (Prompt)</label>
-                            <Button 
-                                variant="ghost" 
-                                size="sm" 
-                                onClick={handleOptimize}
-                                isLoading={isOptimizing}
-                                className="text-xs text-secondary hover:text-secondary h-6"
-                            >
-                                <Sparkles className="w-3 h-3 mr-1" />
-                                Otimizar com IA
-                            </Button>
-                        </div>
-                        <textarea 
-                            value={prompt}
-                            onChange={(e) => setPrompt(e.target.value)}
-                            className="w-full h-48 bg-zinc-900 border border-zinc-800 rounded-lg p-4 text-sm text-zinc-300 focus:ring-1 focus:ring-primary outline-none font-mono leading-relaxed resize-none transition-all custom-scrollbar"
-                            placeholder="Ex: Você é um vendedor agressivo que vende seguros..."
-                        />
-                    </div>
-
-                    <div>
-                        <label className="block text-sm font-medium text-zinc-300 mb-2">Base de Conhecimento (Contexto)</label>
-                        <textarea 
-                            value={knowledgeBase}
-                            onChange={(e) => setKnowledgeBase(e.target.value)}
-                            placeholder="Cole aqui informações sobre sua empresa, preços, links úteis..."
-                            className="w-full h-32 bg-zinc-900 border border-zinc-800 rounded-lg p-4 text-sm text-zinc-300 focus:ring-1 focus:ring-primary outline-none font-mono leading-relaxed resize-none transition-all custom-scrollbar"
-                        />
-                        <p className="text-xs text-zinc-500 mt-2">
-                            Informações que o agente usará para responder dúvidas específicas.
-                        </p>
-                    </div>
-                </div>
-            </div>
-
-            <div className="flex justify-end gap-3">
-                <Button variant="outline">Descartar</Button>
-                <Button variant="default" onClick={handleSave} isLoading={isSaving}>
-                    <Save className="w-4 h-4 mr-2" />
-                    Salvar Configuração
-                </Button>
-            </div>
-        </div>
-
-        <div className="space-y-6">
-            <div className="bg-card border border-border rounded-xl p-6">
-                <h3 className="font-semibold text-white mb-4">Status & Modelo</h3>
-                
-                <div className="space-y-4">
-                    <div>
-                        <label className="block text-xs font-medium text-zinc-400 mb-1.5">Modelo</label>
-                        <select className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-300 outline-none" disabled>
-                            <option value="gemini-3-flash-preview">Gemini 3 Flash</option>
-                        </select>
-                    </div>
-
-                    <div className="pt-4 border-t border-zinc-800">
-                        <div className="flex items-center justify-between mb-2">
-                            <span className="text-sm text-zinc-300">Agente Ativo</span>
-                            <div 
-                                className={`relative inline-flex h-5 w-9 items-center rounded-full cursor-pointer transition-colors ${isActive ? 'bg-primary' : 'bg-zinc-700'}`}
-                                onClick={() => setIsActive(!isActive)}
-                            >
-                                <span className={`${isActive ? 'translate-x-5' : 'translate-x-1'} inline-block h-3 w-3 transform rounded-full bg-white transition`} />
-                            </div>
-                        </div>
-                        <p className="text-xs text-zinc-500">
-                            {isActive ? 'O Agente responderá mensagens automaticamente.' : 'Automação pausada.'}
-                        </p>
-                    </div>
-                </div>
-            </div>
-
-            <div className="bg-zinc-900/50 border border-dashed border-zinc-800 rounded-xl p-6 text-center">
-                <div className="w-10 h-10 bg-zinc-800 rounded-full flex items-center justify-center mx-auto mb-3">
-                    <Play className="w-5 h-5 text-zinc-400" />
-                </div>
-                <h4 className="text-sm font-medium text-zinc-300">Testar Agente</h4>
-                <p className="text-xs text-zinc-500 mt-1 mb-3">Simule interações antes de ativar.</p>
-                <Button 
-                    variant="secondary" 
-                    size="sm" 
-                    className="w-full"
-                    onClick={() => {
-                        resetSimulator();
-                        setIsSimulatorOpen(true);
-                    }}
-                >
-                    Abrir Laboratório
-                </Button>
-            </div>
-        </div>
-      </div>
-
-      <Modal
-        isOpen={isSimulatorOpen}
-        onClose={() => setIsSimulatorOpen(false)}
-        title={`Laboratório: ${agentName}`}
-        maxWidth="lg"
-      >
-        <div className="flex flex-col h-[500px]">
-            <div className="bg-zinc-950/50 rounded-lg p-3 mb-2 flex items-center justify-between border border-zinc-800/50">
-                <div className="flex items-center gap-2 text-xs text-zinc-400">
-                    <Zap className="w-3 h-3 text-yellow-500" />
-                    <span>Ambiente de Simulação</span>
-                </div>
-                <button onClick={resetSimulator} className="text-xs text-zinc-500 hover:text-white flex items-center gap-1">
-                    <Trash2 className="w-3 h-3" /> Limpar Conversa
-                </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto space-y-4 p-2 custom-scrollbar bg-zinc-950/30 rounded-lg border border-zinc-800/50 mb-4">
-                {simMessages.map((msg, idx) => (
-                    <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                        <div className={`max-w-[80%] rounded-2xl px-4 py-2 text-sm ${
-                            msg.role === 'user' 
-                            ? 'bg-primary/20 text-primary-foreground rounded-tr-sm border border-primary/20' 
-                            : 'bg-zinc-800 text-zinc-100 rounded-tl-sm border border-zinc-700'
-                        }`}>
-                            {msg.role === 'model' && (
-                                <div className="flex items-center gap-1 text-[10px] text-zinc-500 mb-1 font-bold uppercase">
-                                    <Bot className="w-3 h-3" /> {agentName}
-                                </div>
-                            )}
-                            <p className="whitespace-pre-wrap leading-relaxed">{msg.text}</p>
-                        </div>
-                    </div>
-                ))}
-                {isSimLoading && (
-                    <div className="flex justify-start">
-                        <div className="bg-zinc-800 rounded-2xl rounded-tl-sm px-4 py-2 border border-zinc-700 flex items-center gap-2">
-                             <Loader2 className="w-4 h-4 animate-spin text-zinc-400" />
-                             <span className="text-xs text-zinc-400">Digitando...</span>
-                        </div>
-                    </div>
-                )}
-                <div ref={simEndRef} />
-            </div>
-
-            <div className="flex gap-2">
-                <input 
-                    type="text" 
-                    value={simInput}
-                    onChange={(e) => setSimInput(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleSimulateSend()}
-                    placeholder="Digite uma mensagem para testar..."
-                    className="flex-1 bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2 text-sm focus:ring-1 focus:ring-primary outline-none"
-                    autoFocus
-                />
-                <Button 
-                    variant="default" 
-                    size="icon" 
-                    onClick={handleSimulateSend} 
-                    isLoading={isSimLoading}
-                    disabled={!simInput.trim() || isSimLoading}
-                >
-                    <Send className="w-4 h-4" />
-                </Button>
-            </div>
-        </div>
-      </Modal>
+    <div className="h-[calc(100vh-80px)] w-full">
+        {renderBuilder()}
     </div>
   );
 }
+
+const Check = ({size, className}: any) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="20 6 9 17 4 12"/></svg>;
