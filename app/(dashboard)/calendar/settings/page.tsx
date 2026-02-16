@@ -38,6 +38,7 @@ const GRADIENT_DIRECTIONS = [
     { label: 'Diag. Cima', value: 'to top right', icon: ArrowUpRight },
 ];
 
+// --- TEMPLATES RESTAURADOS E EXPANDIDOS ---
 const THEME_TEMPLATES = [
     {
         id: 'wancora_dark',
@@ -53,8 +54,76 @@ const THEME_TEMPLATES = [
             coverOverlayOpacity: 0.6
         }
     },
-    // ... (Mantendo os outros templates para economizar espaço, eles já existem no arquivo original)
-    // O sistema deve manter os templates existentes.
+    {
+        id: 'clean_light',
+        name: "Clean Light (Profissional)",
+        previewColors: ["#f4f4f5", "#3b82f6"],
+        config: {
+            mode: "light",
+            pageBackground: "#f4f4f5",
+            cardColor: "rgba(255, 255, 255, 0.95)",
+            primaryColor: "#3b82f6",
+            textColor: "#18181b",
+            titleGradient: ["#18181b", "#52525b"],
+            coverOverlayOpacity: 0.2
+        }
+    },
+    {
+        id: 'midnight_blue',
+        name: "Midnight Blue (Executivo)",
+        previewColors: ["#0f172a", "#60a5fa"],
+        config: {
+            mode: "dark",
+            pageBackground: "#0f172a",
+            cardColor: "rgba(30, 41, 59, 0.9)",
+            primaryColor: "#60a5fa",
+            textColor: "#f1f5f9",
+            titleGradient: ["#93c5fd", "#3b82f6"],
+            coverOverlayOpacity: 0.5
+        }
+    },
+    {
+        id: 'cyberpunk',
+        name: "Cyberpunk Neon (Criativo)",
+        previewColors: ["#000000", "#d946ef"],
+        config: {
+            mode: "dark",
+            pageBackground: "linear-gradient(to bottom right, #2a0a2e, #000000)",
+            cardColor: "rgba(10, 10, 10, 0.9)",
+            primaryColor: "#d946ef",
+            textColor: "#ffffff",
+            titleGradient: ["#d946ef", "#8b5cf6"],
+            coverOverlayOpacity: 0.7
+        }
+    },
+    {
+        id: 'forest_zen',
+        name: "Forest Zen (Natural)",
+        previewColors: ["#14532d", "#4ade80"],
+        config: {
+            mode: "dark",
+            pageBackground: "linear-gradient(to bottom, #052e16, #14532d)",
+            cardColor: "rgba(20, 83, 45, 0.8)",
+            primaryColor: "#4ade80",
+            textColor: "#f0fdf4",
+            titleGradient: ["#bbf7d0", "#22c55e"],
+            coverOverlayOpacity: 0.4
+        }
+    },
+     {
+        id: 'sunset_vibes',
+        name: "Sunset Vibes (Moderno)",
+        previewColors: ["#c2410c", "#fcd34d"],
+        config: {
+            mode: "dark",
+            pageBackground: "linear-gradient(to top right, #431407, #7c2d12)",
+            cardColor: "rgba(67, 20, 7, 0.85)",
+            primaryColor: "#fb923c",
+            textColor: "#fff7ed",
+            titleGradient: ["#fdba74", "#fcd34d"],
+            coverOverlayOpacity: 0.5
+        }
+    }
 ];
 
 // --- NOTIFICATION UTILS ---
@@ -81,7 +150,7 @@ export default function CalendarSettingsPage() {
   const [uploadingCover, setUploadingCover] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   
-  // Estado para avatar atual (Adicionado para correção de erro)
+  // Estado para avatar atual (Recuperado)
   const [currentAvatar, setCurrentAvatar] = useState<string | null>(null);
   
   const [previewDevice, setPreviewDevice] = useState<'mobile' | 'desktop'>('mobile');
