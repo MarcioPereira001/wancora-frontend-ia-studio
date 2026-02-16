@@ -12,7 +12,7 @@ import { Modal } from '@/components/ui/Modal';
 import { 
     Calendar, Globe, Save, Loader2, Copy, Image as ImageIcon, PaintBucket, 
     Palette, LayoutTemplate, Smartphone, Monitor, Upload, ExternalLink, User, Clock, MapPin, Check,
-    Move, ZoomIn
+    Move, ZoomIn, ChevronDown
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { uploadChatMedia } from '@/utils/supabase/storage';
@@ -30,7 +30,7 @@ const WEEKDAYS = [
 const THEME_TEMPLATES = [
     {
         id: 'wancora_dark',
-        name: "Wancora Dark",
+        name: "Wancora Dark (Padrão)",
         previewColors: ["#09090b", "#22c55e"],
         config: {
             mode: "dark",
@@ -70,7 +70,104 @@ const THEME_TEMPLATES = [
             coverOverlayOpacity: 0.6
         }
     },
-    // ... outros templates mantidos ...
+    {
+        id: 'midnight_purple',
+        name: "Midnight Purple",
+        previewColors: ["#2e1065", "#a855f7"],
+        config: {
+            mode: "dark",
+            pageBackground: "linear-gradient(to bottom right, #000000, #2e1065, #000000)",
+            cardColor: "rgba(20, 5, 40, 0.95)",
+            primaryColor: "#a855f7",
+            textColor: "#faf5ff",
+            titleGradient: ["#d8b4fe", "#a855f7"],
+            coverOverlayOpacity: 0.4
+        }
+    },
+    {
+        id: 'forest_rain',
+        name: "Forest Rain",
+        previewColors: ["#022c22", "#4ade80"],
+        config: {
+            mode: "dark",
+            pageBackground: "linear-gradient(to bottom, #022c22, #064e3b, #065f46)",
+            cardColor: "rgba(2, 44, 34, 0.9)",
+            primaryColor: "#4ade80",
+            textColor: "#f0fdf4",
+            titleGradient: ["#86efac", "#22c55e"],
+            coverOverlayOpacity: 0.5
+        }
+    },
+    {
+        id: 'obsidian',
+        name: "Obsidian Black",
+        previewColors: ["#000000", "#ffffff"],
+        config: {
+            mode: "dark",
+            pageBackground: "#000000",
+            cardColor: "rgba(10, 10, 10, 0.95)",
+            primaryColor: "#ffffff",
+            textColor: "#ffffff",
+            titleGradient: ["#ffffff", "#71717a"],
+            coverOverlayOpacity: 0.7
+        }
+    },
+    {
+        id: 'cyber_neon',
+        name: "Cyber Neon",
+        previewColors: ["#09090b", "#eab308"],
+        config: {
+            mode: "dark",
+            pageBackground: "linear-gradient(to right, #09090b, #18181b, #09090b)",
+            cardColor: "rgba(24, 24, 27, 0.95)",
+            primaryColor: "#eab308", // Yellow
+            textColor: "#fef08a",
+            titleGradient: ["#facc15", "#a16207"],
+            coverOverlayOpacity: 0.6
+        }
+    },
+    {
+        id: 'ruby_red',
+        name: "Ruby Red",
+        previewColors: ["#450a0a", "#f87171"],
+        config: {
+            mode: "dark",
+            pageBackground: "linear-gradient(to bottom right, #450a0a, #7f1d1d, #000000)",
+            cardColor: "rgba(69, 10, 10, 0.9)",
+            primaryColor: "#f87171",
+            textColor: "#fef2f2",
+            titleGradient: ["#fca5a5", "#ef4444"],
+            coverOverlayOpacity: 0.5
+        }
+    },
+    {
+        id: 'royal_gold',
+        name: "Royal Gold",
+        previewColors: ["#1e293b", "#fbbf24"],
+        config: {
+            mode: "dark",
+            pageBackground: "linear-gradient(to bottom, #0f172a, #334155, #0f172a)",
+            cardColor: "rgba(15, 23, 42, 0.95)",
+            primaryColor: "#fbbf24",
+            textColor: "#fffbeb",
+            titleGradient: ["#fbbf24", "#d97706"],
+            coverOverlayOpacity: 0.5
+        }
+    },
+    {
+        id: 'arctic_frost',
+        name: "Arctic Frost",
+        previewColors: ["#ecfeff", "#06b6d4"],
+        config: {
+            mode: "light",
+            pageBackground: "linear-gradient(to top, #cffafe, #ecfeff, #ffffff)",
+            cardColor: "rgba(255, 255, 255, 0.95)",
+            primaryColor: "#06b6d4", // Cyan
+            textColor: "#155e75",
+            titleGradient: ["#0891b2", "#0e7490"],
+            coverOverlayOpacity: 0.2
+        }
+    },
     {
         id: 'clean_light',
         name: "Clean Light",
@@ -83,6 +180,62 @@ const THEME_TEMPLATES = [
             textColor: "#0f172a",
             titleGradient: ["#1e293b", "#475569"],
             coverOverlayOpacity: 0.2
+        }
+    },
+    {
+        id: 'rose_petal',
+        name: "Rose Petal",
+        previewColors: ["#fff1f2", "#f43f5e"],
+        config: {
+            mode: "light",
+            pageBackground: "#fff1f2",
+            cardColor: "rgba(255, 255, 255, 0.95)",
+            primaryColor: "#f43f5e",
+            textColor: "#881337",
+            titleGradient: ["#be123c", "#fb7185"],
+            coverOverlayOpacity: 0.3
+        }
+    },
+    {
+        id: 'slate_minimal',
+        name: "Slate Minimal",
+        previewColors: ["#f1f5f9", "#475569"],
+        config: {
+            mode: "light",
+            pageBackground: "#f1f5f9",
+            cardColor: "rgba(255, 255, 255, 1)",
+            primaryColor: "#475569",
+            textColor: "#020617",
+            titleGradient: ["#0f172a", "#334155"],
+            coverOverlayOpacity: 0.4
+        }
+    },
+    {
+        id: 'lavender_dream',
+        name: "Lavender Dream",
+        previewColors: ["#faf5ff", "#9333ea"],
+        config: {
+            mode: "light",
+            pageBackground: "linear-gradient(to right, #faf5ff, #f3e8ff)",
+            cardColor: "rgba(255, 255, 255, 0.9)",
+            primaryColor: "#9333ea",
+            textColor: "#3b0764",
+            titleGradient: ["#7e22ce", "#a855f7"],
+            coverOverlayOpacity: 0.3
+        }
+    },
+    {
+        id: 'corporate_blue',
+        name: "Corporate Blue",
+        previewColors: ["#eff6ff", "#1d4ed8"],
+        config: {
+            mode: "light",
+            pageBackground: "#eff6ff",
+            cardColor: "rgba(255, 255, 255, 0.98)",
+            primaryColor: "#1d4ed8",
+            textColor: "#1e3a8a",
+            titleGradient: ["#1e40af", "#3b82f6"],
+            coverOverlayOpacity: 0.3
         }
     }
 ];
@@ -106,6 +259,7 @@ export default function CalendarSettingsPage() {
 
   // Gradient State (3 Colors)
   const [bgGradientColors, setBgGradientColors] = useState(["#09090b", "#18181b", "#000000"]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
 
   const [formData, setFormData] = useState<AvailabilityFormData>({
     name: 'Minha Agenda',
@@ -270,6 +424,27 @@ export default function CalendarSettingsPage() {
       
       const cssGradient = `linear-gradient(to bottom right, ${newColors[0]}, ${newColors[1]}, ${newColors[2]})`;
       updateTheme('pageBackground', cssGradient);
+  };
+
+  const handleTemplateSelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
+      const tplId = e.target.value;
+      setSelectedTemplateId(tplId);
+      
+      const tpl = THEME_TEMPLATES.find(t => t.id === tplId);
+      if (tpl) {
+          setFormData(prev => ({
+              ...prev,
+              theme_config: tpl.config as any
+          }));
+          
+          // Atualiza os inputs de cor do gradiente local
+          if (tpl.config.pageBackground.includes('linear-gradient')) {
+              const matches = tpl.config.pageBackground.match(/#[0-9a-fA-F]{6}/g);
+              if (matches) setBgGradientColors([matches[0], matches[1], matches[2] || matches[1]]);
+          } else {
+              setBgGradientColors([tpl.config.pageBackground, tpl.config.pageBackground, tpl.config.pageBackground]);
+          }
+      }
   };
 
   if (isLoading) return <div className="flex items-center justify-center h-[calc(100vh-100px)]"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
@@ -477,39 +652,25 @@ export default function CalendarSettingsPage() {
                         </CardHeader>
                         <CardContent className="space-y-6">
                             
-                            {/* Templates Rápidos */}
+                            {/* Templates Dropdown */}
                             <div>
-                                <label className="text-xs font-bold text-zinc-500 uppercase mb-2 block flex items-center gap-2"><LayoutTemplate className="w-3 h-3" /> Templates Prontos</label>
-                                <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-                                    {THEME_TEMPLATES.map((tpl, i) => {
-                                        const isSelected = JSON.stringify(formData.theme_config) === JSON.stringify(tpl.config);
-                                        return (
-                                            <button 
-                                                key={i} 
-                                                onClick={() => {
-                                                    setFormData({...formData, theme_config: tpl.config as any});
-                                                    // Atualiza os inputs de cor se o template tiver gradiente
-                                                    if(tpl.config.pageBackground.includes('linear-gradient')) {
-                                                        const matches = tpl.config.pageBackground.match(/#[0-9a-fA-F]{6}/g);
-                                                        if (matches) setBgGradientColors([matches[0], matches[1], matches[2] || matches[1]]);
-                                                    } else {
-                                                        setBgGradientColors([tpl.config.pageBackground, tpl.config.pageBackground, tpl.config.pageBackground]);
-                                                    }
-                                                }}
-                                                className={cn(
-                                                    "relative flex flex-col items-center gap-2 p-3 rounded-xl border transition-all group hover:scale-105",
-                                                    isSelected ? "bg-zinc-800 border-primary shadow-[0_0_15px_-5px_rgba(34,197,94,0.3)]" : "bg-zinc-950 border-zinc-800 hover:border-zinc-700"
-                                                )}
-                                            >
-                                                <div className="flex -space-x-2">
-                                                    <div className="w-6 h-6 rounded-full border-2 border-zinc-900 shadow-sm" style={{ backgroundColor: tpl.previewColors[0] }} />
-                                                    <div className="w-6 h-6 rounded-full border-2 border-zinc-900 shadow-sm" style={{ backgroundColor: tpl.previewColors[1] }} />
-                                                </div>
-                                                <span className="text-[10px] text-zinc-400 font-medium text-center leading-tight group-hover:text-white">{tpl.name}</span>
-                                                {isSelected && <div className="absolute top-1 right-1 w-2 h-2 bg-primary rounded-full" />}
-                                            </button>
-                                        )
-                                    })}
+                                <label className="text-xs font-bold text-zinc-500 uppercase mb-2 block flex items-center gap-2">
+                                    <LayoutTemplate className="w-3 h-3" /> Templates Prontos
+                                </label>
+                                <div className="relative">
+                                    <select 
+                                        value={selectedTemplateId} 
+                                        onChange={handleTemplateSelect}
+                                        className="w-full bg-zinc-950 border border-zinc-800 text-zinc-300 rounded-lg p-3 appearance-none focus:ring-2 focus:ring-primary focus:border-transparent cursor-pointer text-sm"
+                                    >
+                                        <option value="" disabled>Escolha um modelo...</option>
+                                        {THEME_TEMPLATES.map((t) => (
+                                            <option key={t.id} value={t.id}>{t.name}</option>
+                                        ))}
+                                    </select>
+                                    <div className="absolute inset-y-0 right-3 flex items-center pointer-events-none text-zinc-500">
+                                        <ChevronDown className="w-4 h-4" />
+                                    </div>
                                 </div>
                             </div>
 
