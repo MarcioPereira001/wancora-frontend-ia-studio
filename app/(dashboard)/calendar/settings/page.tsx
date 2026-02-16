@@ -884,14 +884,20 @@ export default function CalendarSettingsPage() {
 
                                          {/* Title with Gradient (Fixed Box Issue) */}
                                          <h1 
-                                            className="text-xl font-bold mb-2 leading-tight inline-block w-fit"
-                                            style={{ 
-                                                background: theme?.titleGradient ? `linear-gradient(to right, ${theme.titleGradient[0]}, ${theme.titleGradient[1]})` : theme?.textColor,
-                                                backgroundClip: 'text',
-                                                WebkitBackgroundClip: 'text',
-                                                WebkitTextFillColor: 'transparent',
-                                                color: 'transparent' // Fallback
-                                            }}
+                                            className="text-xl font-bold mb-2 leading-tight"
+                                            style={
+                                                theme?.titleGradient ? { 
+                                                    backgroundImage: `linear-gradient(to right, ${theme.titleGradient[0]}, ${theme.titleGradient[1]})`,
+                                                    backgroundClip: 'text',
+                                                    WebkitBackgroundClip: 'text',
+                                                    WebkitTextFillColor: 'transparent',
+                                                    color: 'transparent',
+                                                    display: 'inline-block',
+                                                    width: 'fit-content'
+                                                } : { 
+                                                    color: theme?.textColor 
+                                                }
+                                            }
                                          >
                                              {formData.name}
                                          </h1>
