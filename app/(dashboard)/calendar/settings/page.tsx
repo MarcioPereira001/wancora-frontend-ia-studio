@@ -12,7 +12,7 @@ import { Modal } from '@/components/ui/Modal';
 import { 
     Calendar, Globe, Save, Loader2, Copy, Image as ImageIcon, PaintBucket, 
     Palette, LayoutTemplate, Smartphone, Monitor, Upload, ExternalLink, User, Clock, MapPin, Check,
-    Move, ZoomIn, ChevronDown
+    Move, ZoomIn, ChevronDown, ArrowDown, ArrowRight, ArrowUpRight, ArrowDownRight
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { uploadChatMedia } from '@/utils/supabase/storage';
@@ -25,6 +25,13 @@ const WEEKDAYS = [
   { id: 4, label: 'Q', name: 'Quinta' },
   { id: 5, label: 'S', name: 'Sexta' },
   { id: 6, label: 'S', name: 'Sábado' },
+];
+
+const GRADIENT_DIRECTIONS = [
+    { label: 'Baixo', value: 'to bottom', icon: ArrowDown },
+    { label: 'Direita', value: 'to right', icon: ArrowRight },
+    { label: 'Diag. Baixo', value: 'to bottom right', icon: ArrowDownRight },
+    { label: 'Diag. Cima', value: 'to top right', icon: ArrowUpRight },
 ];
 
 const THEME_TEMPLATES = [
@@ -257,9 +264,14 @@ export default function CalendarSettingsPage() {
   const [tempAvatarFile, setTempAvatarFile] = useState<File | null>(null);
   const [tempAvatarUrl, setTempAvatarUrl] = useState<string | null>(null);
 
-  // Gradient State (3 Colors)
+  // Gradient State
   const [bgGradientColors, setBgGradientColors] = useState(["#09090b", "#18181b", "#000000"]);
-  const [selectedTemplateId, setSelectedTemplateId] = useState("");
+  const [bgGradientDir, setBgGradientDir] = useState("to bottom right");
+  
+  // Custom Dropdown State
+  const [showTemplateDropdown, setShowTemplateDropdown] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState(THEME_TEMPLATES[0]);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   const [formData, setFormData] = useState<AvailabilityFormData>({
     name: 'Minha Agenda',
@@ -278,6 +290,16 @@ export default function CalendarSettingsPage() {
 
   const [notifConfig, setNotifConfig] = useState<any>({});
   const [currentAvatar, setCurrentAvatar] = useState('');
+
+  useEffect(() => {
+      const handleClickOutside = (event: MouseEvent) => {
+          if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+              setShowTemplateDropdown(false);
+          }
+      };
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   // Load Data
   useEffect(() => {
@@ -307,6 +329,10 @@ export default function CalendarSettingsPage() {
             // Tenta extrair cores do gradiente existente se houver
             const currentBg = data.theme_config?.pageBackground || "";
             if (currentBg.includes('linear-gradient')) {
+                // Tenta extrair direção
+                const dirMatch = currentBg.match(/to\s[a-z]+\s?[a-z]*/);
+                if (dirMatch) setBgGradientDir(dirMatch[0]);
+
                 const matches = currentBg.match(/#[0-9a-fA-F]{6}/g);
                 if (matches && matches.length >= 2) {
                     setBgGradientColors([
@@ -315,6 +341,8 @@ export default function CalendarSettingsPage() {
                         matches[2] || matches[1]
                     ]);
                 }
+            } else if (currentBg.startsWith('#')) {
+                setBgGradientColors([currentBg, currentBg, currentBg]);
             }
 
             if (data.notification_config) {
@@ -370,17 +398,15 @@ export default function CalendarSettingsPage() {
       }
   };
 
-  // 1. Intercepta o arquivo e abre o modal de corte
   const onSelectAvatarFile = (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file) return;
       setTempAvatarFile(file);
       setTempAvatarUrl(URL.createObjectURL(file));
       setCropModalOpen(true);
-      e.target.value = ''; // Reset input
+      e.target.value = ''; 
   };
 
-  // 2. Recebe o blob do modal e faz o upload
   const handleCroppedUpload = async (blob: Blob) => {
       if(!user?.company_id) return;
       setCropModalOpen(false);
@@ -422,28 +448,33 @@ export default function CalendarSettingsPage() {
       newColors[index] = color;
       setBgGradientColors(newColors);
       
-      const cssGradient = `linear-gradient(to bottom right, ${newColors[0]}, ${newColors[1]}, ${newColors[2]})`;
+      const cssGradient = `linear-gradient(${bgGradientDir}, ${newColors[0]}, ${newColors[1]}, ${newColors[2]})`;
       updateTheme('pageBackground', cssGradient);
   };
 
-  const handleTemplateSelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
-      const tplId = e.target.value;
-      setSelectedTemplateId(tplId);
+  const updateBgDirection = (dir: string) => {
+      setBgGradientDir(dir);
+      const cssGradient = `linear-gradient(${dir}, ${bgGradientColors[0]}, ${bgGradientColors[1]}, ${bgGradientColors[2]})`;
+      updateTheme('pageBackground', cssGradient);
+  }
+
+  const handleTemplateSelect = (tpl: any) => {
+      setSelectedTemplate(tpl);
+      setShowTemplateDropdown(false);
+
+      setFormData(prev => ({
+          ...prev,
+          theme_config: tpl.config as any
+      }));
       
-      const tpl = THEME_TEMPLATES.find(t => t.id === tplId);
-      if (tpl) {
-          setFormData(prev => ({
-              ...prev,
-              theme_config: tpl.config as any
-          }));
+      if (tpl.config.pageBackground.includes('linear-gradient')) {
+          const matches = tpl.config.pageBackground.match(/#[0-9a-fA-F]{6}/g);
+          if (matches) setBgGradientColors([matches[0], matches[1], matches[2] || matches[1]]);
           
-          // Atualiza os inputs de cor do gradiente local
-          if (tpl.config.pageBackground.includes('linear-gradient')) {
-              const matches = tpl.config.pageBackground.match(/#[0-9a-fA-F]{6}/g);
-              if (matches) setBgGradientColors([matches[0], matches[1], matches[2] || matches[1]]);
-          } else {
-              setBgGradientColors([tpl.config.pageBackground, tpl.config.pageBackground, tpl.config.pageBackground]);
-          }
+          const dirMatch = tpl.config.pageBackground.match(/to\s[a-z]+\s?[a-z]*/);
+          if (dirMatch) setBgGradientDir(dirMatch[0]);
+      } else {
+          setBgGradientColors([tpl.config.pageBackground, tpl.config.pageBackground, tpl.config.pageBackground]);
       }
   };
 
@@ -652,25 +683,47 @@ export default function CalendarSettingsPage() {
                         </CardHeader>
                         <CardContent className="space-y-6">
                             
-                            {/* Templates Dropdown */}
+                            {/* Custom Template Dropdown */}
                             <div>
                                 <label className="text-xs font-bold text-zinc-500 uppercase mb-2 block flex items-center gap-2">
                                     <LayoutTemplate className="w-3 h-3" /> Templates Prontos
                                 </label>
-                                <div className="relative">
-                                    <select 
-                                        value={selectedTemplateId} 
-                                        onChange={handleTemplateSelect}
-                                        className="w-full bg-zinc-950 border border-zinc-800 text-zinc-300 rounded-lg p-3 appearance-none focus:ring-2 focus:ring-primary focus:border-transparent cursor-pointer text-sm"
+                                <div className="relative" ref={dropdownRef}>
+                                    <button 
+                                        type="button"
+                                        onClick={() => setShowTemplateDropdown(!showTemplateDropdown)}
+                                        className="w-full bg-zinc-950 border border-zinc-800 text-zinc-300 rounded-lg p-3 text-left text-sm flex items-center justify-between hover:bg-zinc-900 transition-colors"
                                     >
-                                        <option value="" disabled>Escolha um modelo...</option>
-                                        {THEME_TEMPLATES.map((t) => (
-                                            <option key={t.id} value={t.id}>{t.name}</option>
-                                        ))}
-                                    </select>
-                                    <div className="absolute inset-y-0 right-3 flex items-center pointer-events-none text-zinc-500">
-                                        <ChevronDown className="w-4 h-4" />
-                                    </div>
+                                        <div className="flex items-center gap-2">
+                                            <div className="flex -space-x-1">
+                                                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: selectedTemplate.previewColors[0] }} />
+                                                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: selectedTemplate.previewColors[1] }} />
+                                            </div>
+                                            <span>{selectedTemplate.name}</span>
+                                        </div>
+                                        <ChevronDown className="w-4 h-4 text-zinc-500" />
+                                    </button>
+
+                                    {showTemplateDropdown && (
+                                        <div className="absolute top-12 left-0 w-full bg-zinc-900 border border-zinc-800 rounded-lg shadow-xl z-50 max-h-60 overflow-y-auto custom-scrollbar p-1">
+                                            {THEME_TEMPLATES.map((tpl) => (
+                                                <button 
+                                                    key={tpl.id} 
+                                                    onClick={() => handleTemplateSelect(tpl)}
+                                                    className={cn(
+                                                        "w-full flex items-center gap-3 p-2.5 rounded-md hover:bg-zinc-800 text-sm text-left transition-colors",
+                                                        selectedTemplate.id === tpl.id ? "bg-zinc-800" : ""
+                                                    )}
+                                                >
+                                                    <div className="flex -space-x-1 shrink-0">
+                                                        <div className="w-4 h-4 rounded-full border border-zinc-700 shadow-sm" style={{ backgroundColor: tpl.previewColors[0] }} />
+                                                        <div className="w-4 h-4 rounded-full border border-zinc-700 shadow-sm" style={{ backgroundColor: tpl.previewColors[1] }} />
+                                                    </div>
+                                                    <span className={cn("text-zinc-300", selectedTemplate.id === tpl.id ? "text-white font-bold" : "")}>{tpl.name}</span>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
                             </div>
 
@@ -691,10 +744,10 @@ export default function CalendarSettingsPage() {
                                 </div>
                             </div>
 
-                             {/* Fundo Gradiente da Página (3 Cores) */}
+                             {/* Fundo Gradiente da Página (3 Cores + Direção) */}
                              <div>
                                 <label className="text-xs font-bold text-zinc-500 uppercase mb-2 block flex items-center gap-2"><PaintBucket className="w-3 h-3" /> Fundo da Página (Gradiente)</label>
-                                <div className="grid grid-cols-3 gap-3">
+                                <div className="grid grid-cols-3 gap-3 mb-3">
                                     {bgGradientColors.map((color, i) => (
                                         <div key={i} className="flex flex-col gap-1">
                                             <div className="flex gap-2 items-center bg-zinc-950 border border-zinc-800 p-2 rounded">
@@ -707,6 +760,24 @@ export default function CalendarSettingsPage() {
                                             </div>
                                             <span className="text-[10px] text-zinc-500 text-center uppercase">{i === 0 ? 'Topo' : i === 1 ? 'Meio' : 'Fundo'}</span>
                                         </div>
+                                    ))}
+                                </div>
+                                {/* Direção do Gradiente */}
+                                <div className="grid grid-cols-4 gap-2">
+                                    {GRADIENT_DIRECTIONS.map((dir) => (
+                                        <button 
+                                            key={dir.value}
+                                            onClick={() => updateBgDirection(dir.value)}
+                                            className={cn(
+                                                "flex flex-col items-center justify-center p-2 rounded border transition-all text-xs",
+                                                bgGradientDir === dir.value 
+                                                    ? "bg-zinc-800 border-primary text-white" 
+                                                    : "bg-zinc-950 border-zinc-800 text-zinc-500 hover:border-zinc-600"
+                                            )}
+                                        >
+                                            <dir.icon className="w-4 h-4 mb-1" />
+                                            <span className="text-[9px] uppercase font-bold">{dir.label}</span>
+                                        </button>
                                     ))}
                                 </div>
                                 <Input 
@@ -775,12 +846,15 @@ export default function CalendarSettingsPage() {
 
                                 {/* Sidebar / Header Area (Left) */}
                                 <div className={cn(
-                                    "relative shrink-0 flex flex-col p-6 bg-black/20",
-                                    previewDevice === 'mobile' ? "w-full min-h-[280px]" : "w-1/3 h-full border-r border-white/10"
+                                    "relative shrink-0 flex flex-col bg-black/20",
+                                    previewDevice === 'mobile' ? "w-full min-h-[280px]" : "w-1/3 h-full border-r border-white/10 justify-start"
                                 )}>
                                      {/* Cover Image as Background */}
                                      {formData.cover_url && (
-                                         <div className="absolute inset-0 z-0">
+                                         <div className={cn(
+                                            "relative z-0 overflow-hidden",
+                                            previewDevice === 'desktop' ? "h-[140px] w-full" : "absolute inset-0 h-full"
+                                         )}>
                                              <img 
                                                 src={formData.cover_url} 
                                                 className="w-full h-full object-cover" 
@@ -790,7 +864,10 @@ export default function CalendarSettingsPage() {
                                          </div>
                                      )}
 
-                                     <div className="relative z-10 flex flex-col h-full justify-end">
+                                     <div className={cn(
+                                         "relative z-10 flex flex-col justify-end",
+                                         previewDevice === 'mobile' ? "h-full p-6" : "p-6 -mt-10"
+                                     )}>
                                          {/* Profile Header */}
                                          <div className="flex items-center gap-3 mb-4">
                                             <div className="relative shrink-0">

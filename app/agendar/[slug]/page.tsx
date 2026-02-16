@@ -277,36 +277,38 @@ export default function PublicSchedulePage() {
       >
         
         {/* --- LEFT SIDEBAR (INFO & CAPA) --- */}
-        <div className="w-full md:w-1/3 border-b md:border-b-0 md:border-r border-white/10 flex flex-col justify-between shrink-0 relative overflow-hidden bg-black/20">
+        {/* LÓGICA CAPA FACEBOOK (1/3 TOP) */}
+        <div className="w-full md:w-1/3 border-b md:border-b-0 md:border-r border-white/10 flex flex-col bg-black/20 shrink-0">
             
-            {/* Foto de Capa (Background da Sidebar) */}
+            {/* Bloco Superior: Capa */}
             {rule.cover_url && (
-                <div className="absolute inset-0 z-0">
+                <div className="relative h-48 md:h-[33%] min-h-[160px] overflow-hidden shrink-0 w-full">
                     <img 
                         src={rule.cover_url} 
                         className="w-full h-full object-cover" 
                         alt="Capa" 
                         style={{ objectPosition: `center ${coverOffsetY}%` }}
                     />
-                    {/* Overlay para legibilidade */}
                     <div className="absolute inset-0 bg-gradient-to-b from-transparent to-black" style={{ opacity: coverOverlay }}></div>
                 </div>
             )}
 
-            <div className="relative z-10 p-6 md:p-8 flex flex-col h-full justify-end">
+            {/* Bloco Inferior: Conteúdo (Com overlap do avatar) */}
+            <div className={cn("flex-1 p-6 md:p-8 flex flex-col relative z-10", rule.cover_url ? "-mt-12" : "")}>
+                
                 {/* Header Perfil */}
                 <div className="flex items-center gap-4 mb-6">
                     <div className="relative shrink-0">
                         {rule.owner_avatar ? (
-                            <img src={rule.owner_avatar} className="w-16 h-16 rounded-full border-4 border-black/50 object-cover shadow-lg bg-zinc-800" alt="Avatar" />
+                            <img src={rule.owner_avatar} className="w-20 h-20 rounded-full border-4 border-black/50 object-cover shadow-lg bg-zinc-800" alt="Avatar" />
                         ) : (
-                            <div className="w-16 h-16 rounded-full bg-zinc-800 flex items-center justify-center border-4 border-black/50 font-bold text-lg text-white">
+                            <div className="w-20 h-20 rounded-full bg-zinc-800 flex items-center justify-center border-4 border-black/50 font-bold text-xl text-white">
                                 {(rule.company_name || rule.name || 'C').charAt(0)}
                             </div>
                         )}
-                        <div className="absolute bottom-1 right-1 w-4 h-4 rounded-full border-2 border-black" style={{ backgroundColor: primaryColor }}></div>
+                        <div className="absolute bottom-1 right-1 w-5 h-5 rounded-full border-2 border-black" style={{ backgroundColor: primaryColor }}></div>
                     </div>
-                    <div>
+                    <div className={cn(rule.cover_url ? "pt-8" : "")}>
                         <p className="text-[10px] font-bold uppercase tracking-wider opacity-80 mb-0.5" style={{ color: textColor }}>{rule.company_name || 'Profissional'}</p>
                         <h3 className="text-lg font-bold leading-tight" style={{ color: textColor }}>{rule.owner_name || 'Consultor'}</h3>
                     </div>
