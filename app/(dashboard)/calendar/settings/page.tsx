@@ -41,6 +41,16 @@ const GRADIENT_DIRECTIONS = [
     { label: 'Diag. Cima', value: 'to top right', icon: ArrowUpRight },
 ];
 
+const TIMEZONES = [
+    { value: 'America/Sao_Paulo', label: '(GMT-3) Brasília, São Paulo' },
+    { value: 'America/Manaus', label: '(GMT-4) Manaus' },
+    { value: 'America/Rio_Branco', label: '(GMT-4) Rio Branco' },
+    { value: 'America/Noronha', label: '(GMT-2) Fernando de Noronha' },
+    { value: 'Europe/Lisbon', label: '(GMT+0) Lisboa' },
+    { value: 'UTC', label: '(GMT+0) UTC Universal' },
+    { value: 'America/New_York', label: '(GMT-5) Nova York' },
+];
+
 const TAGS = [
     { label: 'Nome Lead', value: '[nome_do_lead]' },
     { label: 'Empresa', value: '[empresa]' },
@@ -86,6 +96,7 @@ export default function CalendarSettingsPage() {
     start_hour: '09:00',
     end_hour: '18:00',
     slot_duration: 30,
+    timezone: 'America/Sao_Paulo',
     is_active: true,
     event_goal: 'Reunião',
     event_location_type: 'online',
@@ -127,6 +138,7 @@ export default function CalendarSettingsPage() {
                 start_hour: data.start_hour ? data.start_hour.slice(0, 5) : '09:00',
                 end_hour: data.end_hour ? data.end_hour.slice(0, 5) : '18:00',
                 slot_duration: data.slot_duration,
+                timezone: data.timezone || 'America/Sao_Paulo', // Carrega timezone
                 is_active: data.is_active,
                 event_goal: data.event_goal || 'Reunião',
                 event_location_type: data.event_location_type || 'online',
@@ -387,8 +399,27 @@ export default function CalendarSettingsPage() {
                 </Card>
 
                 <Card className="bg-zinc-900/50 border-zinc-800">
-                    <CardHeader><CardTitle className="text-lg text-white">Horários</CardTitle></CardHeader>
+                    <CardHeader><CardTitle className="text-lg text-white">Horários & Fuso</CardTitle></CardHeader>
                     <CardContent className="space-y-6">
+                        {/* Seletor de Fuso Horário */}
+                        <div className="bg-zinc-950/50 p-4 rounded-lg border border-zinc-800">
+                             <label className="text-xs font-bold text-zinc-500 uppercase mb-2 block flex items-center gap-2">
+                                 <Clock className="w-3 h-3 text-purple-500" /> Fuso Horário da Agenda
+                             </label>
+                             <select 
+                                value={formData.timezone} 
+                                onChange={(e) => setFormData({...formData, timezone: e.target.value})}
+                                className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-3 text-sm text-white focus:border-purple-500 outline-none"
+                             >
+                                 {TIMEZONES.map(tz => (
+                                     <option key={tz.value} value={tz.value}>{tz.label}</option>
+                                 ))}
+                             </select>
+                             <p className="text-[10px] text-zinc-500 mt-2">
+                                 Avisos de confirmação usarão este horário como base. O cliente verá os horários convertidos para o local dele.
+                             </p>
+                        </div>
+
                         <div>
                             <label className="text-xs font-bold text-zinc-500 uppercase mb-3 block">Dias da Semana</label>
                             <div className="flex flex-wrap gap-2">
@@ -406,9 +437,10 @@ export default function CalendarSettingsPage() {
             </div>
         )}
 
-        {/* --- APPEARANCE TAB --- */}
+        {/* ... (TABS APPEARANCE E NOTIFICATIONS MANTIDAS IGUAIS) ... */}
         {activeTab === 'appearance' && (
              <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 animate-in slide-in-from-right-4">
+                 {/* ... Mantido igual ... */}
                  <div className="space-y-6">
                     <Card className="bg-zinc-900/50 border-zinc-800">
                         <CardHeader><CardTitle className="text-lg text-white flex items-center gap-2"><ImageIcon className="w-5 h-5 text-blue-500" /> Mídia & Identidade</CardTitle></CardHeader>

@@ -34,12 +34,13 @@ const AvailabilitySchema = z.object({
   start_hour: z.string().regex(/^\d{2}:\d{2}$/, "Formato HH:MM inválido"),
   end_hour: z.string().regex(/^\d{2}:\d{2}$/, "Formato HH:MM inválido"),
   slot_duration: z.number().min(15).max(120),
+  timezone: z.string().default('America/Sao_Paulo'), // NOVO CAMPO
   is_active: z.boolean(),
   
   event_goal: z.string().default('Reunião'),
   event_location_type: z.enum(['online', 'presencial']).default('online'),
   event_location_details: z.string().optional(),
-  meeting_url: z.string().optional().nullable(), // NOVO CAMPO
+  meeting_url: z.string().optional().nullable(),
   
   cover_url: z.string().optional().nullable(),
   theme_config: ThemeConfigSchema.optional(),
@@ -134,12 +135,13 @@ export async function saveAvailabilityRules(formData: AvailabilityFormData) {
       start_hour: payload.start_hour,
       end_hour: payload.end_hour,
       slot_duration: payload.slot_duration,
+      timezone: payload.timezone, // Salva o fuso horário
       is_active: payload.is_active,
       
       event_goal: payload.event_goal,
       event_location_type: payload.event_location_type,
       event_location_details: payload.event_location_details,
-      meeting_url: payload.meeting_url, // Salva o link personalizado
+      meeting_url: payload.meeting_url, 
 
       cover_url: payload.cover_url,
       theme_config: safeThemeConfig,
