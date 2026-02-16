@@ -413,6 +413,11 @@ O sistema possui um **"Centralized Gatekeeper"** (`ensureLeadExists` em `sync.js
     *   **Permissividade Total:** Se nenhum nome for encontrado, o Lead é criado com `name = NULL`.
     *   **Frontend Fallback:** A interface exibe o número formatado (`+55...`) até que o "Auto-Healing" capture um nome real numa interação futura.
 
+### G. Protocolo de Envio Seguro (BR Smart Fix)
+Para contatos brasileiros (+55), o sistema **NÃO** confia cegamente no número digitado pelo usuário.
+*   Antes de enviar, o Backend consulta a rede do WhatsApp (`onWhatsApp`) para descobrir se aquele número possui ou não o 9º dígito na base da Meta.
+*   Isso garante entrega 100% mesmo se o lead cadastrou o número errado ou se a operadora mudou a regra de roteamento.
+
 ---
 
 ## 5. Configuração / Variáveis de Ambiente (.env)
