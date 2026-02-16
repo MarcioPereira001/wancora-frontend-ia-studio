@@ -22,6 +22,7 @@ import { createClient } from '@/utils/supabase/client';
 import { Instance } from '@/types';
 import { whatsappService } from '@/services/whatsappService';
 import EmojiPicker, { Theme } from 'emoji-picker-react';
+import { THEME_TEMPLATES, ThemeTemplate } from '@/lib/calendarThemes';
 
 const WEEKDAYS = [
   { id: 0, label: 'D', name: 'Domingo' },
@@ -38,24 +39,6 @@ const GRADIENT_DIRECTIONS = [
     { label: 'Direita', value: 'to right', icon: ArrowRight },
     { label: 'Diag. Baixo', value: 'to bottom right', icon: ArrowDownRight },
     { label: 'Diag. Cima', value: 'to top right', icon: ArrowUpRight },
-];
-
-const THEME_TEMPLATES = [
-    {
-        id: 'wancora_dark',
-        name: "Wancora Dark (Padrão)",
-        previewColors: ["#09090b", "#22c55e"],
-        config: {
-            mode: "dark",
-            pageBackground: "#09090b",
-            cardColor: "rgba(24, 24, 27, 0.95)",
-            primaryColor: "#22c55e",
-            textColor: "#ffffff",
-            titleGradient: ["#ffffff", "#a1a1aa"],
-            coverOverlayOpacity: 0.6
-        }
-    },
-    // ... outros templates mantidos ...
 ];
 
 const TAGS = [
@@ -92,7 +75,7 @@ export default function CalendarSettingsPage() {
   const [bgGradientDir, setBgGradientDir] = useState("to bottom right");
   
   const [showTemplateDropdown, setShowTemplateDropdown] = useState(false);
-  const [selectedTemplate, setSelectedTemplate] = useState(THEME_TEMPLATES[0]);
+  const [selectedTemplate, setSelectedTemplate] = useState<ThemeTemplate>(THEME_TEMPLATES[0]);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const [instances, setInstances] = useState<Instance[]>([]);
@@ -107,7 +90,7 @@ export default function CalendarSettingsPage() {
     event_goal: 'Reunião',
     event_location_type: 'online',
     event_location_details: 'Google Meet',
-    meeting_url: '', // Init vazio
+    meeting_url: '', 
     cover_url: '',
     theme_config: THEME_TEMPLATES[0].config as any
   });
@@ -168,6 +151,13 @@ export default function CalendarSettingsPage() {
             } else if (currentBg.startsWith('#')) {
                 setBgGradientColors([currentBg, currentBg, currentBg]);
             }
+            
+            // Tenta identificar qual template está ativo baseado nas cores
+            const matchingTemplate = THEME_TEMPLATES.find(t => 
+                t.config.pageBackground === data.theme_config?.pageBackground && 
+                t.config.cardColor === data.theme_config?.cardColor
+            );
+            if(matchingTemplate) setSelectedTemplate(matchingTemplate);
 
             if (data.notification_config) {
                 setNotifConfig(data.notification_config);
@@ -283,6 +273,8 @@ export default function CalendarSettingsPage() {
       setSelectedTemplate(tpl);
       setShowTemplateDropdown(false);
       setFormData(prev => ({ ...prev, theme_config: tpl.config as any }));
+      
+      // Atualiza os controles manuais para refletir o template escolhido
       if (tpl.config.pageBackground.includes('linear-gradient')) {
           const matches = tpl.config.pageBackground.match(/#[0-9a-fA-F]{6}/g);
           if (matches) setBgGradientColors([matches[0], matches[1], matches[2] || matches[1]]);
