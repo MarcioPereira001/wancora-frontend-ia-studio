@@ -3,6 +3,7 @@
 
 import { createClient } from '@/utils/supabase/server';
 import { z } from 'zod';
+import { unstable_noStore as noStore } from 'next/cache';
 
 // URL do Backend (Padrão Docker/Local)
 const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001/api/v1';
@@ -20,23 +21,36 @@ const BookingSchema = z.object({
 export type BookingData = z.infer<typeof BookingSchema>;
 
 export async function getPublicRule(slug: string) {
+  noStore(); // CRÍTICO: Impede que o Next.js faça cache do tema antigo. Garante WYSIWYG.
+  
   const supabase = await createClient();
   
-  // RPC atualizada ou Select direto para garantir que novos campos venham
-  // Fallback para select direto caso a RPC antiga não retorne os campos novos
+  // 1. Tenta via RPC (Mais rápido)
   const { data: rpcData, error } = await supabase.rpc('get_public_availability_by_slug', { p_slug: slug });
   
   if (rpcData && rpcData.length > 0) {
-      // Se a RPC já retorna tudo (SELECT *), ótimo.
       return rpcData[0];
   }
 
-  // Fallback: Busca manual se a RPC falhar ou estiver desatualizada no banco
+  // 2. Fallback: Query direta se a RPC falhar ou não retornar os campos novos (Migration Safety)
+  // CORREÇÃO: profile_pic_url em vez de avatar_url
   const { data: tableData } = await supabase
     .from('availability_rules')
     .select(`
-        *,
-        profiles:user_id (name, avatar_url, email),
+        id,
+        name,
+        slug,
+        days_of_week,
+        start_hour,
+        end_hour,
+        slot_duration,
+        event_goal,
+        event_location_type,
+        event_location_details,
+        cover_url,
+        theme_config, 
+        is_active,
+        profiles:user_id (name, profile_pic_url, email),
         companies:company_id (name)
     `)
     .eq('slug', slug)
@@ -44,12 +58,13 @@ export async function getPublicRule(slug: string) {
     .single();
 
   if (tableData) {
+      // Normaliza para o formato esperado pelo frontend
       return {
           ...tableData,
+          rule_id: tableData.id,
           owner_name: tableData.profiles?.name,
-          owner_avatar: tableData.profiles?.avatar_url,
-          company_name: tableData.companies?.name,
-          rule_id: tableData.id // Compatibilidade com frontend
+          owner_avatar: tableData.profiles?.profile_pic_url, // Mapeamento correto
+          company_name: tableData.companies?.name
       };
   }
 
@@ -57,6 +72,7 @@ export async function getPublicRule(slug: string) {
 }
 
 export async function getBusySlots(ruleId: string, date: string) {
+  noStore(); // Dados de disponibilidade também não devem ter cache
   const supabase = await createClient();
   const { data } = await supabase.rpc('get_busy_slots', { p_rule_id: ruleId, p_date: date });
   return data || [];
@@ -92,11 +108,11 @@ export async function bookAppointment(formData: BookingData) {
 
       // 2. Disparar Webhook para Backend (Fire and Forget)
       if (data?.id) {
+          // Busca o company_id para enviar ao backend correto
           const { data: appData } = await supabase.from('appointments').select('company_id').eq('id', data.id).single();
           
           if (appData) {
                const endpoint = `${API_URL}/appointments/confirm`;
-               // Fetch sem await
                fetch(endpoint, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },

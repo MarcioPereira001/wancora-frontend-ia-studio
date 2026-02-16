@@ -86,8 +86,6 @@ export default function PublicSchedulePage() {
               const dateStr = format(selectedDate, 'yyyy-MM-dd');
               const dayOfWeek = selectedDate.getDay();
               
-              // Verifica se o dia da semana está ativo
-              // Se days_of_week for null/undefined, assume todos (fallback)
               if (rule.days_of_week && !rule.days_of_week.includes(dayOfWeek)) {
                   setSlots([]);
                   setLoadingSlots(false);
@@ -173,7 +171,6 @@ export default function PublicSchedulePage() {
       }
   };
 
-  // --- RENDERIZADORES DE CALENDÁRIO ---
   const renderCalendar = () => {
       const startDate = startOfWeek(currentMonth, { weekStartsOn: 0 });
       const days = [];
@@ -183,7 +180,6 @@ export default function PublicSchedulePage() {
       const primaryColor = theme.primaryColor || '#22c55e';
       const textColor = theme.textColor || '#ffffff';
 
-      // 5 semanas = 35 dias
       for (let i = 0; i < 35; i++) {
           const cloneDay = day;
           const isMonthMatch = isSameMonth(cloneDay, currentMonth);
@@ -192,7 +188,6 @@ export default function PublicSchedulePage() {
           
           const isAvailableDay = rule?.days_of_week?.includes(cloneDay.getDay());
           
-          // Bloqueia passado
           const todayStart = new Date();
           todayStart.setHours(0,0,0,0);
           const isPast = cloneDay < todayStart;
@@ -239,28 +234,29 @@ export default function PublicSchedulePage() {
                   <CalendarIcon className="w-10 h-10 opacity-50" />
               </div>
               <div>
-                <h1 className="text-2xl font-bold text-white mb-2">Link Inválido ou Inativo</h1>
-                <p className="text-sm max-w-xs mx-auto">Verifique o endereço digitado ou entre em contato com o profissional.</p>
+                <h1 className="text-2xl font-bold text-white mb-2">Link Inválido</h1>
+                <p className="text-sm max-w-xs mx-auto">Verifique o endereço digitado.</p>
               </div>
           </div>
       );
   }
 
-  // --- ENGINE DE TEMA (APLICAÇÃO DE CORES) ---
+  // --- ENGINE DE TEMA (Pixel Perfect Match) ---
   const theme = rule.theme_config || {};
   
-  const bgStyle = theme.backgroundType === 'solid' 
-      ? { backgroundColor: theme.backgroundColor || theme.gradientColors?.[0] || '#09090b' }
-      : { backgroundImage: `linear-gradient(${theme.gradientDirection || 'to bottom right'}, ${(theme.gradientColors || ['#09090b', '#18181b']).join(', ')})` };
-  
+  const pageBackground = theme.pageBackground || '#09090b';
+  const cardColor = theme.cardColor || 'rgba(24, 24, 27, 0.9)';
   const textColor = theme.textColor || '#ffffff';
   const primaryColor = theme.primaryColor || '#22c55e';
-  const cardColor = theme.cardColor || 'rgba(24, 24, 27, 0.6)';
+  
+  // Defaults para garantir que sempre haja um valor
+  const coverOverlay = theme.coverOverlayOpacity !== undefined ? theme.coverOverlayOpacity : 0.6;
+  const coverOffsetY = theme.coverOffsetY !== undefined ? theme.coverOffsetY : 50;
 
   const progress = ((step) / 3) * 100;
 
   return (
-    <div className="min-h-screen flex flex-col md:items-center md:justify-center p-0 md:p-6 font-sans overflow-y-auto" style={{ ...bgStyle, color: textColor }}>
+    <div className="min-h-screen flex flex-col md:items-center md:justify-center p-0 md:p-6 font-sans overflow-y-auto" style={{ background: pageBackground, color: textColor }}>
       
       {/* Barra de Progresso Mobile */}
       <div className="fixed top-0 left-0 right-0 h-1 z-50 md:hidden" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}>
@@ -273,7 +269,6 @@ export default function PublicSchedulePage() {
           />
       </div>
 
-      {/* Main Card Container */}
       <motion.div 
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
@@ -284,17 +279,23 @@ export default function PublicSchedulePage() {
         {/* --- LEFT SIDEBAR (INFO & CAPA) --- */}
         <div className="w-full md:w-[35%] border-b md:border-b-0 md:border-r border-white/10 flex flex-col justify-between shrink-0 relative overflow-hidden bg-black/20">
             
-            {/* Foto de Capa (Background do Topo) */}
+            {/* Foto de Capa (Background da Sidebar) */}
             {rule.cover_url && (
-                <div className="absolute top-0 left-0 w-full h-32 z-0">
-                    <img src={rule.cover_url} className="w-full h-full object-cover opacity-80 mask-image-gradient-b" alt="Capa" />
-                    <div className="absolute inset-0 bg-gradient-to-b from-transparent to-[rgba(0,0,0,0.9)]"></div>
+                <div className="absolute inset-0 z-0">
+                    <img 
+                        src={rule.cover_url} 
+                        className="w-full h-full object-cover" 
+                        alt="Capa" 
+                        style={{ objectPosition: `center ${coverOffsetY}%` }}
+                    />
+                    {/* Overlay para legibilidade */}
+                    <div className="absolute inset-0 bg-gradient-to-b from-transparent to-black" style={{ opacity: coverOverlay }}></div>
                 </div>
             )}
 
-            <div className="relative z-10 p-6 md:p-8 flex flex-col h-full">
+            <div className="relative z-10 p-6 md:p-8 flex flex-col h-full justify-end">
                 {/* Header Perfil */}
-                <div className={cn("flex items-center gap-4 mb-6", rule.cover_url ? "mt-16" : "mt-0")}>
+                <div className="flex items-center gap-4 mb-6">
                     <div className="relative shrink-0">
                         {rule.owner_avatar ? (
                             <img src={rule.owner_avatar} className="w-16 h-16 rounded-full border-4 border-black/50 object-cover shadow-lg bg-zinc-800" alt="Avatar" />
@@ -306,21 +307,34 @@ export default function PublicSchedulePage() {
                         <div className="absolute bottom-1 right-1 w-4 h-4 rounded-full border-2 border-black" style={{ backgroundColor: primaryColor }}></div>
                     </div>
                     <div>
-                        <p className="text-[10px] font-bold uppercase tracking-wider opacity-70 mb-0.5">{rule.company_name || 'Profissional'}</p>
-                        <h3 className="text-lg font-bold leading-tight">{rule.owner_name || 'Consultor'}</h3>
+                        <p className="text-[10px] font-bold uppercase tracking-wider opacity-80 mb-0.5" style={{ color: textColor }}>{rule.company_name || 'Profissional'}</p>
+                        <h3 className="text-lg font-bold leading-tight" style={{ color: textColor }}>{rule.owner_name || 'Consultor'}</h3>
                     </div>
                 </div>
 
-                <h1 className="text-2xl font-bold mb-2 leading-tight">{rule.name}</h1>
-                <p className="text-sm mb-6 opacity-70">{rule.event_goal || 'Reunião de Alinhamento'}</p>
+                {/* Título com Gradiente Opcional */}
+                <h1 
+                    className="text-2xl font-bold mb-2 leading-tight"
+                    style={{ 
+                        background: theme.titleGradient ? `linear-gradient(to right, ${theme.titleGradient[0]}, ${theme.titleGradient[1]})` : textColor,
+                        backgroundClip: theme.titleGradient ? 'text' : 'border-box',
+                        WebkitBackgroundClip: theme.titleGradient ? 'text' : 'border-box',
+                        WebkitTextFillColor: theme.titleGradient ? 'transparent' : 'inherit',
+                        color: theme.titleGradient ? 'transparent' : textColor
+                    }}
+                >
+                    {rule.name}
+                </h1>
+                
+                <p className="text-sm mb-6 opacity-80" style={{ color: textColor }}>{rule.event_goal || 'Reunião de Alinhamento'}</p>
                 
                 {/* Detalhes do Evento */}
-                <div className="space-y-3 mt-auto mb-6">
-                    <div className="flex items-center gap-3 text-sm p-3 rounded-xl border border-white/5" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+                <div className="space-y-3">
+                    <div className="flex items-center gap-3 text-sm p-3 rounded-xl border border-white/5 bg-white/5" style={{ color: textColor }}>
                         <Clock className="w-5 h-5" style={{ color: primaryColor }} />
                         <span className="font-medium">{rule.slot_duration} min</span>
                     </div>
-                    <div className="flex items-center gap-3 text-sm p-3 rounded-xl border border-white/5" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+                    <div className="flex items-center gap-3 text-sm p-3 rounded-xl border border-white/5 bg-white/5" style={{ color: textColor }}>
                         <MapPin className="w-5 h-5 text-blue-400" />
                         <div className="flex flex-col">
                              <span className="font-medium capitalize">{rule.event_location_type || 'Online'}</span>
@@ -329,19 +343,19 @@ export default function PublicSchedulePage() {
                     </div>
                 </div>
                 
-                {/* Resumo Dinâmico (Footer Sidebar) */}
+                {/* Resumo Dinâmico da Seleção */}
                 <AnimatePresence>
                 {selectedDate && selectedTime && (
                     <motion.div 
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: 10 }}
-                        className="pt-4 border-t border-white/10"
+                        className="pt-6 border-t border-white/10 mt-6"
                     >
-                        <p className="text-[10px] uppercase font-bold mb-1 opacity-50">Selecionado</p>
+                        <p className="text-[10px] uppercase font-bold mb-1 opacity-50" style={{ color: textColor }}>Selecionado</p>
                         <div>
                             <div className="text-sm font-bold capitalize mb-0.5" style={{ color: primaryColor }}>{format(selectedDate, "EEEE, d 'de' MMMM", { locale: ptBR })}</div>
-                            <div className="text-2xl font-mono font-bold">{selectedTime}</div>
+                            <div className="text-2xl font-mono font-bold" style={{ color: textColor }}>{selectedTime}</div>
                         </div>
                     </motion.div>
                 )}
@@ -352,7 +366,6 @@ export default function PublicSchedulePage() {
         {/* --- RIGHT CONTENT (CALENDAR & FORM) --- */}
         <div className="flex-1 relative flex flex-col h-full overflow-hidden">
             
-            {/* Mobile Back Button (Quando em passos avançados) */}
             {step > 0 && step < 3 && (
                 <div className="md:hidden flex items-center p-4 border-b border-white/10 z-20 sticky top-0 backdrop-blur-md" style={{ backgroundColor: 'rgba(0,0,0,0.2)' }}>
                     <button onClick={() => setStep(step - 1)} className="p-2 -ml-2 hover:opacity-80">
@@ -478,17 +491,17 @@ export default function PublicSchedulePage() {
                                 <label className="text-xs font-bold uppercase ml-1 opacity-60">Qual o seu nome?</label>
                                 <div className="relative">
                                     <User className="absolute left-3 top-3 w-5 h-5 opacity-50" />
-                                    <Input value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="pl-10 bg-black/20 border-white/10 h-12 text-base rounded-xl focus:ring-1 text-white placeholder:text-white/30" style={{ '--tw-ring-color': primaryColor } as any} placeholder="Digite aqui..." autoFocus />
+                                    <Input value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="pl-10 bg-black/20 border-white/10 h-12 text-base rounded-xl focus:ring-1 placeholder:text-white/30" style={{ '--tw-ring-color': primaryColor, color: textColor, borderColor: `${textColor}20` } as any} placeholder="Digite aqui..." autoFocus />
                                 </div>
                             </div>
                             <div className="space-y-1.5 relative z-20">
                                 <label className="text-xs font-bold uppercase ml-1 opacity-60">Seu WhatsApp (Para confirmação)</label>
                                 <div className="flex gap-2">
                                     <div className="relative" ref={countryDropdownRef}>
-                                        <button type="button" className="h-12 bg-black/20 border border-white/10 rounded-xl px-3 flex items-center gap-2 hover:border-white/30 transition-colors min-w-[90px]" onClick={() => setIsCountryOpen(!isCountryOpen)}>
+                                        <button type="button" className="h-12 bg-black/20 border border-white/10 rounded-xl px-3 flex items-center gap-2 hover:border-white/30 transition-colors min-w-[90px]" onClick={() => setIsCountryOpen(!isCountryOpen)} style={{ borderColor: `${textColor}20` }}>
                                             <span className="text-xl">{selectedCountry.flag}</span>
-                                            <span className="text-sm font-bold opacity-80">+{selectedCountry.code}</span>
-                                            <ChevronDown className="w-3 h-3 opacity-50 ml-auto" />
+                                            <span className="text-sm font-bold opacity-80" style={{ color: textColor }}>+{selectedCountry.code}</span>
+                                            <ChevronDown className="w-3 h-3 opacity-50 ml-auto" style={{ color: textColor }} />
                                         </button>
                                         {isCountryOpen && (
                                             <div className="absolute top-14 left-0 w-56 bg-[#18181b] border border-zinc-700 rounded-xl shadow-2xl z-50 max-h-60 overflow-y-auto custom-scrollbar p-1">
@@ -503,7 +516,7 @@ export default function PublicSchedulePage() {
                                     </div>
                                     <div className="relative flex-1">
                                         <Phone className="absolute left-3 top-3.5 w-5 h-5 opacity-50" />
-                                        <Input ref={phoneInputRef} value={phoneNumber} onChange={handlePhoneInput} className="pl-10 bg-black/20 border-white/10 h-12 text-base rounded-xl focus:ring-1 text-white font-mono placeholder:text-white/30" style={{ '--tw-ring-color': primaryColor } as any} placeholder={selectedCountry.mask} />
+                                        <Input ref={phoneInputRef} value={phoneNumber} onChange={handlePhoneInput} className="pl-10 bg-black/20 border-white/10 h-12 text-base rounded-xl focus:ring-1 font-mono placeholder:text-white/30" style={{ '--tw-ring-color': primaryColor, color: textColor, borderColor: `${textColor}20` } as any} placeholder={selectedCountry.mask} />
                                     </div>
                                 </div>
                             </div>
@@ -511,12 +524,12 @@ export default function PublicSchedulePage() {
                                 <label className="text-xs font-bold uppercase ml-1 opacity-60">Email (Opcional)</label>
                                 <div className="relative">
                                     <Mail className="absolute left-3 top-3 w-5 h-5 opacity-50" />
-                                    <Input value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className="pl-10 bg-black/20 border-white/10 h-12 text-base rounded-xl focus:ring-1 text-white placeholder:text-white/30" style={{ '--tw-ring-color': primaryColor } as any} placeholder="seu@email.com" />
+                                    <Input value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className="pl-10 bg-black/20 border-white/10 h-12 text-base rounded-xl focus:ring-1 placeholder:text-white/30" style={{ '--tw-ring-color': primaryColor, color: textColor, borderColor: `${textColor}20` } as any} placeholder="seu@email.com" />
                                 </div>
                             </div>
                             <div className="space-y-1.5">
                                 <label className="text-xs font-bold uppercase ml-1 opacity-60">Observações</label>
-                                <Textarea value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} className="bg-black/20 border-white/10 min-h-[100px] rounded-xl focus:ring-1 p-3 text-white placeholder:text-white/30" style={{ '--tw-ring-color': primaryColor } as any} placeholder="Gostaria de falar sobre..." />
+                                <Textarea value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} className="bg-black/20 border-white/10 min-h-[100px] rounded-xl focus:ring-1 p-3 placeholder:text-white/30" style={{ '--tw-ring-color': primaryColor, color: textColor, borderColor: `${textColor}20` } as any} placeholder="Gostaria de falar sobre..." />
                             </div>
                             <Button 
                                 onClick={handleBooking} 
