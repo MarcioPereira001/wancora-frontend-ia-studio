@@ -238,11 +238,15 @@ Define as regras de horários para o sistema de agendamento (tipo Calendly).
 * `slot_duration`: integer
 * `buffer_before`: integer
 * `buffer_after`: integer
+* `timezone`: text (Default: 'America/Sao_Paulo') - **[NOVO]** Fuso horário base para cálculos de agendamento e notificações.
 * `is_active`: boolean
-* `event_goal`: text (Default: 'Reunião') - Ex: "Consulta", "Mentoria".
+* `event_goal`: text (Default: 'Reunião')
 * `event_location_type`: text ('online', 'presencial')
 * `event_location_details`: text (Ex: "Google Meet", "Rua X...").
-* `notification_config`: jsonb (CRÍTICO) - Configurações de automação.
+* `meeting_url`: text - **[NOVO]** Link padrão da reunião (ex: Google Meet fixo) usado como fallback.
+* `cover_url`: text - Imagem de capa da página pública.
+* `theme_config`: jsonb - Configurações visuais (cores, gradientes) da página pública.
+* `notification_config`: jsonb (CRÍTICO) - Configurações de automação (Templates, Sessão de Envio).
   * Schema:
     ```json
     { 

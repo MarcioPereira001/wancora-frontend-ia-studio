@@ -479,14 +479,18 @@ O motor de disparos em massa opera sob regras rígidas de segurança:
 
 ### 4.5. Agenda Automation Worker (Notification Engine)
 Este worker é responsável por processar as regras de aviso configuradas na tabela `availability_rules`.
-* **Frequência:** Cron Job a cada 5 ou 10 minutos.
+* **Frequência:** Cron Job a cada 1 minuto.
 * **Lógica de Execução:**
-    1.  Busca agendamentos (`appointments`) futuros (próximas 24h).
-    2.  Faz Join com `availability_rules` para ler o `notification_config`.
-    3.  Verifica se existe gatilho pendente (Ex: `before_event` com `time_amount: 1 hour`).
-    4.  **Disparo:** Se o horário atual bater com a regra ( `start_time - time_amount`), envia a mensagem via `whatsappController`.
-    5.  **Idempotência:** Marca o agendamento como notificado (`reminder_sent = true`) para evitar spam.
-
+    1.  **Mutex:** Utiliza Redis Lock (`SET NX`) para garantir execução única em ambiente escalável.
+    2.  **Escopo:** Busca agendamentos (`appointments`) criados recentemente (para confirmação) ou futuros (para lembretes).
+    3.  **Contexto:** Faz Join com `availability_rules` para ler `notification_config`, `meeting_url`, `event_location_details` e `timezone`.
+    4.  **Enriquecimento de Mensagem:**
+        *   Aplica a formatação de data/hora baseada no **Timezone** configurado na regra (evita erro de UTC/GMT-3).
+        *   Se o agendamento não tiver link específico, usa o `meeting_url` da regra global como fallback.
+        *   Se o agendamento não tiver local específico, usa o `event_location_details` da regra global.
+    5.  **Disparo:** Envia via `whatsappController` usando a sessão definida no config.
+    6.  **Idempotência:** Marca flags `confirmation_sent` ou `reminder_sent` no banco.
+    
 ### 4.6. AI Sentinel & BYOK Architecture
 O serviço de inteligência (`sentinel.js`) implementa uma estratégia de resolução de credenciais em tempo de execução para suportar Multi-Tenant real:
 
