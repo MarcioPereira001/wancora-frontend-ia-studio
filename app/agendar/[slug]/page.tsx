@@ -277,7 +277,7 @@ export default function PublicSchedulePage() {
       >
         
         {/* --- LEFT SIDEBAR (INFO & CAPA) --- */}
-        <div className="w-full md:w-[35%] border-b md:border-b-0 md:border-r border-white/10 flex flex-col justify-between shrink-0 relative overflow-hidden bg-black/20">
+        <div className="w-full md:w-1/3 border-b md:border-b-0 md:border-r border-white/10 flex flex-col justify-between shrink-0 relative overflow-hidden bg-black/20">
             
             {/* Foto de Capa (Background da Sidebar) */}
             {rule.cover_url && (
@@ -314,13 +314,13 @@ export default function PublicSchedulePage() {
 
                 {/* Título com Gradiente Opcional */}
                 <h1 
-                    className="text-2xl font-bold mb-2 leading-tight"
+                    className="text-2xl font-bold mb-2 leading-tight inline-block w-fit"
                     style={{ 
                         background: theme.titleGradient ? `linear-gradient(to right, ${theme.titleGradient[0]}, ${theme.titleGradient[1]})` : textColor,
-                        backgroundClip: theme.titleGradient ? 'text' : 'border-box',
-                        WebkitBackgroundClip: theme.titleGradient ? 'text' : 'border-box',
-                        WebkitTextFillColor: theme.titleGradient ? 'transparent' : 'inherit',
-                        color: theme.titleGradient ? 'transparent' : textColor
+                        backgroundClip: 'text',
+                        WebkitBackgroundClip: 'text',
+                        WebkitTextFillColor: 'transparent',
+                        color: 'transparent' // Fallback
                     }}
                 >
                     {rule.name}

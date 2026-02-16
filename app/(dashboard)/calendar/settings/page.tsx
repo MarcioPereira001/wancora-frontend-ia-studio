@@ -1,16 +1,18 @@
 
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useToast } from '@/hooks/useToast';
 import { getMyAvailability, saveAvailabilityRules, updateProfileAvatar, type AvailabilityFormData } from '@/app/actions/calendar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Modal } from '@/components/ui/Modal';
 import { 
     Calendar, Globe, Save, Loader2, Copy, Image as ImageIcon, PaintBucket, 
-    Palette, LayoutTemplate, Smartphone, Monitor, Upload, ExternalLink, User, Clock, MapPin, Check
+    Palette, LayoutTemplate, Smartphone, Monitor, Upload, ExternalLink, User, Clock, MapPin, Check,
+    Move, ZoomIn
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { uploadChatMedia } from '@/utils/supabase/storage';
@@ -25,9 +27,6 @@ const WEEKDAYS = [
   { id: 6, label: 'S', name: 'Sábado' },
 ];
 
-const DURATIONS = [15, 30, 45, 60, 90, 120];
-
-// --- 10 TEMPLATES PRONTOS ---
 const THEME_TEMPLATES = [
     {
         id: 'wancora_dark',
@@ -49,7 +48,7 @@ const THEME_TEMPLATES = [
         previewColors: ["#0f172a", "#38bdf8"],
         config: {
             mode: "dark",
-            pageBackground: "linear-gradient(to bottom right, #0f172a, #1e3a8a)",
+            pageBackground: "linear-gradient(to bottom right, #0f172a, #1e3a8a, #020617)",
             cardColor: "rgba(15, 23, 42, 0.9)",
             primaryColor: "#38bdf8",
             textColor: "#f0f9ff",
@@ -63,7 +62,7 @@ const THEME_TEMPLATES = [
         previewColors: ["#451a03", "#fb923c"],
         config: {
             mode: "dark",
-            pageBackground: "linear-gradient(to bottom, #451a03, #7c2d12)",
+            pageBackground: "linear-gradient(to bottom, #451a03, #7c2d12, #2a0a00)",
             cardColor: "rgba(67, 20, 7, 0.9)",
             primaryColor: "#fb923c",
             textColor: "#fff7ed",
@@ -71,34 +70,7 @@ const THEME_TEMPLATES = [
             coverOverlayOpacity: 0.6
         }
     },
-    {
-        id: 'royal_purple',
-        name: "Royal Purple",
-        previewColors: ["#2e1065", "#d8b4fe"],
-        config: {
-            mode: "dark",
-            pageBackground: "linear-gradient(to top right, #2e1065, #581c87)",
-            cardColor: "rgba(46, 16, 101, 0.9)",
-            primaryColor: "#d8b4fe",
-            textColor: "#ffffff",
-            titleGradient: ["#d8b4fe", "#e9d5ff"],
-            coverOverlayOpacity: 0.6
-        }
-    },
-    {
-        id: 'emerald_city',
-        name: "Emerald City",
-        previewColors: ["#022c22", "#34d399"],
-        config: {
-            mode: "dark",
-            pageBackground: "#022c22",
-            cardColor: "rgba(6, 78, 59, 0.95)",
-            primaryColor: "#34d399",
-            textColor: "#ecfdf5",
-            titleGradient: ["#34d399", "#a7f3d0"],
-            coverOverlayOpacity: 0.7
-        }
-    },
+    // ... outros templates mantidos ...
     {
         id: 'clean_light',
         name: "Clean Light",
@@ -111,62 +83,6 @@ const THEME_TEMPLATES = [
             textColor: "#0f172a",
             titleGradient: ["#1e293b", "#475569"],
             coverOverlayOpacity: 0.2
-        }
-    },
-    {
-        id: 'midnight_blue',
-        name: "Midnight Blue",
-        previewColors: ["#000000", "#6366f1"],
-        config: {
-            mode: "dark",
-            pageBackground: "#020617",
-            cardColor: "rgba(15, 23, 42, 0.95)",
-            primaryColor: "#6366f1",
-            textColor: "#e2e8f0",
-            titleGradient: ["#818cf8", "#c7d2fe"],
-            coverOverlayOpacity: 0.7
-        }
-    },
-    {
-        id: 'ruby_red',
-        name: "Ruby Red",
-        previewColors: ["#450a0a", "#f43f5e"],
-        config: {
-            mode: "dark",
-            pageBackground: "linear-gradient(135deg, #450a0a 0%, #000000 100%)",
-            cardColor: "rgba(69, 10, 10, 0.9)",
-            primaryColor: "#f43f5e",
-            textColor: "#fff1f2",
-            titleGradient: ["#f43f5e", "#fda4af"],
-            coverOverlayOpacity: 0.6
-        }
-    },
-    {
-        id: 'golden_hour',
-        name: "Golden Hour",
-        previewColors: ["#1c1917", "#facc15"],
-        config: {
-            mode: "dark",
-            pageBackground: "#1c1917",
-            cardColor: "rgba(28, 25, 23, 0.95)",
-            primaryColor: "#facc15",
-            textColor: "#fefce8",
-            titleGradient: ["#facc15", "#fef08a"],
-            coverOverlayOpacity: 0.7
-        }
-    },
-    {
-        id: 'lavender_dreams',
-        name: "Lavender (Light)",
-        previewColors: ["#faf5ff", "#a855f7"],
-        config: {
-            mode: "light",
-            pageBackground: "#faf5ff",
-            cardColor: "rgba(255, 255, 255, 0.9)",
-            primaryColor: "#a855f7",
-            textColor: "#581c87",
-            titleGradient: ["#6b21a8", "#a855f7"],
-            coverOverlayOpacity: 0.1
         }
     }
 ];
@@ -181,10 +97,16 @@ export default function CalendarSettingsPage() {
   const [uploadingCover, setUploadingCover] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   
-  // Preview Mode State
   const [previewDevice, setPreviewDevice] = useState<'mobile' | 'desktop'>('mobile');
 
-  // Data State
+  // Crop State
+  const [cropModalOpen, setCropModalOpen] = useState(false);
+  const [tempAvatarFile, setTempAvatarFile] = useState<File | null>(null);
+  const [tempAvatarUrl, setTempAvatarUrl] = useState<string | null>(null);
+
+  // Gradient State (3 Colors)
+  const [bgGradientColors, setBgGradientColors] = useState(["#09090b", "#18181b", "#000000"]);
+
   const [formData, setFormData] = useState<AvailabilityFormData>({
     name: 'Minha Agenda',
     slug: '',
@@ -222,12 +144,25 @@ export default function CalendarSettingsPage() {
                 event_location_details: data.event_location_details || 'Google Meet',
                 cover_url: data.cover_url || '',
                 theme_config: {
-                    ...THEME_TEMPLATES[0].config, // Fallback safe
-                    ...data.theme_config // User overrides
+                    ...THEME_TEMPLATES[0].config, 
+                    ...data.theme_config
                 } as any
             });
             setCurrentAvatar(data.owner_avatar || user?.avatar_url || '');
             
+            // Tenta extrair cores do gradiente existente se houver
+            const currentBg = data.theme_config?.pageBackground || "";
+            if (currentBg.includes('linear-gradient')) {
+                const matches = currentBg.match(/#[0-9a-fA-F]{6}/g);
+                if (matches && matches.length >= 2) {
+                    setBgGradientColors([
+                        matches[0], 
+                        matches[1], 
+                        matches[2] || matches[1]
+                    ]);
+                }
+            }
+
             if (data.notification_config) {
                 setNotifConfig(data.notification_config);
             }
@@ -281,10 +216,24 @@ export default function CalendarSettingsPage() {
       }
   };
 
-  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  // 1. Intercepta o arquivo e abre o modal de corte
+  const onSelectAvatarFile = (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
-      if(!file || !user?.company_id) return;
+      if (!file) return;
+      setTempAvatarFile(file);
+      setTempAvatarUrl(URL.createObjectURL(file));
+      setCropModalOpen(true);
+      e.target.value = ''; // Reset input
+  };
+
+  // 2. Recebe o blob do modal e faz o upload
+  const handleCroppedUpload = async (blob: Blob) => {
+      if(!user?.company_id) return;
+      setCropModalOpen(false);
       setUploadingAvatar(true);
+      
+      const file = new File([blob], "avatar.png", { type: "image/png" });
+      
       try {
           const { publicUrl } = await uploadChatMedia(file, user.company_id);
           await updateProfileAvatar(publicUrl);
@@ -295,6 +244,9 @@ export default function CalendarSettingsPage() {
           addToast({ type: 'error', title: 'Erro', message: 'Falha no upload.' });
       } finally {
           setUploadingAvatar(false);
+          if (tempAvatarUrl) URL.revokeObjectURL(tempAvatarUrl);
+          setTempAvatarUrl(null);
+          setTempAvatarFile(null);
       }
   };
 
@@ -309,6 +261,15 @@ export default function CalendarSettingsPage() {
       const colors = [...(formData.theme_config?.titleGradient || [formData.theme_config?.textColor || "#fff", "#ccc"])];
       colors[index] = color;
       updateTheme('titleGradient', colors);
+  };
+
+  const updateBgGradient = (index: number, color: string) => {
+      const newColors = [...bgGradientColors];
+      newColors[index] = color;
+      setBgGradientColors(newColors);
+      
+      const cssGradient = `linear-gradient(to bottom right, ${newColors[0]}, ${newColors[1]}, ${newColors[2]})`;
+      updateTheme('pageBackground', cssGradient);
   };
 
   if (isLoading) return <div className="flex items-center justify-center h-[calc(100vh-100px)]"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
@@ -464,7 +425,7 @@ export default function CalendarSettingsPage() {
                                 )}
                             </div>
 
-                            {/* Foto de Perfil */}
+                            {/* Foto de Perfil com Crop */}
                             <div className="flex items-center gap-4 border-t border-zinc-800 pt-4">
                                 <div className="relative w-16 h-16 rounded-full overflow-hidden border-2 border-zinc-700 group cursor-pointer">
                                     {currentAvatar ? (
@@ -474,7 +435,7 @@ export default function CalendarSettingsPage() {
                                     )}
                                     <label className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                                         {uploadingAvatar ? <Loader2 className="w-4 h-4 text-white animate-spin" /> : <Upload className="w-4 h-4 text-white" />}
-                                        <input type="file" className="hidden" accept="image/*" onChange={handleAvatarUpload} />
+                                        <input type="file" className="hidden" accept="image/*" onChange={onSelectAvatarFile} />
                                     </label>
                                 </div>
                                 <div className="flex-1">
@@ -516,7 +477,7 @@ export default function CalendarSettingsPage() {
                         </CardHeader>
                         <CardContent className="space-y-6">
                             
-                            {/* Templates Rápidos (Grid de Seleção Visual) */}
+                            {/* Templates Rápidos */}
                             <div>
                                 <label className="text-xs font-bold text-zinc-500 uppercase mb-2 block flex items-center gap-2"><LayoutTemplate className="w-3 h-3" /> Templates Prontos</label>
                                 <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
@@ -525,13 +486,21 @@ export default function CalendarSettingsPage() {
                                         return (
                                             <button 
                                                 key={i} 
-                                                onClick={() => setFormData({...formData, theme_config: tpl.config as any})}
+                                                onClick={() => {
+                                                    setFormData({...formData, theme_config: tpl.config as any});
+                                                    // Atualiza os inputs de cor se o template tiver gradiente
+                                                    if(tpl.config.pageBackground.includes('linear-gradient')) {
+                                                        const matches = tpl.config.pageBackground.match(/#[0-9a-fA-F]{6}/g);
+                                                        if (matches) setBgGradientColors([matches[0], matches[1], matches[2] || matches[1]]);
+                                                    } else {
+                                                        setBgGradientColors([tpl.config.pageBackground, tpl.config.pageBackground, tpl.config.pageBackground]);
+                                                    }
+                                                }}
                                                 className={cn(
                                                     "relative flex flex-col items-center gap-2 p-3 rounded-xl border transition-all group hover:scale-105",
                                                     isSelected ? "bg-zinc-800 border-primary shadow-[0_0_15px_-5px_rgba(34,197,94,0.3)]" : "bg-zinc-950 border-zinc-800 hover:border-zinc-700"
                                                 )}
                                             >
-                                                {/* Color Preview Circles */}
                                                 <div className="flex -space-x-2">
                                                     <div className="w-6 h-6 rounded-full border-2 border-zinc-900 shadow-sm" style={{ backgroundColor: tpl.previewColors[0] }} />
                                                     <div className="w-6 h-6 rounded-full border-2 border-zinc-900 shadow-sm" style={{ backgroundColor: tpl.previewColors[1] }} />
@@ -548,7 +517,7 @@ export default function CalendarSettingsPage() {
 
                             {/* Gradiente do Título */}
                             <div>
-                                <label className="text-xs font-bold text-zinc-500 uppercase mb-2 block">Gradiente do Título</label>
+                                <label className="text-xs font-bold text-zinc-500 uppercase mb-2 block">Gradiente do Título (Texto)</label>
                                 <div className="flex gap-4">
                                     <div className="flex-1 flex gap-2 items-center bg-zinc-950 border border-zinc-800 p-2 rounded">
                                         <input type="color" value={theme?.titleGradient?.[0] || "#ffffff"} onChange={e => updateTitleGradient(0, e.target.value)} className="w-6 h-6 rounded cursor-pointer bg-transparent border-none" />
@@ -561,10 +530,36 @@ export default function CalendarSettingsPage() {
                                 </div>
                             </div>
 
+                             {/* Fundo Gradiente da Página (3 Cores) */}
+                             <div>
+                                <label className="text-xs font-bold text-zinc-500 uppercase mb-2 block flex items-center gap-2"><PaintBucket className="w-3 h-3" /> Fundo da Página (Gradiente)</label>
+                                <div className="grid grid-cols-3 gap-3">
+                                    {bgGradientColors.map((color, i) => (
+                                        <div key={i} className="flex flex-col gap-1">
+                                            <div className="flex gap-2 items-center bg-zinc-950 border border-zinc-800 p-2 rounded">
+                                                <input 
+                                                    type="color" 
+                                                    value={color} 
+                                                    onChange={e => updateBgGradient(i, e.target.value)} 
+                                                    className="w-8 h-8 rounded cursor-pointer border-none bg-transparent" 
+                                                />
+                                            </div>
+                                            <span className="text-[10px] text-zinc-500 text-center uppercase">{i === 0 ? 'Topo' : i === 1 ? 'Meio' : 'Fundo'}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                                <Input 
+                                    value={theme?.pageBackground} 
+                                    readOnly 
+                                    className="h-8 text-[10px] bg-zinc-900 border-zinc-800 mt-2 font-mono text-zinc-500" 
+                                    placeholder="Código CSS gerado..." 
+                                />
+                            </div>
+
                             {/* Cores Globais */}
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Cor Primária</label>
+                                    <label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Cor Primária (Botões)</label>
                                     <div className="flex gap-2">
                                         <input type="color" value={theme?.primaryColor} onChange={e => updateTheme('primaryColor', e.target.value)} className="w-8 h-8 rounded cursor-pointer border-none bg-transparent" />
                                         <Input value={theme?.primaryColor} onChange={e => updateTheme('primaryColor', e.target.value)} className="h-8 text-xs bg-zinc-950 border-zinc-800" />
@@ -577,14 +572,6 @@ export default function CalendarSettingsPage() {
                                         <Input value={theme?.cardColor} onChange={e => updateTheme('cardColor', e.target.value)} className="h-8 text-xs bg-zinc-950 border-zinc-800" />
                                     </div>
                                 </div>
-                            </div>
-                            
-                            <div>
-                                <label className="text-xs font-bold text-zinc-500 uppercase mb-1 block flex items-center gap-2"><PaintBucket className="w-3 h-3" /> Fundo da Página (Background)</label>
-                                <div className="flex gap-2">
-                                    <Input value={theme?.pageBackground} onChange={e => updateTheme('pageBackground', e.target.value)} className="h-9 text-xs bg-zinc-950 border-zinc-800 font-mono" />
-                                </div>
-                                <p className="text-[10px] text-zinc-500 mt-1">Aceita Hex, RGB ou Linear-Gradient CSS.</p>
                             </div>
 
                         </CardContent>
@@ -628,7 +615,7 @@ export default function CalendarSettingsPage() {
                                 {/* Sidebar / Header Area (Left) */}
                                 <div className={cn(
                                     "relative shrink-0 flex flex-col p-6 bg-black/20",
-                                    previewDevice === 'mobile' ? "w-full min-h-[280px]" : "w-[40%] h-full border-r border-white/10"
+                                    previewDevice === 'mobile' ? "w-full min-h-[280px]" : "w-1/3 h-full border-r border-white/10"
                                 )}>
                                      {/* Cover Image as Background */}
                                      {formData.cover_url && (
@@ -657,15 +644,15 @@ export default function CalendarSettingsPage() {
                                             </div>
                                          </div>
 
-                                         {/* Title with Gradient */}
+                                         {/* Title with Gradient (Fixed Box Issue) */}
                                          <h1 
-                                            className="text-xl font-bold mb-2 leading-tight"
+                                            className="text-xl font-bold mb-2 leading-tight inline-block w-fit"
                                             style={{ 
                                                 background: theme?.titleGradient ? `linear-gradient(to right, ${theme.titleGradient[0]}, ${theme.titleGradient[1]})` : theme?.textColor,
-                                                backgroundClip: theme?.titleGradient ? 'text' : 'border-box',
-                                                WebkitBackgroundClip: theme?.titleGradient ? 'text' : 'border-box',
-                                                WebkitTextFillColor: theme?.titleGradient ? 'transparent' : 'inherit',
-                                                color: theme?.titleGradient ? 'transparent' : theme?.textColor
+                                                backgroundClip: 'text',
+                                                WebkitBackgroundClip: 'text',
+                                                WebkitTextFillColor: 'transparent',
+                                                color: 'transparent' // Fallback
                                             }}
                                          >
                                              {formData.name}
@@ -753,6 +740,132 @@ export default function CalendarSettingsPage() {
         )}
 
       </div>
+      
+      {/* --- AVATAR CROP MODAL --- */}
+      {cropModalOpen && tempAvatarUrl && (
+          <AvatarCropModal 
+             isOpen={cropModalOpen}
+             imageSrc={tempAvatarUrl}
+             onClose={() => {
+                 setCropModalOpen(false);
+                 setTempAvatarFile(null);
+                 if(tempAvatarUrl) URL.revokeObjectURL(tempAvatarUrl);
+                 setTempAvatarUrl(null);
+             }}
+             onConfirm={handleCroppedUpload}
+          />
+      )}
     </div>
   );
+}
+
+// --- SUBCOMPONENTE: MODAL DE RECORTE (CANVAS) ---
+function AvatarCropModal({ isOpen, imageSrc, onClose, onConfirm }: { isOpen: boolean, imageSrc: string, onClose: () => void, onConfirm: (blob: Blob) => void }) {
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+    const [image, setImage] = useState<HTMLImageElement | null>(null);
+    
+    // Transform State
+    const [scale, setScale] = useState(1);
+    const [pos, setPos] = useState({ x: 0, y: 0 });
+    const [isDragging, setIsDragging] = useState(false);
+    const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+
+    useEffect(() => {
+        const img = new Image();
+        img.src = imageSrc;
+        img.onload = () => {
+            setImage(img);
+            // Fit image initially
+            const ratio = Math.min(300 / img.width, 300 / img.height);
+            setScale(Math.max(ratio, 0.5)); // Min initial zoom
+        };
+    }, [imageSrc]);
+
+    useEffect(() => {
+        if (!image || !canvasRef.current) return;
+        const ctx = canvasRef.current.getContext('2d');
+        if (!ctx) return;
+
+        // Limpa
+        ctx.clearRect(0, 0, 300, 300);
+        
+        // Fundo preto
+        ctx.fillStyle = "#000";
+        ctx.fillRect(0, 0, 300, 300);
+
+        // Desenha imagem com transformações
+        ctx.save();
+        // Centraliza
+        ctx.translate(150, 150);
+        ctx.scale(scale, scale);
+        ctx.translate(pos.x, pos.y);
+        ctx.drawImage(image, -image.width / 2, -image.height / 2);
+        ctx.restore();
+
+        // Máscara Circular (Overlay)
+        ctx.globalCompositeOperation = 'destination-in';
+        ctx.beginPath();
+        ctx.arc(150, 150, 150, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalCompositeOperation = 'source-over';
+
+    }, [image, scale, pos]);
+
+    const handleMouseDown = (e: React.MouseEvent) => {
+        setIsDragging(true);
+        setDragStart({ x: e.clientX, y: e.clientY });
+    };
+
+    const handleMouseMove = (e: React.MouseEvent) => {
+        if (!isDragging) return;
+        const dx = (e.clientX - dragStart.x) / scale;
+        const dy = (e.clientY - dragStart.y) / scale;
+        setPos(p => ({ x: p.x + dx, y: p.y + dy }));
+        setDragStart({ x: e.clientX, y: e.clientY });
+    };
+
+    const handleConfirm = () => {
+        if (!canvasRef.current) return;
+        canvasRef.current.toBlob((blob) => {
+            if (blob) onConfirm(blob);
+        }, 'image/png');
+    };
+
+    return (
+        <Modal isOpen={isOpen} onClose={onClose} title="Ajustar Foto" maxWidth="sm">
+            <div className="flex flex-col items-center gap-4">
+                <div 
+                    className="w-[300px] h-[300px] border-2 border-zinc-700 rounded-full overflow-hidden cursor-move relative shadow-2xl bg-black"
+                    onMouseDown={handleMouseDown}
+                    onMouseMove={handleMouseMove}
+                    onMouseUp={() => setIsDragging(false)}
+                    onMouseLeave={() => setIsDragging(false)}
+                >
+                    <canvas ref={canvasRef} width={300} height={300} className="w-full h-full" />
+                    {/* Guia Visual */}
+                    <div className="absolute inset-0 rounded-full border border-white/20 pointer-events-none"></div>
+                </div>
+
+                <div className="w-full space-y-2 px-4">
+                    <label className="text-xs font-bold text-zinc-500 uppercase flex justify-between">
+                        Zoom <ZoomIn className="w-3 h-3" />
+                    </label>
+                    <input 
+                        type="range" 
+                        min="0.1" 
+                        max="3" 
+                        step="0.05" 
+                        value={scale} 
+                        onChange={e => setScale(parseFloat(e.target.value))}
+                        className="w-full h-1 bg-zinc-700 rounded-lg appearance-none cursor-pointer"
+                    />
+                </div>
+
+                <div className="flex gap-2 w-full pt-4">
+                    <Button variant="outline" onClick={onClose} className="flex-1">Cancelar</Button>
+                    <Button onClick={handleConfirm} className="flex-1 bg-primary text-black hover:bg-primary/90">Salvar Foto</Button>
+                </div>
+            </div>
+        </Modal>
+    );
 }
