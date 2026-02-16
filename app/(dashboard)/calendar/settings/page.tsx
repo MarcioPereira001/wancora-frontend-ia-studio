@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useEffect, useState, useRef } from 'react';
@@ -13,13 +14,14 @@ import {
     Calendar, Globe, Save, Loader2, Copy, Image as ImageIcon, PaintBucket, 
     Palette, LayoutTemplate, Smartphone, Monitor, Upload, ExternalLink, User, Clock, MapPin, Check,
     Move, ZoomIn, ChevronDown, ArrowDown, ArrowRight, ArrowUpRight, ArrowDownRight, 
-    Bell, MessageSquare, Plus, Trash2, Smartphone as SmartphoneIcon, Tag
+    Bell, MessageSquare, Plus, Trash2, Smartphone as SmartphoneIcon, Tag, Smile
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { uploadChatMedia } from '@/utils/supabase/storage';
 import { createClient } from '@/utils/supabase/client';
 import { Instance } from '@/types';
 import { whatsappService } from '@/services/whatsappService';
+import EmojiPicker, { Theme } from 'emoji-picker-react';
 
 const WEEKDAYS = [
   { id: 0, label: 'D', name: 'Domingo' },
@@ -695,7 +697,7 @@ export default function CalendarSettingsPage() {
                         <select 
                             value={notifConfig.sending_session_id}
                             onChange={(e) => setNotifConfig({ ...notifConfig, sending_session_id: e.target.value })}
-                            className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-3 text-white outline-none focus:ring-1 focus:ring-primary"
+                            className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-3 text-white outline-none focus:ring-1 focus:ring-primary"
                         >
                             <option value="">Selecione uma instância...</option>
                             {instances.map(inst => (
@@ -794,6 +796,28 @@ export default function CalendarSettingsPage() {
 
 // --- SUBCOMPONENTE: EDITOR DE REGRA ---
 function NotificationRuleEditor({ rule, onUpdate, onRemove, onTag }: any) {
+    const [showEmoji, setShowEmoji] = useState(false);
+    const [showTagMenu, setShowTagMenu] = useState(false);
+    const tagMenuRef = useRef<HTMLDivElement>(null);
+    const emojiRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        function handleClickOutside(event: MouseEvent) {
+            if (emojiRef.current && !emojiRef.current.contains(event.target as Node)) {
+                setShowEmoji(false);
+            }
+            if (tagMenuRef.current && !tagMenuRef.current.contains(event.target as Node)) {
+                setShowTagMenu(false);
+            }
+        }
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
+
+    const handleEmojiClick = (emojiData: any) => {
+        onUpdate('template', rule.template + emojiData.emoji);
+    };
+
     return (
         <div className="bg-zinc-950 border border-zinc-800 rounded-lg p-4 relative group">
             <button onClick={onRemove} className="absolute top-2 right-2 text-zinc-600 hover:text-red-500 transition-colors">
@@ -854,26 +878,71 @@ function NotificationRuleEditor({ rule, onUpdate, onRemove, onTag }: any) {
             <div>
                 <div className="flex justify-between items-center mb-1">
                      <label className="text-[10px] font-bold text-zinc-500 uppercase">Mensagem</label>
-                     <div className="flex gap-1">
-                         {TAGS.map(tag => (
+                     <div className="flex gap-1 items-center relative">
+                         {/* Tag Menu Button */}
+                         <div className="relative" ref={tagMenuRef}>
                              <button 
-                                key={tag.value} 
-                                onClick={() => onTag(tag.value)}
-                                className="text-[9px] bg-zinc-900 border border-zinc-800 px-1.5 rounded text-zinc-400 hover:text-white hover:border-zinc-600 transition-colors"
+                                onClick={() => setShowTagMenu(!showTagMenu)}
+                                className="text-[10px] bg-zinc-900 border border-zinc-800 px-2 py-1 rounded text-zinc-400 hover:text-white hover:border-zinc-600 transition-colors flex items-center gap-1"
                              >
-                                {tag.label}
+                                <Tag className="w-3 h-3" /> Config Tags
                              </button>
-                         ))}
+                             {showTagMenu && (
+                                <div className="absolute right-0 top-7 z-50 w-48 bg-zinc-900 border border-zinc-800 rounded-lg shadow-xl p-1 animate-in fade-in zoom-in-95">
+                                    <div className="px-2 py-1 text-[9px] font-bold text-zinc-500 uppercase tracking-wider bg-zinc-950/50 rounded-t mb-1">
+                                        Variáveis Dinâmicas
+                                    </div>
+                                    <div className="max-h-40 overflow-y-auto custom-scrollbar space-y-0.5">
+                                        {TAGS.map(tag => (
+                                            <button 
+                                                key={tag.value} 
+                                                onClick={() => { onTag(tag.value); setShowTagMenu(false); }}
+                                                className="w-full text-left px-2 py-1.5 text-[10px] text-zinc-300 hover:bg-zinc-800 rounded hover:text-white transition-colors"
+                                            >
+                                                {tag.label} <span className="opacity-50 ml-1">{tag.value}</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                             )}
+                         </div>
+
+                         {/* Emoji Button */}
+                         <div className="relative" ref={emojiRef}>
+                             <button 
+                                onClick={() => setShowEmoji(!showEmoji)}
+                                className={cn(
+                                    "text-[10px] border px-2 py-1 rounded transition-colors flex items-center gap-1",
+                                    showEmoji ? "bg-yellow-500/10 text-yellow-500 border-yellow-500/30" : "bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white hover:border-zinc-600"
+                                )}
+                             >
+                                <Smile className="w-3 h-3" />
+                             </button>
+                             {showEmoji && (
+                                 <div className="absolute right-0 top-8 z-50 shadow-2xl animate-in zoom-in-95 origin-top-right">
+                                     <EmojiPicker 
+                                        onEmojiClick={handleEmojiClick} 
+                                        theme={Theme.DARK} 
+                                        width={300} 
+                                        height={350} 
+                                        searchDisabled 
+                                        skinTonesDisabled 
+                                        previewConfig={{ showPreview: false }}
+                                     />
+                                 </div>
+                             )}
+                         </div>
                      </div>
                 </div>
                 <Textarea 
                     value={rule.template} 
                     onChange={(e) => onUpdate('template', e.target.value)}
-                    className="bg-zinc-900 border-zinc-800 min-h-[80px] text-sm"
+                    className="bg-zinc-900 border-zinc-800 min-h-[80px] text-sm font-mono"
                     placeholder="Escreva a mensagem..."
                 />
-                <p className="text-[10px] text-zinc-600 mt-1">
-                    Use *asteriscos* para negrito e _underscores_ para itálico.
+                <p className="text-[10px] text-zinc-600 mt-1 flex justify-between">
+                    <span>Use *asteriscos* para negrito e _underscores_ para itálico.</span>
+                    <span>{rule.template.length} caracteres</span>
                 </p>
             </div>
         </div>

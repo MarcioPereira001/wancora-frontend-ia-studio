@@ -2,7 +2,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Paperclip, Mic, Send, Trash2, Image as IconImage, FileText, MapPin, User, BarChart2, Ban, Smile, CheckSquare, Loader2, Sticker, ShoppingBag, LayoutTemplate } from 'lucide-react';
+import { Paperclip, Mic, Send, Trash2, Image as IconImage, FileText, MapPin, User, BarChart2, Ban, Smile, CheckSquare, Loader2, Sticker, ShoppingBag, LayoutTemplate, Bold, Italic, Strikethrough, Code, List, Quote } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useChatStore } from '@/store/useChatStore';
 import { useAuthStore } from '@/store/useAuthStore';
@@ -15,6 +15,7 @@ import { Input } from '@/components/ui/input';
 import { SendMessageSchema } from '@/lib/schemas'; 
 import EmojiPicker, { Theme } from 'emoji-picker-react';
 import { CatalogModal } from './CatalogModal';
+import { cn } from '@/lib/utils';
 
 const REVOKE_WINDOW_MS = 24 * 60 * 60 * 1000; 
 
@@ -43,6 +44,9 @@ export function ChatInputArea() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
   const stickerInputRef = useRef<HTMLInputElement>(null);
+  
+  // Textarea Ref para manipulação de cursor/seleção
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const [activeModal, setActiveModal] = useState<'poll'|'contact'|'location'|'delete_confirm'|'catalog'|'card'|null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -99,7 +103,85 @@ export function ChatInputArea() {
   }, [mediaMenuOpen, emojiPickerOpen]);
 
   const onEmojiClick = (emojiData: any) => {
-      setInput(prev => prev + emojiData.emoji);
+      const textarea = textareaRef.current;
+      if (textarea) {
+          const start = textarea.selectionStart;
+          const end = textarea.selectionEnd;
+          const text = input;
+          const before = text.substring(0, start);
+          const after = text.substring(end, text.length);
+          
+          setInput(before + emojiData.emoji + after);
+          
+          // Reposition cursor
+          setTimeout(() => {
+              textarea.selectionStart = textarea.selectionEnd = start + emojiData.emoji.length;
+              textarea.focus();
+          }, 0);
+      } else {
+          setInput(prev => prev + emojiData.emoji);
+      }
+  };
+
+  // --- FORMATTING LOGIC ---
+  const applyFormat = (formatType: 'bold' | 'italic' | 'strike' | 'mono' | 'list' | 'quote') => {
+      const textarea = textareaRef.current;
+      if (!textarea) return;
+
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const selectedText = input.substring(start, end);
+      const before = input.substring(0, start);
+      const after = input.substring(end);
+
+      let newText = '';
+      let newCursorPos = end;
+
+      switch (formatType) {
+          case 'bold':
+              newText = `${before}*${selectedText}*${after}`;
+              newCursorPos = end + 2; // +2 for **
+              if (selectedText.length === 0) newCursorPos = start + 1; // Cursor inside *|*
+              break;
+          case 'italic':
+              newText = `${before}_${selectedText}_${after}`;
+              newCursorPos = end + 2;
+              if (selectedText.length === 0) newCursorPos = start + 1;
+              break;
+          case 'strike':
+              newText = `${before}~${selectedText}~${after}`;
+              newCursorPos = end + 2;
+              if (selectedText.length === 0) newCursorPos = start + 1;
+              break;
+          case 'mono':
+              newText = `${before}\`\`\`${selectedText}\`\`\`${after}`;
+              newCursorPos = end + 6;
+              if (selectedText.length === 0) newCursorPos = start + 3;
+              break;
+          case 'list':
+              const listPrefix = '\n- ';
+              // Se tiver seleção multilinha, aplica em cada linha
+              if (selectedText.includes('\n')) {
+                  const listContent = selectedText.split('\n').map(line => `- ${line}`).join('\n');
+                  newText = `${before}${listContent}${after}`;
+                  newCursorPos = start + listContent.length;
+              } else {
+                  newText = `${before}${listPrefix}${selectedText}${after}`;
+                  newCursorPos = end + listPrefix.length;
+              }
+              break;
+          case 'quote':
+              const quotePrefix = '> ';
+              newText = `${before}${quotePrefix}${selectedText}${after}`;
+              newCursorPos = end + quotePrefix.length;
+              break;
+      }
+
+      setInput(newText);
+      setTimeout(() => {
+          textarea.focus();
+          textarea.setSelectionRange(newCursorPos, newCursorPos);
+      }, 0);
   };
 
   const dispatchMessage = async (payload: any) => {
@@ -374,79 +456,103 @@ export function ChatInputArea() {
   return (
     <>
     <div className="p-3 md:p-4 border-t border-zinc-800 bg-zinc-900/30 backdrop-blur relative shrink-0 z-[50]">
-        <div className="flex items-end gap-2 bg-zinc-950/80 border border-zinc-800 rounded-xl p-2 focus-within:ring-1 focus-within:ring-primary/50 transition-all shadow-inner relative">
-            <div className="relative" ref={emojiRef}>
-                <Button variant="ghost" size="icon" className={`h-9 w-9 ${emojiPickerOpen ? 'text-yellow-400' : 'text-zinc-400'} hover:text-yellow-400`} onClick={() => { setEmojiPickerOpen(!emojiPickerOpen); setMediaMenuOpen(false); }}>
-                    <Smile className="h-5 w-5" />
-                </Button>
-                {emojiPickerOpen && (
-                    <div className="absolute bottom-14 left-0 z-[100] animate-in zoom-in-95 shadow-2xl">
-                        <EmojiPicker onEmojiClick={onEmojiClick} theme={Theme.DARK} width={320} height={400} lazyLoadEmojis={true} previewConfig={{ showPreview: false }} />
-                    </div>
-                )}
-            </div>
-
-            <div className="relative" ref={mediaMenuRef}>
-                <Button variant="ghost" size="icon" className="h-9 w-9 text-zinc-400 hover:text-zinc-100" onClick={() => { setMediaMenuOpen(!mediaMenuOpen); setEmojiPickerOpen(false); }}><Paperclip className="h-5 w-5" /></Button>
-                {mediaMenuOpen && (
-                    <div className="absolute bottom-14 left-0 bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl p-2 w-64 z-[100] grid grid-cols-2 gap-2 animate-in slide-in-from-bottom-2 ring-1 ring-white/10">
-                        <label className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
-                            <IconImage className="w-5 h-5 text-purple-400" /> Galeria
-                            <input type="file" className="hidden" accept="image/*,video/*" onChange={(e) => handleFileUpload(e)} />
-                        </label>
-                        <label className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
-                            <Sticker className="w-5 h-5 text-emerald-400" /> Figurinha
-                            <input type="file" className="hidden" accept="image/*" onChange={(e) => handleFileUpload(e, true)} ref={stickerInputRef} />
-                        </label>
-                        <label className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
-                            <FileText className="w-5 h-5 text-blue-400" /> Documento
-                            <input type="file" className="hidden" accept="*" onChange={(e) => handleFileUpload(e)} ref={fileInputRef} />
-                        </label>
-                        <button onClick={() => { setMediaMenuOpen(false); setActiveModal('catalog'); }} className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
-                            <ShoppingBag className="w-5 h-5 text-pink-400" /> Produto
-                        </button>
-                        <button onClick={() => { setMediaMenuOpen(false); setActiveModal('card'); }} className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
-                            <LayoutTemplate className="w-5 h-5 text-orange-400" /> Card (Link)
-                        </button>
-                        <button onClick={() => { setMediaMenuOpen(false); setActiveModal('location'); }} className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
-                            <MapPin className="w-5 h-5 text-red-400" /> Localização
-                        </button>
-                        <button onClick={() => { setMediaMenuOpen(false); setActiveModal('contact'); }} className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
-                            <User className="w-5 h-5 text-blue-400" /> Contato
-                        </button>
-                        <button onClick={() => { setMediaMenuOpen(false); setActiveModal('poll'); }} className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
-                            <BarChart2 className="w-5 h-5 text-yellow-400" /> Enquete
-                        </button>
-                    </div>
-                )}
-            </div>
-
-            {isRecording ? (
-                <div className="flex-1 flex items-center justify-between px-2">
-                    <div className="flex items-center gap-2 text-red-500 animate-pulse">
-                        <div className="w-3 h-3 rounded-full bg-red-500" />
-                        <span className="font-mono text-sm font-bold">{formatTime(recordingTime)}</span>
-                    </div>
-                    <div className="flex gap-2">
-                        <Button variant="ghost" size="icon" className="text-red-500 hover:bg-red-500/10" onClick={() => stopRecording(true)}>
-                            <Trash2 className="w-5 h-5" />
-                        </Button>
-                        <Button size="icon" className="bg-green-600 hover:bg-green-500" onClick={() => stopRecording(false)}>
-                            <Send className="w-4 h-4" />
-                        </Button>
-                    </div>
+        <div className="flex flex-col gap-2 bg-zinc-950/80 border border-zinc-800 rounded-xl p-2 focus-within:ring-1 focus-within:ring-primary/50 transition-all shadow-inner relative">
+            
+            {/* Formatting Toolbar */}
+            {input.length > 0 && !isRecording && (
+                <div className="flex items-center gap-1 border-b border-zinc-800 pb-2 mb-1 px-1">
+                     <button onClick={() => applyFormat('bold')} className="p-1.5 rounded hover:bg-zinc-800 text-zinc-400 hover:text-white" title="Negrito (*texto*)"><Bold className="w-3.5 h-3.5" /></button>
+                     <button onClick={() => applyFormat('italic')} className="p-1.5 rounded hover:bg-zinc-800 text-zinc-400 hover:text-white" title="Itálico (_texto_)"><Italic className="w-3.5 h-3.5" /></button>
+                     <button onClick={() => applyFormat('strike')} className="p-1.5 rounded hover:bg-zinc-800 text-zinc-400 hover:text-white" title="Tachado (~texto~)"><Strikethrough className="w-3.5 h-3.5" /></button>
+                     <button onClick={() => applyFormat('mono')} className="p-1.5 rounded hover:bg-zinc-800 text-zinc-400 hover:text-white" title="Monoespaçado (```texto```)"><Code className="w-3.5 h-3.5" /></button>
+                     <div className="w-px h-4 bg-zinc-800 mx-1"></div>
+                     <button onClick={() => applyFormat('list')} className="p-1.5 rounded hover:bg-zinc-800 text-zinc-400 hover:text-white" title="Lista de Tópicos"><List className="w-3.5 h-3.5" /></button>
+                     <button onClick={() => applyFormat('quote')} className="p-1.5 rounded hover:bg-zinc-800 text-zinc-400 hover:text-white" title="Citação"><Quote className="w-3.5 h-3.5" /></button>
                 </div>
-            ) : (
-                <>
-                    <textarea className="flex-1 bg-transparent border-none outline-none text-sm text-white resize-none py-2 max-h-32 custom-scrollbar" placeholder="Digite..." value={input} onChange={e => setInput(e.target.value)} onKeyDown={(e) => { if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendText(); }}} rows={1} />
-                    
-                    {input.trim() ? (
-                        <Button size="icon" className="h-9 w-9 transition-transform" onClick={handleSendText}><Send className="h-4 w-4" /></Button>
-                    ) : (
-                        <Button size="icon" variant="ghost" className="h-9 w-9 text-zinc-400 hover:text-white" onClick={startRecording}><Mic className="h-5 w-5" /></Button>
-                    )}
-                </>
             )}
+
+            <div className="flex items-end gap-2 w-full">
+                <div className="relative" ref={emojiRef}>
+                    <Button variant="ghost" size="icon" className={`h-9 w-9 ${emojiPickerOpen ? 'text-yellow-400' : 'text-zinc-400'} hover:text-yellow-400`} onClick={() => { setEmojiPickerOpen(!emojiPickerOpen); setMediaMenuOpen(false); }}>
+                        <Smile className="h-5 w-5" />
+                    </Button>
+                    {emojiPickerOpen && (
+                        <div className="absolute bottom-14 left-0 z-[100] animate-in zoom-in-95 shadow-2xl">
+                            <EmojiPicker onEmojiClick={onEmojiClick} theme={Theme.DARK} width={320} height={400} lazyLoadEmojis={true} previewConfig={{ showPreview: false }} />
+                        </div>
+                    )}
+                </div>
+
+                <div className="relative" ref={mediaMenuRef}>
+                    <Button variant="ghost" size="icon" className="h-9 w-9 text-zinc-400 hover:text-zinc-100" onClick={() => { setMediaMenuOpen(!mediaMenuOpen); setEmojiPickerOpen(false); }}><Paperclip className="h-5 w-5" /></Button>
+                    {mediaMenuOpen && (
+                        <div className="absolute bottom-14 left-0 bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl p-2 w-64 z-[100] grid grid-cols-2 gap-2 animate-in slide-in-from-bottom-2 ring-1 ring-white/10">
+                            <label className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
+                                <IconImage className="w-5 h-5 text-purple-400" /> Galeria
+                                <input type="file" className="hidden" accept="image/*,video/*" onChange={(e) => handleFileUpload(e)} />
+                            </label>
+                            <label className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
+                                <Sticker className="w-5 h-5 text-emerald-400" /> Figurinha
+                                <input type="file" className="hidden" accept="image/*" onChange={(e) => handleFileUpload(e, true)} ref={stickerInputRef} />
+                            </label>
+                            <label className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
+                                <FileText className="w-5 h-5 text-blue-400" /> Documento
+                                <input type="file" className="hidden" accept="*" onChange={(e) => handleFileUpload(e)} ref={fileInputRef} />
+                            </label>
+                            <button onClick={() => { setMediaMenuOpen(false); setActiveModal('catalog'); }} className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
+                                <ShoppingBag className="w-5 h-5 text-pink-400" /> Produto
+                            </button>
+                            <button onClick={() => { setMediaMenuOpen(false); setActiveModal('card'); }} className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
+                                <LayoutTemplate className="w-5 h-5 text-orange-400" /> Card (Link)
+                            </button>
+                            <button onClick={() => { setMediaMenuOpen(false); setActiveModal('location'); }} className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
+                                <MapPin className="w-5 h-5 text-red-400" /> Localização
+                            </button>
+                            <button onClick={() => { setMediaMenuOpen(false); setActiveModal('contact'); }} className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
+                                <User className="w-5 h-5 text-blue-400" /> Contato
+                            </button>
+                            <button onClick={() => { setMediaMenuOpen(false); setActiveModal('poll'); }} className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
+                                <BarChart2 className="w-5 h-5 text-yellow-400" /> Enquete
+                            </button>
+                        </div>
+                    )}
+                </div>
+
+                {isRecording ? (
+                    <div className="flex-1 flex items-center justify-between px-2">
+                        <div className="flex items-center gap-2 text-red-500 animate-pulse">
+                            <div className="w-3 h-3 rounded-full bg-red-500" />
+                            <span className="font-mono text-sm font-bold">{formatTime(recordingTime)}</span>
+                        </div>
+                        <div className="flex gap-2">
+                            <Button variant="ghost" size="icon" className="text-red-500 hover:bg-red-500/10" onClick={() => stopRecording(true)}>
+                                <Trash2 className="w-5 h-5" />
+                            </Button>
+                            <Button size="icon" className="bg-green-600 hover:bg-green-500" onClick={() => stopRecording(false)}>
+                                <Send className="w-4 h-4" />
+                            </Button>
+                        </div>
+                    </div>
+                ) : (
+                    <>
+                        <textarea 
+                            ref={textareaRef}
+                            className="flex-1 bg-transparent border-none outline-none text-sm text-white resize-none py-2 max-h-32 custom-scrollbar" 
+                            placeholder="Digite..." 
+                            value={input} 
+                            onChange={e => setInput(e.target.value)} 
+                            onKeyDown={(e) => { if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendText(); }}} 
+                            rows={1} 
+                        />
+                        
+                        {input.trim() ? (
+                            <Button size="icon" className="h-9 w-9 transition-transform" onClick={handleSendText}><Send className="h-4 w-4" /></Button>
+                        ) : (
+                            <Button size="icon" variant="ghost" className="h-9 w-9 text-zinc-400 hover:text-white" onClick={startRecording}><Mic className="h-5 w-5" /></Button>
+                        )}
+                    </>
+                )}
+            </div>
         </div>
     </div>
 
