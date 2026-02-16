@@ -15,12 +15,10 @@ const NotificationTriggerSchema = z.object({
 
 const ThemeConfigSchema = z.object({
     mode: z.enum(['dark', 'light']).default('dark'),
-    pageBackground: z.string().default("#09090b"), // Cor ou Gradiente CSS completo do fundo da página
-    cardColor: z.string().default("rgba(24, 24, 27, 0.9)"), // Cor do cartão central
-    textColor: z.string().default("#ffffff"),
+    pageBackground: z.string().default("#09090b"),
+    cardColor: z.string().default("rgba(24, 24, 27, 0.9)"),
     primaryColor: z.string().default("#22c55e"),
-    
-    // Gradientes e Efeitos do Título e Capa
+    textColor: z.string().default("#ffffff"),
     titleGradient: z.array(z.string()).max(2).optional(), 
     coverOffsetY: z.number().min(0).max(100).default(50),
     coverOverlayOpacity: z.number().min(0).max(1).default(0.5)
@@ -60,7 +58,6 @@ export async function getMyAvailability() {
 
   if (!user) return null;
 
-  // CORREÇÃO: Busca profile_pic_url, não avatar_url
   const { data } = await supabase
     .from('availability_rules')
     .select('*, profiles(profile_pic_url)') 
@@ -68,7 +65,6 @@ export async function getMyAvailability() {
     .single();
   
   if (data && data.profiles) {
-      // Mapeia profile_pic_url para owner_avatar para uso no frontend
       return { ...data, owner_avatar: data.profiles.profile_pic_url };
   }
 
@@ -80,7 +76,6 @@ export async function updateProfileAvatar(avatarUrl: string) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return { error: "Sem sessão" };
 
-    // CORREÇÃO: Atualiza profile_pic_url
     const { error } = await supabase.from('profiles').update({ profile_pic_url: avatarUrl }).eq('id', user.id);
     return { error };
 }
@@ -116,7 +111,6 @@ export async function saveAvailabilityRules(formData: AvailabilityFormData) {
       return { error: `O link personalziado "${payload.slug}" já está em uso.` };
   }
 
-  // Prepara Default do Theme Config (Merge seguro)
   const safeThemeConfig = {
       mode: payload.theme_config?.mode || 'dark',
       pageBackground: payload.theme_config?.pageBackground || "#09090b",

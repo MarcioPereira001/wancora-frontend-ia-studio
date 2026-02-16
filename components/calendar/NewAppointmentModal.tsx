@@ -10,7 +10,7 @@ import { createClient } from '@/utils/supabase/client';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useToast } from '@/hooks/useToast';
 import { useCalendarStore } from '@/store/useCalendarStore';
-import { Calendar, Clock, Repeat, Tag, User, Save, Trash2, CheckSquare, X, Bell, MessageSquare, AlertCircle } from 'lucide-react';
+import { Calendar, Clock, Repeat, Tag, User, Save, Trash2, CheckSquare, X, Bell, AlertCircle, UserPlus, Phone, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Appointment } from '@/types';
 import { api } from '@/services/api'; 
@@ -21,6 +21,14 @@ interface NewAppointmentModalProps {
   preSelectedDate?: Date;
   appointmentToEdit?: Appointment | null; 
 }
+
+// Lista de países simples para o seletor manual
+const COUNTRIES = [
+    { code: '55', label: 'BR (+55)' },
+    { code: '1', label: 'US (+1)' },
+    { code: '351', label: 'PT (+351)' },
+    { code: '44', label: 'UK (+44)' },
+];
 
 export function NewAppointmentModal({ isOpen, onClose, preSelectedDate, appointmentToEdit }: NewAppointmentModalProps) {
   const { user } = useAuthStore();
@@ -38,9 +46,18 @@ export function NewAppointmentModal({ isOpen, onClose, preSelectedDate, appointm
   const [startTime, setStartTime] = useState('09:00');
   const [endTime, setEndTime] = useState('10:00');
   const [category, setCategory] = useState('Geral');
+  
+  // Participant Management
   const [leadSearch, setLeadSearch] = useState('');
-  const [selectedLead, setSelectedLead] = useState<{id: string, name: string, phone: string} | null>(null);
   const [leadSuggestions, setLeadSuggestions] = useState<any[]>([]);
+  // Guest List: Pode ser Lead (com ID) ou Manual (sem ID)
+  const [guests, setGuests] = useState<{id?: string, name: string, phone: string, type: 'lead' | 'manual'}[]>([]);
+  
+  // Manual Entry State
+  const [manualName, setManualName] = useState('');
+  const [manualDDI, setManualDDI] = useState('55');
+  const [manualPhone, setManualPhone] = useState('');
+  const [showManualInput, setShowManualInput] = useState(false);
   
   // Recurrence State
   const [isRecurring, setIsRecurring] = useState(false);
@@ -49,8 +66,6 @@ export function NewAppointmentModal({ isOpen, onClose, preSelectedDate, appointm
 
   // Notification State
   const [sendNotifications, setSendNotifications] = useState(false);
-  const [customTemplates, setCustomTemplates] = useState<any[]>([]); 
-  const [showNotificationConfig, setShowNotificationConfig] = useState(false);
 
   // Reset or Load Data
   useEffect(() => {
@@ -66,13 +81,27 @@ export function NewAppointmentModal({ isOpen, onClose, preSelectedDate, appointm
               setEndTime(end.toTimeString().slice(0, 5));
               setCategory(appointmentToEdit.category || 'Geral');
               setIsTask(appointmentToEdit.is_task || false);
-              if (appointmentToEdit.lead) {
-                  setSelectedLead(appointmentToEdit.lead as any);
-              }
-              // Carrega configs de notificação
-              setSendNotifications(appointmentToEdit.send_notifications !== false); // Default true se undefined
-              setCustomTemplates((appointmentToEdit as any).custom_notification_config?.lead_notifications || []);
               
+              // Load Guests (Backward compatibility with lead_id + guests column)
+              const initialGuests = [];
+              if (appointmentToEdit.lead) {
+                  initialGuests.push({
+                      id: appointmentToEdit.lead.id,
+                      name: appointmentToEdit.lead.name,
+                      phone: appointmentToEdit.lead.phone || '',
+                      type: 'lead'
+                  });
+              }
+              if ((appointmentToEdit as any).guests && Array.isArray((appointmentToEdit as any).guests)) {
+                  initialGuests.push(...(appointmentToEdit as any).guests);
+              }
+              // Deduplicate based on phone
+              const uniqueGuests = initialGuests.filter((g, index, self) => 
+                  index === self.findIndex((t) => (t.phone === g.phone))
+              );
+              setGuests(uniqueGuests as any);
+
+              setSendNotifications(appointmentToEdit.send_notifications !== false);
               setIsRecurring(false);
           } else {
               // CREATE MODE
@@ -83,15 +112,16 @@ export function NewAppointmentModal({ isOpen, onClose, preSelectedDate, appointm
               setEndTime('10:00');
               setCategory('Geral');
               setIsTask(false);
-              setSelectedLead(null);
+              setGuests([]);
               setIsRecurring(false);
               setRecurrenceCount(1);
-              setSendNotifications(true); // Default ON
-              setCustomTemplates([]);
+              setSendNotifications(true);
           }
           setLeadSearch('');
           setLeadSuggestions([]);
-          setShowNotificationConfig(false);
+          setShowManualInput(false);
+          setManualName('');
+          setManualPhone('');
       }
   }, [isOpen, preSelectedDate, appointmentToEdit]);
 
@@ -109,24 +139,32 @@ export function NewAppointmentModal({ isOpen, onClose, preSelectedDate, appointm
       setLeadSuggestions(data || []);
   };
 
-  const addCustomTemplate = () => {
-      const newTemplate = {
-          id: Date.now().toString(),
-          type: 'before_event',
-          time_amount: 1,
-          time_unit: 'hours',
-          template: 'Olá [lead_name], lembrete do nosso compromisso em 1h.',
-          active: true
-      };
-      setCustomTemplates([...customTemplates, newTemplate]);
+  const addLeadGuest = (lead: any) => {
+      if (guests.some(g => g.phone === lead.phone)) return;
+      setGuests([...guests, { id: lead.id, name: lead.name, phone: lead.phone, type: 'lead' }]);
+      setLeadSearch('');
+      setLeadSuggestions([]);
   };
 
-  const updateCustomTemplate = (id: string, field: string, value: any) => {
-      setCustomTemplates(prev => prev.map(t => t.id === id ? { ...t, [field]: value } : t));
+  const addManualGuest = () => {
+      if (!manualName.trim() || !manualPhone.trim()) return;
+      const fullPhone = `${manualDDI}${manualPhone.replace(/\D/g, '')}`;
+      
+      if (guests.some(g => g.phone === fullPhone)) {
+          addToast({ type: 'warning', title: 'Duplicado', message: 'Número já adicionado.' });
+          return;
+      }
+
+      setGuests([...guests, { name: manualName, phone: fullPhone, type: 'manual' }]);
+      setManualName('');
+      setManualPhone('');
+      setShowManualInput(false);
   };
 
-  const removeCustomTemplate = (id: string) => {
-      setCustomTemplates(prev => prev.filter(t => t.id !== id));
+  const removeGuest = (index: number) => {
+      const newGuests = [...guests];
+      newGuests.splice(index, 1);
+      setGuests(newGuests);
   };
 
   const handleSave = async () => {
@@ -141,15 +179,9 @@ export function NewAppointmentModal({ isOpen, onClose, preSelectedDate, appointm
           const startISO = `${date}T${startTime}:00`;
           const endISO = `${date}T${endTime}:00`;
           
-          // Configuração de Notificação
-          // Se tiver templates customizados, cria o objeto de config. Senão, vai null (usa global)
-          let customConfig = null;
-          if (customTemplates.length > 0) {
-              customConfig = {
-                  lead_notifications: customTemplates
-                  // Admin notifications herda da global ou fica vazio aqui
-              };
-          }
+          // Separa o Lead Principal (Primeiro da lista do tipo 'lead') e o resto vai para 'guests'
+          const mainLead = guests.find(g => g.type === 'lead');
+          const otherGuests = guests.filter(g => g !== mainLead);
 
           const payload = {
               company_id: user.company_id, 
@@ -160,11 +192,11 @@ export function NewAppointmentModal({ isOpen, onClose, preSelectedDate, appointm
               end_time: endISO,
               category: category,
               is_task: isTask,
-              lead_id: selectedLead?.id || null,
+              lead_id: mainLead?.id || null, // FK mantida
+              guests: guests, // Todos salvos aqui para notificação
               status: 'confirmed',
               origin: 'internal',
               send_notifications: sendNotifications,
-              custom_notification_config: customConfig
           };
 
           if (appointmentToEdit) {
@@ -178,7 +210,7 @@ export function NewAppointmentModal({ isOpen, onClose, preSelectedDate, appointm
               
               if (error) throw error;
               
-              const updatedApp = { ...data, lead: selectedLead } as Appointment;
+              const updatedApp = { ...data, lead: mainLead } as Appointment;
               updateAppointmentOptimistic(updatedApp);
               addToast({ type: 'success', title: 'Atualizado', message: 'Evento salvo.' });
 
@@ -218,29 +250,30 @@ export function NewAppointmentModal({ isOpen, onClose, preSelectedDate, appointm
               const { data, error } = await supabase.from('appointments').insert(appointmentsToCreate).select();
               if (error) throw error;
 
-              if (selectedLead?.id && data && data.length > 0) {
+              // Log apenas para o lead principal se houver
+              if (mainLead?.id && data && data.length > 0) {
                   const typeLabel = isTask ? 'Tarefa' : 'Reunião';
                   const logContent = `${typeLabel} agendada: "${title}" para ${new Date(startISO).toLocaleDateString()} às ${startTime}.`;
                   
                   await supabase.from('lead_activities').insert({
                       company_id: user.company_id,
-                      lead_id: selectedLead.id,
+                      lead_id: mainLead.id,
                       type: 'log',
                       content: logContent,
                       created_by: user.id
                   });
-
-                  // Trigger de confirmação imediata (Se habilitado)
-                  if (!isTask && sendNotifications) {
-                      api.post('/appointments/confirm', { 
-                          appointmentId: data[0].id, 
-                          companyId: user.company_id 
-                      }).catch(err => console.error("Erro ao enviar confirmação:", err));
-                  }
+              }
+              
+              // Dispara notificação se houver guests (seja lead ou manual)
+              if (guests.length > 0 && sendNotifications && data && data.length > 0) {
+                   api.post('/appointments/confirm', { 
+                       appointmentId: data[0].id, 
+                       companyId: user.company_id 
+                   }).catch(err => console.error("Erro ao enviar confirmação:", err));
               }
 
               if (data && data.length > 0) {
-                  const newApp = { ...data[0], lead: selectedLead } as Appointment;
+                  const newApp = { ...data[0], lead: mainLead } as Appointment;
                   addAppointmentOptimistic(newApp);
               }
               addToast({ type: 'success', title: 'Criado', message: isRecurring ? `${iterations} eventos criados.` : 'Evento criado.' });
@@ -351,93 +384,91 @@ export function NewAppointmentModal({ isOpen, onClose, preSelectedDate, appointm
                         <option value="Pessoal">Pessoal</option>
                     </select>
                 </div>
-                <div className="relative">
-                    <label className="text-xs font-bold text-zinc-500 uppercase flex items-center gap-1 mb-1"><User size={12} /> Vincular Lead</label>
-                    {selectedLead ? (
-                        <div className="flex items-center justify-between bg-blue-500/10 border border-blue-500/30 rounded-md px-3 h-10">
-                            <span className="text-sm text-blue-400 truncate">{selectedLead.name}</span>
-                            <button onClick={() => setSelectedLead(null)} className="text-zinc-500 hover:text-white"><X size={14} /></button>
+            </div>
+
+            {/* PARTICIPANTES / GUESTS */}
+            <div className="bg-zinc-900/30 p-3 rounded-lg border border-zinc-800">
+                <div className="flex justify-between items-center mb-2">
+                    <label className="text-xs font-bold text-zinc-500 uppercase flex items-center gap-1"><User size={12} /> Participantes</label>
+                    <Button variant="ghost" size="sm" onClick={() => setShowManualInput(!showManualInput)} className="text-[10px] h-6 px-2 text-primary hover:bg-primary/10">
+                        {showManualInput ? 'Cancelar Manual' : '+ Add Manual'}
+                    </Button>
+                </div>
+                
+                {/* Manual Input Area */}
+                {showManualInput && (
+                    <div className="mb-3 p-2 bg-zinc-950 rounded border border-zinc-800 animate-in slide-in-from-top-1">
+                        <div className="flex gap-2 mb-2">
+                            <Input value={manualName} onChange={e => setManualName(e.target.value)} placeholder="Nome" className="h-8 text-xs" />
                         </div>
-                    ) : (
-                        <>
-                            <Input value={leadSearch} onChange={e => handleSearchLead(e.target.value)} placeholder="Buscar nome..." className="h-10" />
-                            {leadSuggestions.length > 0 && (
-                                <div className="absolute top-full left-0 right-0 bg-zinc-900 border border-zinc-700 rounded-md shadow-xl z-50 mt-1 max-h-40 overflow-y-auto">
-                                    {leadSuggestions.map(lead => (
-                                        <div key={lead.id} onClick={() => { setSelectedLead(lead); setLeadSearch(''); setLeadSuggestions([]); }} className="px-3 py-2 hover:bg-zinc-800 cursor-pointer text-sm text-zinc-300">
-                                            {lead.name}
-                                        </div>
-                                    ))}
+                        <div className="flex gap-2">
+                            <select value={manualDDI} onChange={e => setManualDDI(e.target.value)} className="w-24 bg-zinc-900 border border-zinc-700 rounded text-xs px-1">
+                                {COUNTRIES.map(c => <option key={c.code} value={c.code}>{c.label}</option>)}
+                            </select>
+                            <Input value={manualPhone} onChange={e => setManualPhone(e.target.value)} placeholder="Telefone (1199...)" className="h-8 text-xs flex-1" />
+                            <Button size="sm" onClick={addManualGuest} className="h-8 bg-green-600 hover:bg-green-500"><Plus size={14}/></Button>
+                        </div>
+                    </div>
+                )}
+
+                {/* Lead Search Area */}
+                {!showManualInput && (
+                    <div className="relative mb-2">
+                        <Input value={leadSearch} onChange={e => handleSearchLead(e.target.value)} placeholder="Buscar Lead no CRM..." className="h-9 text-xs" />
+                        {leadSuggestions.length > 0 && (
+                            <div className="absolute top-full left-0 right-0 bg-zinc-900 border border-zinc-700 rounded-md shadow-xl z-50 mt-1 max-h-40 overflow-y-auto">
+                                {leadSuggestions.map(lead => (
+                                    <div key={lead.id} onClick={() => addLeadGuest(lead)} className="px-3 py-2 hover:bg-zinc-800 cursor-pointer text-xs text-zinc-300 flex justify-between">
+                                        <span>{lead.name}</span>
+                                        <span className="text-zinc-500">{lead.phone}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* Guest List */}
+                <div className="space-y-1">
+                    {guests.map((guest, idx) => (
+                        <div key={idx} className="flex items-center justify-between bg-zinc-950 p-2 rounded border border-zinc-800">
+                            <div className="flex items-center gap-2 overflow-hidden">
+                                {guest.type === 'lead' ? <User size={12} className="text-blue-500" /> : <Phone size={12} className="text-yellow-500" />}
+                                <div className="flex flex-col min-w-0">
+                                    <span className="text-xs text-zinc-200 truncate">{guest.name}</span>
+                                    <span className="text-[10px] text-zinc-500">{guest.phone}</span>
                                 </div>
-                            )}
-                        </>
-                    )}
+                            </div>
+                            <button onClick={() => removeGuest(idx)} className="text-zinc-600 hover:text-red-500"><X size={14}/></button>
+                        </div>
+                    ))}
+                    {guests.length === 0 && <p className="text-[10px] text-zinc-600 italic text-center py-2">Nenhum participante adicionado.</p>}
                 </div>
             </div>
             
-            {/* NOTIFICATION TOGGLE & CONFIG */}
+            {/* NOTIFICATION TOGGLE */}
             {!isTask && (
-                <div className="bg-zinc-900/30 p-3 rounded-lg border border-zinc-800">
-                    <div className="flex items-center justify-between">
-                        <div className="flex flex-col">
-                            <label className="text-xs font-bold text-zinc-400 flex items-center gap-2">
-                                <Bell size={14} className={sendNotifications ? "text-yellow-500" : "text-zinc-600"} /> 
-                                Enviar Avisos
-                            </label>
-                            {sendNotifications && selectedLead && (
-                                <span className="text-[10px] text-zinc-500 mt-1">
-                                    Enviaremos lembretes para {selectedLead.name}
-                                </span>
-                            )}
-                        </div>
-                        <div onClick={() => setSendNotifications(!sendNotifications)} className={cn("w-8 h-4 rounded-full relative cursor-pointer transition-colors", sendNotifications ? "bg-yellow-600" : "bg-zinc-700")}>
-                            <div className={cn("absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all", sendNotifications ? "left-4.5" : "left-0.5")} />
-                        </div>
+                <div className="flex items-center justify-between p-3 bg-zinc-900/30 rounded-lg border border-zinc-800">
+                    <div className="flex flex-col">
+                        <label className="text-xs font-bold text-zinc-400 flex items-center gap-2">
+                            <Bell size={14} className={sendNotifications ? "text-yellow-500" : "text-zinc-600"} /> 
+                            Enviar Avisos Automáticos
+                        </label>
+                        {sendNotifications && guests.length > 0 && (
+                            <span className="text-[10px] text-zinc-500 mt-1">
+                                Enviaremos lembretes para {guests.length} participante(s) configurados.
+                            </span>
+                        )}
                     </div>
-                    
-                    {sendNotifications && (
-                        <div className="mt-3">
-                            <Button 
-                                variant="ghost" 
-                                size="sm" 
-                                onClick={() => setShowNotificationConfig(!showNotificationConfig)} 
-                                className="w-full text-xs h-6 text-zinc-500 hover:text-white"
-                            >
-                                {showNotificationConfig ? 'Ocultar Configuração' : 'Personalizar Mensagens'}
-                            </Button>
-                            
-                            {showNotificationConfig && (
-                                <div className="space-y-3 mt-2 animate-in fade-in pt-2 border-t border-zinc-800">
-                                    <p className="text-[10px] text-zinc-500 italic">Se vazio, usa os modelos padrão das Configurações.</p>
-                                    
-                                    {customTemplates.map((tpl, idx) => (
-                                        <div key={tpl.id} className="bg-zinc-950 p-2 rounded border border-zinc-800 relative">
-                                            <div className="flex gap-2 mb-1">
-                                                <Input type="number" value={tpl.time_amount} onChange={e => updateCustomTemplate(tpl.id, 'time_amount', e.target.value)} className="w-12 h-6 text-xs" />
-                                                <select value={tpl.time_unit} onChange={e => updateCustomTemplate(tpl.id, 'time_unit', e.target.value)} className="bg-zinc-900 text-xs rounded border-zinc-700 h-6">
-                                                    <option value="minutes">Min</option>
-                                                    <option value="hours">Horas</option>
-                                                </select>
-                                                <span className="text-xs text-zinc-500 pt-1">antes</span>
-                                            </div>
-                                            <Textarea value={tpl.template} onChange={e => updateCustomTemplate(tpl.id, 'template', e.target.value)} className="h-12 text-xs bg-zinc-900 border-zinc-800" />
-                                            <button onClick={() => removeCustomTemplate(tpl.id)} className="absolute top-2 right-2 text-zinc-600 hover:text-red-500"><X size={12}/></button>
-                                        </div>
-                                    ))}
-                                    
-                                    <Button size="sm" variant="outline" onClick={addCustomTemplate} className="w-full h-7 text-xs border-dashed border-zinc-700 text-zinc-500">
-                                        + Adicionar Lembrete
-                                    </Button>
-                                </div>
-                            )}
-                        </div>
-                    )}
-                    
-                    {!selectedLead && sendNotifications && (
-                        <div className="mt-2 text-xs text-red-400 flex items-center gap-1 bg-red-500/10 p-1.5 rounded">
-                            <AlertCircle size={12} /> Vincule um Lead para enviar avisos.
-                        </div>
-                    )}
+                    <div onClick={() => setSendNotifications(!sendNotifications)} className={cn("w-8 h-4 rounded-full relative cursor-pointer transition-colors", sendNotifications ? "bg-yellow-600" : "bg-zinc-700")}>
+                        <div className={cn("absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all", sendNotifications ? "left-4.5" : "left-0.5")} />
+                    </div>
+                </div>
+            )}
+            
+            {!guests.length && sendNotifications && !isTask && (
+                <div className="mt-1 text-xs text-red-400 flex items-center gap-1 bg-red-500/10 p-2 rounded">
+                    <AlertCircle size={12} /> Adicione participantes para enviar avisos.
                 </div>
             )}
 
