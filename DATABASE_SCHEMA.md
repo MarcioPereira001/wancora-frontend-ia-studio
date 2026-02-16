@@ -29,12 +29,6 @@ Gerencia o estado físico da conexão com o WhatsApp.
 * `webhook_enabled`: boolean (Default: false)
 * `webhook_events`: text[] (Default: ['message.upsert'])
 
-### `identity_map` (NOVO: LID Resolver)
-Tabela técnica para resolver conflitos entre IDs de telefone e IDs ocultos (LID).
-* `lid_jid`: text (PK)
-* `phone_jid`: text
-* `company_id`: uuid
-
 ### `contacts` (Agenda)
 Contatos brutos sincronizados do celular.
 * `jid`: text (PK) - Ex: `551199999999@s.whatsapp.net`
@@ -63,7 +57,7 @@ Armazena chaves criptográficas e credenciais de sessão do WhatsApp (Multi-Devi
 * `payload`: jsonb
 * `updated_at`: timestamptz
 
-### `identity_map` (LID Resolver) [CRÍTICO v5.1]
+### `identity_map` (LID Resolver)
 Tabela técnica essencial para o ecossistema Multi-Device (iOS/Android). O WhatsApp envia atualizações de presença e reações usando IDs ocultos (`@lid`) que não correspondem ao número de telefone. Esta tabela faz a ponte.
 * `lid_jid`: text (PK) - O ID opaco (Ex: `123456@lid`)
 * `phone_jid`: text - O ID real do telefone (Ex: `55119999@s.whatsapp.net`)
@@ -164,13 +158,18 @@ Estrutura do Kanban.
 * **`pipelines`**: `id`, `company_id`, `name`, `is_default`
 * **`pipeline_stages`**: `id`, `pipeline_id`, `name`, `position` (int), `color`
 
-### `agents` (IA)
-Configuração dos Agentes Inteligentes.
+### `agents` (IA & Personas)
+Configuração dos Agentes Inteligentes (Junior, Pleno, Sênior).
 * `id`: uuid (PK)
 * `company_id`: uuid (FK)
 * `name`: text
-* `prompt_instruction`: text
-* `knowledge_base`: text
+* `level`: text ('junior', 'pleno', 'senior') - **[NOVO]** Define a capacidade do agente.
+* `prompt_instruction`: text - O "System Prompt" final compilado que vai para o Gemini.
+* `personality_config`: jsonb - **[NOVO]** Definições de tom, papel, regras de escape e prompts negativos.
+* `knowledge_config`: jsonb - **[NOVO]** Referências estruturadas para arquivos de texto e mídia (Substitui o campo simples `knowledge_base` gradualmente).
+* `flow_config`: jsonb - **[NOVO]** Armazena o JSON do React Flow (Nós e Arestas) para agentes Pleno/Sênior.
+* `tools_config`: jsonb - **[NOVO]** Configurações de integração (Drive, Agenda, Relatórios WhatsApp) para Agentes Sênior.
+* `transcription_enabled`: boolean (Default: true) - **[NOVO]** Se o agente deve ouvir e transcrever áudios.
 * `is_active`: boolean
 * `model`: text (Default: 'gemini-3-flash-preview')
 
@@ -498,124 +497,3 @@ A tabela `products` serve como um cache de leitura. Não editamos produtos pelo 
 
 ---
 
-## Último SQL implementado:
-
-```SQL
--- ============================================================
--- 1. INFRAESTRUTURA DE LOGS (CAIXA PRETA)
--- ============================================================
-CREATE TABLE IF NOT EXISTS public.system_logs (
-    id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-    level text CHECK (level IN ('info', 'warn', 'error', 'fatal')),
-    source text CHECK (source IN ('frontend', 'backend', 'worker', 'baileys', 'database')),
-    message text,
-    metadata jsonb DEFAULT '{}',
-    company_id uuid REFERENCES public.companies(id) ON DELETE SET NULL,
-    user_id uuid REFERENCES public.profiles(id) ON DELETE SET NULL,
-    created_at timestamptz DEFAULT now()
-);
-
--- Garante que o frontend possa escrever logs (RLS)
-ALTER TABLE public.system_logs ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Permitir insert público logs" ON public.system_logs FOR INSERT WITH CHECK (true);
-CREATE POLICY "Permitir leitura admin" ON public.system_logs FOR SELECT USING (
-    EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND super_admin = true)
-);
-
--- ============================================================
--- 2. SUPORTE E FEEDBACK
--- ============================================================
-CREATE TABLE IF NOT EXISTS public.feedbacks (
-    id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-    user_id uuid REFERENCES public.profiles(id) ON DELETE CASCADE,
-    company_id uuid REFERENCES public.companies(id) ON DELETE CASCADE,
-    type text CHECK (type IN ('bug', 'suggestion', 'other')),
-    content text,
-    status text CHECK (status IN ('pending', 'viewed', 'resolved')) DEFAULT 'pending',
-    created_at timestamptz DEFAULT now()
-);
-
--- ============================================================
--- 3. SISTEMA DE INDICAÇÃO (GROWTH)
--- ============================================================
-CREATE TABLE IF NOT EXISTS public.referrals (
-    id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-    referrer_id uuid REFERENCES public.profiles(id),
-    referred_user_id uuid REFERENCES public.profiles(id),
-    status text CHECK (status IN ('pending', 'approved', 'paid')) DEFAULT 'pending',
-    created_at timestamptz DEFAULT now()
-);
-
--- ============================================================
--- 4. EXTENSÕES DE TABELAS EXISTENTES
--- ============================================================
-
--- Adiciona Super Admin e Código de Indicação aos Perfis
-DO $$ 
-BEGIN 
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'profiles' AND column_name = 'super_admin') THEN
-        ALTER TABLE public.profiles ADD COLUMN super_admin boolean DEFAULT false;
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'profiles' AND column_name = 'referral_code') THEN
-        ALTER TABLE public.profiles ADD COLUMN referral_code text UNIQUE;
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'profiles' AND column_name = 'referred_by') THEN
-        ALTER TABLE public.profiles ADD COLUMN referred_by uuid REFERENCES public.profiles(id);
-    END IF;
-END $$;
-
--- Adiciona Retenção de Dados às Empresas
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'companies' AND column_name = 'storage_retention_days') THEN
-        ALTER TABLE public.companies ADD COLUMN storage_retention_days integer DEFAULT 30;
-    END IF;
-END $$;
-
--- ============================================================
--- 5. TABELAS TÉCNICAS (WHATSAPP & DRIVE)
--- ============================================================
-
--- Cache de Produtos do WhatsApp
-CREATE TABLE IF NOT EXISTS public.products (
-    id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-    company_id uuid REFERENCES public.companies(id) ON DELETE CASCADE,
-    product_id text NOT NULL,
-    name text,
-    description text,
-    price numeric,
-    currency text,
-    image_url text,
-    is_hidden boolean DEFAULT false,
-    created_at timestamptz DEFAULT now(),
-    UNIQUE(company_id, product_id)
-);
-
--- Mapeamento de Identidade (LID Resolver - Anti-Bug iOS)
-CREATE TABLE IF NOT EXISTS public.identity_map (
-    lid_jid text NOT NULL,
-    phone_jid text NOT NULL,
-    company_id uuid REFERENCES public.companies(id) ON DELETE CASCADE,
-    created_at timestamptz DEFAULT now(),
-    PRIMARY KEY (lid_jid, company_id)
-);
-
--- Logs de Webhook
-CREATE TABLE IF NOT EXISTS public.webhook_logs (
-    id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-    instance_id uuid REFERENCES public.instances(id) ON DELETE SET NULL,
-    event_type text,
-    status integer,
-    payload jsonb,
-    response_body text,
-    created_at timestamptz DEFAULT now()
-);
-
--- ============================================================
--- 6. ÍNDICES DE PERFORMANCE (TURBO MODE)
--- ============================================================
-CREATE INDEX IF NOT EXISTS idx_messages_remote_jid_company ON public.messages(company_id, remote_jid);
-CREATE INDEX IF NOT EXISTS idx_contacts_last_message ON public.contacts(company_id, last_message_at DESC);
-CREATE INDEX IF NOT EXISTS idx_leads_company_phone ON public.leads(company_id, phone);
-CREATE INDEX IF NOT EXISTS idx_system_logs_created_at ON public.system_logs(created_at DESC);
-```
