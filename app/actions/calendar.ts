@@ -39,6 +39,8 @@ const AvailabilitySchema = z.object({
   event_goal: z.string().default('Reunião'),
   event_location_type: z.enum(['online', 'presencial']).default('online'),
   event_location_details: z.string().optional(),
+  meeting_url: z.string().optional().nullable(), // NOVO CAMPO
+  
   cover_url: z.string().optional().nullable(),
   theme_config: ThemeConfigSchema.optional(),
 
@@ -137,6 +139,8 @@ export async function saveAvailabilityRules(formData: AvailabilityFormData) {
       event_goal: payload.event_goal,
       event_location_type: payload.event_location_type,
       event_location_details: payload.event_location_details,
+      meeting_url: payload.meeting_url, // Salva o link personalizado
+
       cover_url: payload.cover_url,
       theme_config: safeThemeConfig,
 
