@@ -111,6 +111,22 @@ O Backend atua como um **Gateway Inteligente** entre o WhatsApp (Meta) e o Banco
 * **Idempotência:** Operações de escrita usam `UPSERT` para evitar duplicidade em condições de corrida.
 * **Service Role:** O Backend opera com privilégios administrativos (`SUPABASE_KEY` de serviço) para ignorar RLS.
 
+## 1.2. Protocolos de Estabilidade (Stability Protocols)
+
+**Graceful Shutdown (Zero-Conflict Deploy):**
+O servidor implementa listeners para `SIGTERM` e `SIGINT`. Ao receber sinal de desligamento (ex: novo deploy no Render), o sistema:
+1. Interrompe a aceitação de novas requisições HTTP.
+2. Encerra proativamente todas as conexões WebSocket do Baileys (`sock.end()`).
+3. Aguarda 1.5s para limpeza de buffers.
+*Objetivo:* Prevenir o erro `440 Stream Errored (conflict)` onde a sessão velha briga com a nova.
+
+**BR Number Sanitization (Correção 9º Dígito):**
+No serviço de envio (`Sender`), o sistema intercepta números brasileiros (`+55`).
+1. Executa `sock.onWhatsApp(jid)` para consultar a API do WhatsApp.
+2. Obtém o JID canônico (com ou sem o 9º dígito, dependendo da região/operadora).
+3. Realiza o envio para o JID correto validado.
+*Objetivo:* Eliminar falhas de envio para números antigos/novos ou portados.
+
 ---
 
 ## 2. 🗄️ Interface de Dados (Supabase Schema)
@@ -155,14 +171,15 @@ Envia mensagens com **Protocolo de Humanização** (Digitando... -> Pausa -> Env
 * **Body (Genérico):**
     ```json
     {
-      "sessionId": "...",
-      "companyId": "...",
-      "to": "5511999999999",
-      "type": "text", // enum: text, image, video, audio, document, poll, location, contact, card
-      "text": "Conteúdo...",
-      "url": "https://...",
-      "fileName": "doc.pdf",
-      "ptt": true
+     "sessionId": "...",
+     "companyId": "...",
+     "to": "5511999999999",
+     "type": "text", // enum: text, image, video, audio, document, poll, location, contact, card
+     "text": "Conteúdo...",
+     "url": "https://...", // URL pública (Supabase/S3)
+     "driveFileId": "google_drive_id", // [NOVO] Envia direto do Drive (Streaming RAM)
+     "fileName": "doc.pdf",
+     "ptt": true
     }
     ```
 
