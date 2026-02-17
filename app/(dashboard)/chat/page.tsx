@@ -78,26 +78,39 @@ export default function ChatPage() {
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `company_id=eq.${user.company_id}` }, async (payload) => {
             const newMessage = payload.new as Message;
             
+            // Tratamento de LID
             if (activeContact && newMessage.remote_jid.includes('@lid') && activeContact.remote_jid.includes('@s.whatsapp.net')) {
                 await linkIdentity(newMessage.remote_jid, activeContact.remote_jid);
             }
 
-            if (activeContact && (newMessage.remote_jid === activeContact.remote_jid || newMessage.remote_jid.includes('@lid'))) {
+            // --- LÓGICA DE ATUALIZAÇÃO DA STORE ---
+            // Verifica se a mensagem pertence ao chat aberto
+            // Normaliza JIDs para comparação segura
+            const isSameChat = activeContact && (
+                 newMessage.remote_jid === activeContact.remote_jid || 
+                 newMessage.remote_jid.replace('@lid', '') === activeContact.remote_jid.replace('@s.whatsapp.net', '')
+            );
+
+            if (isSameChat) {
                 setMessages(prev => {
+                    // Remove mensagem temporária (sending) se o ID ou conteúdo bater
                     const filtered = prev.filter(m => {
                         const isTemp = m.id.startsWith('temp-') && m.status === 'sending';
+                        // Compara conteúdo para deduplicação visual rápida
                         const sameContent = (m.content === newMessage.content) || (m.media_url && m.media_url === newMessage.media_url);
                         return !(isTemp && sameContent);
                     });
                     
+                    // Evita duplicata real
                     if (!filtered.find(m => m.id === newMessage.id)) {
                         return [...filtered, newMessage];
                     }
                     return filtered;
                 });
 
+                // Marca como lido se estiver com a janela aberta (UX)
                 if (!newMessage.from_me) {
-                    supabase.from('contacts').update({ unread_count: 0 }).eq('jid', activeContact.remote_jid).eq('company_id', user.company_id);
+                    supabase.from('contacts').update({ unread_count: 0 }).eq('jid', activeContact.remote_jid).eq('company_id', user.company_id).then();
                 }
             }
         })
