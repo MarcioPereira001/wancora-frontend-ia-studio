@@ -163,15 +163,19 @@ Configuração dos Agentes Inteligentes (Junior, Pleno, Sênior).
 * `id`: uuid (PK)
 * `company_id`: uuid (FK)
 * `name`: text
-* `level`: text ('junior', 'pleno', 'senior') - **[NOVO]** Define a capacidade do agente.
-* `prompt_instruction`: text - O "System Prompt" final compilado que vai para o Gemini.
-* `personality_config`: jsonb - **[NOVO]** Definições de tom, papel, regras de escape e prompts negativos.
-* `knowledge_config`: jsonb - **[NOVO]** Referências estruturadas para arquivos de texto e mídia (Substitui o campo simples `knowledge_base` gradualmente).
-* `flow_config`: jsonb - **[NOVO]** Armazena o JSON do React Flow (Nós e Arestas) para agentes Pleno/Sênior.
-* `tools_config`: jsonb - **[NOVO]** Configurações de integração (Drive, Agenda, Relatórios WhatsApp) para Agentes Sênior.
-* `transcription_enabled`: boolean (Default: true) - **[NOVO]** Se o agente deve ouvir e transcrever áudios.
+* `level`: text ('junior', 'pleno', 'senior')
+* `prompt_instruction`: text - O "System Prompt" final compilado.
+* `personality_config`: jsonb - **[ATUALIZADO]** Estrutura:
+    * `role`, `tone`, `context`: Strings básicas.
+    * `verbosity`: 'minimalist' | 'standard' | 'mixed'.
+    * `emoji_level`: 'rare' | 'moderate' | 'frequent'.
+    * `mental_triggers`: Array de strings (ex: ['scarcity', 'urgency']).
+    * `negative_prompts`, `escape_rules`: Arrays de strings.
+* `knowledge_config`: jsonb - Referências a arquivos.
+* `flow_config`: jsonb - Armazena a técnica de vendas (`technique`).
+* `tools_config`: jsonb - Integrações (Drive, Agenda, CRM).
 * `is_active`: boolean
-* `model`: text (Default: 'gemini-3-flash-preview')
+* `model`: text ('gemini-3-flash-preview' ou 'gemini-3-pro-preview').
 
 ### `campaigns` (Motor de Disparos)
 Gestão avançada de disparos em massa.
@@ -330,9 +334,9 @@ Espelho local dos metadados do Drive para navegação instantânea (0ms latency)
 
 ### `system_config` (Global Settings) [NOVO]
 Configurações globais do SaaS (Singleton).
-* `id`: uuid (PK, Default Zero UUID)
+* `id`: uuid (PK, Default Zero UUID `0000...`)
 * `maintenance_mode`: boolean (Default: false) - Kill Switch global.
-* `broadcast_active`: boolean (Default: false)
+* `broadcast_active`: boolean (Default: false) - Banner de aviso.
 * `broadcast_message`: text
 * `broadcast_level`: text ('info', 'warning', 'error')
 * `updated_at`: timestamptz
@@ -366,11 +370,8 @@ Sistema de indicação.
 * `status`: text ('pending', 'approved', 'paid')
 * `created_at`: timestamptz
 
-### `profiles` (Extensão Admin)
-* ... colunas existentes ...
-* `super_admin`: boolean (Default: false) - **[CRÍTICO]** Flag de acesso ao painel /admin.
-* `referral_code`: text (Unique) - Código de indicação do usuário.
-* `referred_by`: uuid (FK -> profiles) - Quem indicou este usuário.
+### `view_admin_clients` (Performance) [NOVO]
+View otimizada para o painel administrativo listar clientes com dados agregados de perfil e empresa.
 
 ---
 
@@ -412,7 +413,7 @@ Vincula um `LID` (ID oculto) ao `Phone JID` real na tabela `identity_map`.
 
 ### `search_drive_files` (IA + Drive)
 Busca arquivos no cache do drive usando `pg_trgm` (fuzzy search) para que o Agente de IA possa encontrar documentos pelo nome aproximado.
-* **Parâmetros:** `p_company_id`, `p_query`, `p_limit`
+* **Parâmetros:** `p_company_id`, `p_query`, `p_limit`, `p_folder_id`
 * **Retorno:** Tabela contendo `id`, `google_id`, `name`, `mime_type`, `web_view_link`.
 
 ---

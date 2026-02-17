@@ -74,6 +74,7 @@ wancora-backend/
 ├── 📁 utils/
 │   ├── 📄 audioConverter.js      # Conversão de áudio para OGG/Opus (FFmpeg)
 │   ├── 📄 logger.js              # [NOVO] Utilitário de gravação de logs no Supabase (SystemLogs)
+│   ├── 📄 promptBuilder.js       # [NOVO] Engine de Prompts (Espelho do Frontend)
 │   └── 📄 wppParsers.js          # Helpers de normalização (JID, Unwrap)
 │
 ├── 📁 workers/
@@ -584,12 +585,12 @@ Em caso de falha, a API retorna:
 
 500: Erro interno (Redis, Banco ou Baileys crash).```
 
-### 6.1. Telemetria de Erros (System Logs)
+### 6.1. Telemetria de Erros (System Logs) [NOVO]
 O Backend implementa um padrão de "Observabilidade Silenciosa".
-1.  Qualquer exceção não tratada (`uncaughtException`, `unhandledRejection`) ou erro 500 em rotas é interceptado pelo middleware `errorHandler.js`.
-2.  O erro é gravado na tabela `system_logs` via `utils/logger.js`.
-3.  **Console Hijacking:** `console.error` e `console.warn` originais foram sobrescritos para também enviar cópias para o banco de dados, permitindo debug remoto sem acesso ao terminal do servidor.
-4.  O payload inclui: Stack Trace, ID da Empresa, Rota, Body e User ID.
+1.  **Interceptação Global:** Qualquer exceção não tratada (`uncaughtException`, `unhandledRejection`) ou erro 500 em rotas é interceptado pelo middleware `errorHandler.js`.
+2.  **Persistência:** O erro é gravado na tabela `system_logs` via `utils/logger.js`.
+3.  **Console Hijacking:** As funções nativas `console.error` e `console.warn` foram sobrescritas para também enviar cópias para o banco de dados. Isso permite debugar erros do Baileys e de bibliotecas externas sem acesso ao terminal do servidor.
+4.  **Loop Breaker:** O Logger possui proteção interna para evitar que erros de gravação de log gerem novos logs (Recursão Infinita).
 
 ---
 
