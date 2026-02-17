@@ -52,10 +52,10 @@ export function GlobalSyncIndicator() {
     simulationInterval.current = setInterval(() => {
       setPercent((prev) => {
         // Se já acabou, não faz nada
-        if (prev >= 100) return 100;
+        if (prev >= 90) return 90;
         
         // Se chegou em 90% via simulação, espera o real ou o timeout
-        if (prev >= 90) return 90;
+        if (prev >= 80) return 80;
 
         // Incremento variável (0.2 a 1.5) para parecer natural
         const jump = Math.random() * 1.3 + 0.2;
