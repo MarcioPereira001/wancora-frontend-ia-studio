@@ -8,12 +8,14 @@ import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { TagInput } from '@/components/ui/tag-input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Bot, Save, Briefcase, Mic2, AlertOctagon, ShieldCheck, FileText, Upload, Trash2, Loader2, Info, Zap, Link as LinkIcon, Plus } from 'lucide-react';
+import { Bot, Save, Briefcase, Mic2, AlertOctagon, ShieldCheck, FileText, Upload, Trash2, Loader2, Info, Zap, Link as LinkIcon, Plus, ArrowRight, ArrowLeft, Sparkles, PlayCircle, Phone } from 'lucide-react';
 import { useToast } from '@/hooks/useToast';
 import { createClient } from '@/utils/supabase/client';
 import { cn } from '@/lib/utils';
 import { uploadChatMedia } from '@/utils/supabase/storage';
 import { AgentTriggerSelector } from './AgentTriggerSelector';
+import { PromptGeneratorModal } from './PromptGeneratorModal';
+import { AgentSimulator } from './AgentSimulator';
 
 interface JuniorAgentFormProps {
   initialData?: Agent | null;
@@ -72,10 +74,18 @@ export function JuniorAgentForm({ initialData, companyId, onSuccess }: JuniorAge
   );
   const [uploadingFile, setUploadingFile] = useState(false);
 
-  // Links Config (NOVO)
+  // Links Config
   const [links, setLinks] = useState<AgentLink[]>(initialData?.links_config || []);
   const [newLinkTitle, setNewLinkTitle] = useState('');
   const [newLinkUrl, setNewLinkUrl] = useState('');
+
+  // Transbordo (Report Phones)
+  const [reportPhones, setReportPhones] = useState<string[]>(initialData?.tools_config?.reporting_phones || []);
+  const [newReportPhone, setNewReportPhone] = useState('');
+
+  // MODAIS
+  const [isGeneratorOpen, setIsGeneratorOpen] = useState(false);
+  const [isSimulatorOpen, setIsSimulatorOpen] = useState(false);
 
   // Carrega estágios do funil para o seletor de gatilho
   useEffect(() => {
@@ -124,6 +134,15 @@ export function JuniorAgentForm({ initialData, companyId, onSuccess }: JuniorAge
       setLinks(links.filter((_, i) => i !== index));
   };
 
+  const handleAddReportPhone = () => {
+      const cleaned = newReportPhone.replace(/\D/g, '');
+      if (cleaned.length < 10) return;
+      if (!reportPhones.includes(cleaned)) {
+          setReportPhones([...reportPhones, cleaned]);
+          setNewReportPhone('');
+      }
+  };
+
   const handleSave = async () => {
       if (!name.trim() || !systemPrompt.trim()) {
           addToast({ type: 'warning', title: 'Campos Obrigatórios', message: 'Nome e Prompt do Sistema são essenciais.' });
@@ -132,14 +151,13 @@ export function JuniorAgentForm({ initialData, companyId, onSuccess }: JuniorAge
 
       setLoading(true);
       try {
-          // Verifica conflito de agente padrão (apenas se estiver ativando)
           if (isDefault) {
                const { data: existingDefault } = await supabase
                   .from('agents')
                   .select('id, name')
                   .eq('company_id', companyId)
                   .eq('is_default', true)
-                  .neq('id', initialData?.id || 'new') // Ignora o próprio
+                  .neq('id', initialData?.id || 'new') 
                   .maybeSingle();
                
                if (existingDefault) {
@@ -147,12 +165,10 @@ export function JuniorAgentForm({ initialData, companyId, onSuccess }: JuniorAge
                        setLoading(false);
                        return;
                    }
-                   // Remove o padrão do anterior
                    await supabase.from('agents').update({ is_default: false }).eq('id', existingDefault.id);
                }
           }
 
-          // Compilação do JSONB
           const personalityConfig = {
               role,
               tone,
@@ -171,6 +187,11 @@ export function JuniorAgentForm({ initialData, companyId, onSuccess }: JuniorAge
               media_files: [] 
           };
 
+          // Junior só usa reporting_phones no tools_config
+          const toolsConfig = {
+              reporting_phones: reportPhones
+          };
+
           const payload = {
               company_id: companyId,
               name,
@@ -178,8 +199,9 @@ export function JuniorAgentForm({ initialData, companyId, onSuccess }: JuniorAge
               prompt_instruction: systemPrompt,
               personality_config: personalityConfig,
               knowledge_config: knowledgeConfig,
+              tools_config: toolsConfig,
               trigger_config: triggerConfig,
-              links_config: links, // [NOVO] Links Salvos
+              links_config: links, 
               is_default: isDefault,
               is_active: isActive,
               model: 'gemini-3-flash-preview', 
@@ -215,6 +237,10 @@ export function JuniorAgentForm({ initialData, companyId, onSuccess }: JuniorAge
                 <p className="text-zinc-400 text-sm mt-1">Ideal para triagem, FAQ e atendimento inicial.</p>
             </div>
             <div className="flex items-center gap-4">
+                <Button onClick={() => setIsSimulatorOpen(true)} variant="outline" className="border-purple-500/50 text-purple-400 hover:bg-purple-500/10 hover:text-purple-300">
+                    <PlayCircle className="w-4 h-4 mr-2" /> Testar Agente
+                </Button>
+                
                 <div className="flex items-center gap-2 bg-zinc-900/50 p-2 rounded-lg border border-zinc-800">
                     <span className="text-xs font-bold text-zinc-400 uppercase">Status</span>
                     <div 
@@ -226,7 +252,7 @@ export function JuniorAgentForm({ initialData, companyId, onSuccess }: JuniorAge
                 </div>
                 <Button onClick={handleSave} disabled={loading} className="bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-500/20">
                     {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
-                    Salvar Agente
+                    Salvar
                 </Button>
             </div>
         </div>
@@ -289,6 +315,39 @@ export function JuniorAgentForm({ initialData, companyId, onSuccess }: JuniorAge
                         </div>
                     </CardContent>
                 </Card>
+
+                {/* Relatórios (NOVO) */}
+                <Card className="bg-zinc-900/40 border-zinc-800 border-l-4 border-l-blue-500">
+                    <CardHeader>
+                        <CardTitle className="text-base text-zinc-100 flex items-center gap-2">
+                            <Phone className="w-4 h-4 text-blue-500" /> Notificação de Transbordo
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                        <p className="text-xs text-zinc-400">
+                            Quem deve receber um alerta no WhatsApp quando este agente transferir para humano?
+                        </p>
+                        <div className="flex gap-2">
+                            <Input 
+                                value={newReportPhone} 
+                                onChange={e => setNewReportPhone(e.target.value)} 
+                                placeholder="551199..." 
+                                className="bg-zinc-950 border-zinc-800"
+                            />
+                            <Button size="sm" onClick={handleAddReportPhone} className="bg-blue-600 hover:bg-blue-500">
+                                <Plus className="w-4 h-4" />
+                            </Button>
+                        </div>
+                        <div className="space-y-2">
+                            {reportPhones.map((phone, idx) => (
+                                <div key={idx} className="flex items-center justify-between p-2 bg-zinc-950 rounded border border-zinc-800 text-xs">
+                                    <span className="text-zinc-300">{phone}</span>
+                                    <button onClick={() => setReportPhones(prev => prev.filter((_, i) => i !== idx))} className="text-zinc-500 hover:text-red-500"><Trash2 className="w-3.5 h-3.5" /></button>
+                                </div>
+                            ))}
+                        </div>
+                    </CardContent>
+                </Card>
             </div>
 
             {/* COLUNA 2: CÉREBRO (PROMPTS) */}
@@ -303,7 +362,9 @@ export function JuniorAgentForm({ initialData, companyId, onSuccess }: JuniorAge
                         <div>
                             <div className="flex justify-between items-center mb-1">
                                 <label className="text-xs font-bold text-zinc-500 uppercase">System Prompt (Instrução Mestra)</label>
-                                <span className="text-[10px] text-zinc-600 bg-zinc-900 px-1.5 py-0.5 rounded">Obrigatório</span>
+                                <Button size="sm" variant="ghost" className="h-6 text-[10px] text-purple-400 hover:text-purple-300 hover:bg-purple-500/10 gap-1" onClick={() => setIsGeneratorOpen(true)}>
+                                    <Sparkles className="w-3 h-3" /> Mágica IA
+                                </Button>
                             </div>
                             <Textarea 
                                 value={systemPrompt} 
@@ -471,8 +532,22 @@ export function JuniorAgentForm({ initialData, companyId, onSuccess }: JuniorAge
                     </CardContent>
                 </Card>
             </div>
-
         </div>
+
+        {/* MODAIS */}
+        <PromptGeneratorModal 
+            isOpen={isGeneratorOpen} 
+            onClose={() => setIsGeneratorOpen(false)} 
+            onGenerated={(text) => setSystemPrompt(text)} 
+        />
+        
+        <AgentSimulator 
+            isOpen={isSimulatorOpen} 
+            onClose={() => setIsSimulatorOpen(false)} 
+            systemPrompt={systemPrompt}
+            agentName={name}
+            contextFiles={files.map(f => f.name)}
+        />
     </div>
   );
 }

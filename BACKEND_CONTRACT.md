@@ -660,3 +660,39 @@ O Backend atualiza estes campos em tempo real. O Frontend decide quando mostrá-
 ### 8.6. TIPOS DE MENSAGEM (TABELA: messages)
 - ENUMS SUPORTADOS: text, image, video, audio, document, sticker, poll, location, contact, card.
 - NOTA: 'card' é renderizado como um Link Preview forçado (externalAdReply).
+
+---
+
+## 9. SERVER ACTIONS (Next.js Logic Layer)
+Funcionalidades de IA que rodam no servidor Next.js (Server-Side) para suportar a interface do usuário sem expor chaves de API.
+
+### 9.1. Geração de Personas (`gemini.ts`)
+
+#### `generateAgentPromptAction`
+Cria um System Prompt estruturado baseado em inputs brutos do usuário.
+*   **Input:**
+    ```json
+    {
+      "companyName": "Wancora Tech",
+      "product": "CRM SaaS",
+      "audience": "Pequenas empresas",
+      "tone": "Profissional",
+      "extra": "Focar em automação"
+    }
+    ```
+*   **Output:** `{ "text": "VOCÊ É um especialista em vendas... [Prompt Completo]" }`
+*   **Modelo:** `gemini-3-flash-preview` (Otimizado para instrução).
+
+#### `simulateChatAction`
+Simula a resposta do agente em um ambiente de teste (Sandbox).
+*   **Input:**
+    ```json
+    {
+      "history": [{ "role": "user", "parts": [{ "text": "Oi" }] }],
+      "systemInstruction": "Prompt mestre do agente...",
+      "knowledgeBase": "Resumo dos arquivos textual..."
+    }
+    ```
+*   **Output:** `{ "text": "Olá! Como posso ajudar com o CRM hoje?" }`
+*   **Nota:** Não persiste dados no banco.
+

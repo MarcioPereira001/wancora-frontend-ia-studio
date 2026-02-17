@@ -92,13 +92,14 @@ export async function simulateChatAction(history: any[], systemInstruction: stri
         const fullSystemPrompt = `
         ${systemInstruction}
         
-        --- BASE DE CONHECIMENTO ---
+        --- INFORMAÇÕES DE CONTEXTO ---
         ${knowledgeBase}
         ---------------------------
         
-        Diretrizes:
-        1. Responda apenas com base no conhecimento fornecido se a pergunta for específica.
-        2. Se não souber, diga que vai transferir para um humano.
+        IMPORTANTE:
+        1. Responda APENAS com base no contexto fornecido ou na sua instrução mestre.
+        2. Se a instrução for agir como vendedor, aja como tal.
+        3. Mantenha a persona definida.
         `;
 
         const response = await ai.models.generateContent({
@@ -112,5 +113,40 @@ export async function simulateChatAction(history: any[], systemInstruction: stri
         return { text: response.text };
     } catch (error: any) {
         return { text: `Erro no servidor: ${error.message}` };
+    }
+}
+
+export async function generateAgentPromptAction(inputs: { companyName: string; product: string; audience: string; tone: string; extra: string }) {
+    try {
+        const ai = await getAuthenticatedAI();
+        
+        const metaPrompt = `
+        Atue como um Engenheiro de Prompt Senior especializado em LLMs para atendimento e vendas.
+        
+        Sua tarefa é escrever um "System Instruction" (Prompt de Sistema) altamente eficaz para um Agente de IA.
+        O prompt deve ser estruturado, claro e blindado contra alucinações.
+        
+        DADOS DA EMPRESA:
+        - Nome: ${inputs.companyName}
+        - O que vende: ${inputs.product}
+        - Público Alvo: ${inputs.audience}
+        - Tom de Voz: ${inputs.tone}
+        - Informações Extras: ${inputs.extra}
+        
+        SAÍDA ESPERADA:
+        Escreva um texto em primeira pessoa ("Você é...") instruindo a IA sobre como se comportar. 
+        Divida em seções: [IDENTIDADE], [OBJETIVO], [DIRETRIZES DE COMUNICAÇÃO], [REGRAS DE NEGOCIAÇÃO].
+        Não use markdown de código (\`\`\`). Apenas o texto plano pronto para ser colado.
+        `;
+
+        const response = await ai.models.generateContent({
+            model: 'gemini-3-flash-preview',
+            contents: metaPrompt
+        });
+        
+        return { text: response.text };
+    } catch (error: any) {
+        console.error("Generator Error:", error);
+        return { error: "Falha ao gerar prompt." };
     }
 }

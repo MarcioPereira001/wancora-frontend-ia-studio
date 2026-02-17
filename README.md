@@ -282,14 +282,18 @@ Agora possui navegação por **Abas** e controle de visibilidade:
     * Cálculo: A nova posição é a média matemática: `(Posição Anterior + Posição Posterior) / 2`.
 * **Master List View:** Visualização em tabela para Admins verem todos os leads da empresa.
 
-### 🤖 Módulo 3: Agentes de IA & Automação (Gemini 3 Flash)
-* **Gestão de Personas:** Interface dedicada (`/agents`) para configurar o "System Prompt" e "Base de Conhecimento".
-* **Simulador (Sandbox):** Chat de teste integrado para validar as respostas do Agente antes de ativá-lo em produção.
-* **Otimizador de Prompt:** Função de IA que reescreve instruções do usuário para torná-las mais eficientes para o LLM.
-* **Arquitetura BYOK (Bring Your Own Key):** Cada empresa pode configurar sua própria chave de API (Google AI Studio) diretamente no painel de configurações. Isso garante:
-    *   **Limites Independentes:** O consumo de uma empresa não afeta a cota das outras.
-    *   **Privacidade:** Dados processados na conta do próprio cliente (se configurado).
-    *   **Fallback do Sistema:** Se o cliente não configurar, o sistema usa a chave mestre do servidor.
+### 🤖 Módulo 3: Agentes de IA & Automação (Gemini 3 Flash/Pro)
+*   **Níveis de Agência:**
+    *   **Júnior:** Triagem e respostas curtas (Rápido/Barato).
+    *   **Pleno:** Técnicas de Vendas (SPIN/BANT) e gestão de contexto média.
+    *   **Sênior:** Autonomia total, acesso a Tools (Drive/Agenda) e raciocínio complexo.
+*   **Wizard de Criação (IA Generativa):**
+    *   **Engenheiro de Prompt Automático:** O usuário preenche dados básicos (Nome da empresa, o que vende, tom de voz) e uma IA interna gera um *System Prompt* profissional, estruturado e blindado contra alucinações.
+*   **Simulador (Sandbox em Tempo Real):**
+    *   Janela de chat flutuante integrada ao formulário de criação.
+    *   Permite testar a persona, as regras de negócio e o tom de voz do agente **antes** de conectá-lo ao WhatsApp real.
+    *   O simulador roda isolado, sem persistir mensagens no histórico do cliente.
+*   **Arquitetura BYOK (Bring Your Own Key):** Suporte a chaves de API próprias para isolamento de custos e privacidade.
 
 ### 📢 Módulo 4: Campanhas e Agendamentos
 * **Agendamento:** Botão relógio no input -> Salva em `scheduled_messages` com status `pending` -> Cronjob dispara.
