@@ -11,6 +11,7 @@ import { useCompany } from '@/hooks/useCompany';
 import { cn } from '@/lib/utils';
 import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/input';
+import { Checkbox } from '@/components/ui/checkbox';
 import { createClient } from '@/utils/supabase/client';
 import { QRCodeSVG } from 'qrcode.react';
 import { useRealtimeStore } from '@/store/useRealtimeStore';
@@ -30,9 +31,11 @@ export default function ConnectionsPage() {
   const supabase = createClient();
   
   const [isModalOpen, setIsModalOpen] = useState(false);
-  // Adicionado 'business_check' como primeiro passo
-  const [step, setStep] = useState<'business_check' | 'input' | 'initializing' | 'qr_scan' | 'success'>('business_check');
+  // Unificado 'setup' substitui 'business_check' e 'input' separados
+  const [step, setStep] = useState<'setup' | 'initializing' | 'qr_scan' | 'success'>('setup');
+  
   const [newSessionName, setNewSessionName] = useState('');
+  const [isBusinessConfirmed, setIsBusinessConfirmed] = useState(false); // Novo Checkbox
   const [currentInstance, setCurrentInstance] = useState<Instance | null>(null);
 
   // Webhook Modal State
@@ -45,9 +48,10 @@ export default function ConnectionsPage() {
       try {
           const data = await whatsappService.getAllInstances();
           setInstances(data);
-          setLoading(false);
       } catch (error) {
           console.error(error);
+      } finally {
+          setLoading(false);
       }
   };
 
@@ -83,7 +87,6 @@ export default function ConnectionsPage() {
             setStep('success');
             
             // FIX RECONEXÃO: Só dispara a animação de sync se NÃO estiver completo.
-            // Se já for 'completed', significa que é uma reconexão e não precisa do modal de loading.
             if(status.id && status.sync_status !== 'completed') {
                 triggerSyncAnimation(status.id);
             }
@@ -103,8 +106,9 @@ export default function ConnectionsPage() {
   }, [isModalOpen, currentInstance?.session_id, triggerSyncAnimation]);
 
   const resetModal = () => {
-      setStep('business_check'); // Começa pela verificação
+      setStep('setup');
       setNewSessionName('');
+      setIsBusinessConfirmed(false);
       setCurrentInstance(null);
   }
 
@@ -126,7 +130,7 @@ export default function ConnectionsPage() {
           setCurrentInstance(newInstance);
       } catch (error: any) {
           addToast({ type: 'error', title: 'Falha', message: error.message });
-          setStep('input');
+          setStep('setup');
       }
   };
 
@@ -146,7 +150,6 @@ export default function ConnectionsPage() {
   };
 
   const openWebhookModal = async (instance: Instance) => {
-      // Fetch fresh data
       const { data } = await supabase.from('instances').select('webhook_url, webhook_enabled').eq('id', instance.id).single();
       setWebhookUrl(data?.webhook_url || '');
       setWebhookEnabled(data?.webhook_enabled || false);
@@ -191,11 +194,16 @@ export default function ConnectionsPage() {
         <div className="flex items-center gap-4">
             <div className="bg-zinc-900/50 px-4 py-2 rounded-lg border border-zinc-800 text-xs font-mono">
                 <span className="text-zinc-500 mr-2">SLOTS:</span>
-                <span className={cn("font-bold", availableSlots > 0 ? "text-primary" : "text-red-500")}>
-                    {usedSlots} / {limit}
-                </span>
+                {loading ? (
+                    <span className="inline-block w-4 h-4 align-middle"><Loader2 className="w-3 h-3 animate-spin" /></span>
+                ) : (
+                    <span className={cn("font-bold", availableSlots > 0 ? "text-primary" : "text-red-500")}>
+                        {usedSlots} / {limit}
+                    </span>
+                )}
             </div>
-            {availableSlots > 0 && (
+            {/* Proteção contra clique antes de carregar (Flash of Opportunity) */}
+            {!loading && availableSlots > 0 && (
                 <Button onClick={() => { resetModal(); setIsModalOpen(true); }} className="bg-primary hover:bg-primary/90 text-white font-bold shadow-[0_0_20px_rgba(34,197,94,0.3)] border border-primary/20">
                     <Plus className="w-5 h-5 mr-2" /> Nova Instância
                 </Button>
@@ -203,37 +211,44 @@ export default function ConnectionsPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
-        {instances.map((instance) => (
-            <ConnectionCard 
-                key={instance.id} 
-                instance={instance} 
-                refresh={fetchInstances} 
-                onRestart={() => handleRestart(instance)}
-                onWebhook={() => openWebhookModal(instance)}
-            />
-        ))}
+      {/* BLOCKING LOADER: O Grid só renderiza se não estiver carregando */}
+      {loading ? (
+          <div className="flex flex-col items-center justify-center h-64 gap-4 bg-zinc-900/10 rounded-2xl border border-zinc-800 border-dashed">
+              <Loader2 className="w-12 h-12 text-primary animate-spin" />
+              <p className="text-zinc-500 text-sm animate-pulse">Verificando slots disponíveis...</p>
+          </div>
+      ) : (
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
+            {instances.map((instance) => (
+                <ConnectionCard 
+                    key={instance.id} 
+                    instance={instance} 
+                    refresh={fetchInstances} 
+                    onRestart={() => handleRestart(instance)}
+                    onWebhook={() => openWebhookModal(instance)}
+                />
+            ))}
 
-        {Array.from({ length: Math.max(0, limit - instances.length) }).map((_, i) => (
-             <div key={`empty-${i}`} className="group relative border border-dashed border-zinc-800 rounded-2xl p-8 flex flex-col items-center justify-center bg-zinc-900/10 min-h-[400px] overflow-hidden hover:border-zinc-700 transition-all">
-                <div className="w-20 h-20 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform shadow-inner">
-                    <Smartphone className="w-8 h-8 text-zinc-700" />
-                </div>
-                <h3 className="text-lg font-bold text-zinc-500">Slot Disponível</h3>
-                <Button variant="outline" onClick={() => { resetModal(); setIsModalOpen(true); }} className="mt-6 border-zinc-700 hover:bg-zinc-800 bg-transparent">
-                    <Plus className="w-4 h-4 mr-2" /> Inicializar
-                </Button>
-             </div>
-        ))}
-      </div>
+            {Array.from({ length: Math.max(0, limit - instances.length) }).map((_, i) => (
+                 <div key={`empty-${i}`} className="group relative border border-dashed border-zinc-800 rounded-2xl p-8 flex flex-col items-center justify-center bg-zinc-900/10 min-h-[400px] overflow-hidden hover:border-zinc-700 transition-all">
+                    <div className="w-20 h-20 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform shadow-inner">
+                        <Smartphone className="w-8 h-8 text-zinc-700" />
+                    </div>
+                    <h3 className="text-lg font-bold text-zinc-500">Slot Disponível</h3>
+                    <Button variant="outline" onClick={() => { resetModal(); setIsModalOpen(true); }} className="mt-6 border-zinc-700 hover:bg-zinc-800 bg-transparent">
+                        <Plus className="w-4 h-4 mr-2" /> Inicializar
+                    </Button>
+                 </div>
+            ))}
+          </div>
+      )}
 
-      {/* MODAL DE CONEXÃO */}
+      {/* MODAL DE CONEXÃO REFORMULADO */}
       <Modal 
         isOpen={isModalOpen} 
         onClose={() => setIsModalOpen(false)} 
         title={
-            step === 'business_check' ? "Recomendação de Segurança" :
-            step === 'input' ? "Nova Conexão" : 
+            step === 'setup' ? "Nova Conexão" : 
             step === 'success' ? "Conexão Estabelecida" : 
             step === 'qr_scan' ? "Escaneie o QR Code" : 
             `Conectando: ${newSessionName}`
@@ -242,69 +257,70 @@ export default function ConnectionsPage() {
       >
           <div className="min-h-[350px] flex flex-col justify-center">
               
-              {/* PASSO 0: BUSINESS CHECK */}
-              {step === 'business_check' && (
-                  <div className="space-y-6 animate-in slide-in-from-right-4 px-2">
-                      <div className="flex flex-col items-center text-center mb-6">
-                          <div className="w-20 h-20 bg-blue-500/10 rounded-full flex items-center justify-center border-2 border-blue-500/30 mb-4">
-                              <Briefcase className="w-10 h-10 text-blue-500" />
-                          </div>
-                          <h3 className="text-xl font-bold text-white">É uma conta Business?</h3>
-                          <p className="text-zinc-400 text-sm mt-2 max-w-sm mx-auto">
-                              Para garantir estabilidade máxima e acesso a recursos como Catálogo, Etiquetas e menor risco de banimento.
-                          </p>
-                      </div>
-
-                      <div className="grid grid-cols-1 gap-3 bg-zinc-900/50 p-4 rounded-xl border border-zinc-800">
-                          <div className="flex items-center gap-3">
-                              <ShieldCheck className="w-5 h-5 text-green-500 shrink-0" />
-                              <span className="text-sm text-zinc-300">Menor risco de bloqueio pelo WhatsApp.</span>
-                          </div>
-                          <div className="flex items-center gap-3">
-                              <CheckCircle2 className="w-5 h-5 text-green-500 shrink-0" />
-                              <span className="text-sm text-zinc-300">Sincronização de Produtos e Catálogo.</span>
-                          </div>
-                          <div className="flex items-center gap-3">
-                              <AlertTriangle className="w-5 h-5 text-yellow-500 shrink-0" />
-                              <span className="text-sm text-zinc-300">Contas pessoais tem limites de envio menores.</span>
-                          </div>
-                      </div>
-
-                      <div className="flex gap-3 pt-2">
-                          <Button variant="ghost" onClick={() => setIsModalOpen(false)} className="flex-1 text-zinc-400">
-                              Cancelar
-                          </Button>
-                          <Button onClick={() => setStep('input')} className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold">
-                              Sim, Continuar
-                          </Button>
-                      </div>
-                  </div>
-              )}
-
-              {/* PASSO 1: INPUT NOME */}
-              {step === 'input' && (
+              {/* PASSO 1 UNIFICADO: SETUP (Info Business + Nome) */}
+              {step === 'setup' && (
                   <div className="space-y-6 animate-in slide-in-from-right-4">
-                      <div className="bg-zinc-950/50 p-4 rounded-lg border border-zinc-800 flex gap-3">
-                          <Terminal className="w-5 h-5 text-primary mt-1" />
-                          <div className="text-sm text-zinc-400">
-                              <p className="font-bold text-zinc-200 mb-1">Identificador da Sessão</p>
-                              Defina um nome para identificar este número (ex: "Vendas 01", "Suporte").
+                      
+                      {/* Bloco de Aviso Business */}
+                      <div className="bg-blue-500/10 border border-blue-500/20 p-4 rounded-xl space-y-3">
+                          <div className="flex items-center gap-3">
+                              <div className="p-2 bg-blue-500/20 rounded-full">
+                                  <Briefcase className="w-5 h-5 text-blue-400" />
+                              </div>
+                              <h4 className="text-sm font-bold text-blue-200">Recomendação de Segurança</h4>
+                          </div>
+                          
+                          <div className="space-y-2 pl-1">
+                              <div className="flex items-start gap-2">
+                                  <ShieldCheck className="w-4 h-4 text-blue-400 mt-0.5 shrink-0" />
+                                  <p className="text-xs text-zinc-300">Menor risco de bloqueio (Ban) pela Meta.</p>
+                              </div>
+                              <div className="flex items-start gap-2">
+                                  <CheckCircle2 className="w-4 h-4 text-blue-400 mt-0.5 shrink-0" />
+                                  <p className="text-xs text-zinc-300">Suporte a Catálogo, Etiquetas e Horários.</p>
+                              </div>
+                              <div className="flex items-start gap-2">
+                                  <AlertTriangle className="w-4 h-4 text-yellow-500 mt-0.5 shrink-0" />
+                                  <p className="text-xs text-zinc-300">Números pessoais tem limites de envio muito baixos.</p>
+                              </div>
                           </div>
                       </div>
+
+                      {/* Input de Nome */}
                       <div>
-                          <label className="text-xs font-bold text-primary uppercase mb-2 block tracking-wider">Nome da Sessão</label>
-                          <Input 
-                            value={newSessionName} 
-                            onChange={e => setNewSessionName(e.target.value)}
-                            placeholder="Ex: Comercial 01" 
-                            className="h-12 bg-zinc-900 border-zinc-700 text-white font-mono"
-                            autoFocus
-                          />
+                          <label className="text-xs font-bold text-white uppercase mb-2 block tracking-wider">Identificador da Sessão</label>
+                          <div className="flex items-center gap-3 bg-zinc-950 p-3 rounded-lg border border-zinc-800 focus-within:border-primary transition-colors">
+                              <Terminal className="w-5 h-5 text-zinc-500" />
+                              <input 
+                                  value={newSessionName} 
+                                  onChange={e => setNewSessionName(e.target.value)}
+                                  placeholder="Ex: Vendas 01" 
+                                  className="bg-transparent border-none outline-none text-white text-sm w-full font-medium"
+                                  autoFocus
+                              />
+                          </div>
                       </div>
-                      <div className="flex justify-end pt-4 gap-2">
-                          <Button variant="ghost" onClick={() => setStep('business_check')}>Voltar</Button>
-                          <Button onClick={() => handleStartProtocol()} disabled={!newSessionName.trim()} className="flex-1">
-                              Iniciar Protocolo
+
+                      {/* Checkbox de Confirmação */}
+                      <div className="flex items-start gap-3 px-1">
+                           <Checkbox 
+                                id="biz-check"
+                                checked={isBusinessConfirmed}
+                                onCheckedChange={(checked) => setIsBusinessConfirmed(checked === true)}
+                                className="mt-0.5 border-zinc-600 data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
+                           />
+                           <label htmlFor="biz-check" className="text-xs text-zinc-400 cursor-pointer leading-relaxed select-none">
+                               Estou ciente que o uso de <strong>WhatsApp Business</strong> é recomendado para evitar bloqueios e garantir estabilidade da API.
+                           </label>
+                      </div>
+
+                      <div className="pt-2">
+                          <Button 
+                              onClick={() => handleStartProtocol()} 
+                              disabled={!newSessionName.trim() || !isBusinessConfirmed} 
+                              className="w-full bg-primary hover:bg-primary/90 text-white font-bold h-12 shadow-lg shadow-green-500/10 disabled:opacity-50"
+                          >
+                              Gerar QR Code
                           </Button>
                       </div>
                   </div>
