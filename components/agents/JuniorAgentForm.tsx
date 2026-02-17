@@ -2,13 +2,13 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Agent, AgentLevel, PipelineStage, AgentTriggerConfig, AgentLink } from '@/types';
+import { Agent, AgentLevel, PipelineStage, AgentTriggerConfig, AgentLink, VerbosityLevel, EmojiLevel } from '@/types';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { TagInput } from '@/components/ui/tag-input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Bot, Save, Briefcase, Mic2, AlertOctagon, ShieldCheck, FileText, Upload, Trash2, Loader2, Info, Zap, Link as LinkIcon, Plus, ArrowRight, ArrowLeft, Sparkles, PlayCircle, Phone } from 'lucide-react';
+import { Bot, Save, Briefcase, Mic2, AlertOctagon, ShieldCheck, FileText, Upload, Trash2, Loader2, Info, Zap, Link as LinkIcon, Plus, PlayCircle, Phone, Smile, MessageSquare, Sparkles } from 'lucide-react';
 import { useToast } from '@/hooks/useToast';
 import { createClient } from '@/utils/supabase/client';
 import { cn } from '@/lib/utils';
@@ -16,6 +16,7 @@ import { uploadChatMedia } from '@/utils/supabase/storage';
 import { AgentTriggerSelector } from './AgentTriggerSelector';
 import { PromptGeneratorModal } from './PromptGeneratorModal';
 import { AgentSimulator } from './AgentSimulator';
+import { buildSystemPrompt } from '@/lib/ai/promptBuilder'; // Import da Engine
 
 interface JuniorAgentFormProps {
   initialData?: Agent | null;
@@ -65,6 +66,10 @@ export function JuniorAgentForm({ initialData, companyId, onSuccess }: JuniorAge
   const [negativePrompts, setNegativePrompts] = useState<string[]>(initialData?.personality_config?.negative_prompts || []);
   const [goldenRules, setGoldenRules] = useState<string[]>(initialData?.personality_config?.escape_rules || []); 
   
+  // Novas Configs V5
+  const [verbosity, setVerbosity] = useState<VerbosityLevel>(initialData?.personality_config?.verbosity || 'minimalist');
+  const [emojiLevel, setEmojiLevel] = useState<EmojiLevel>(initialData?.personality_config?.emoji_level || 'moderate');
+
   // Core Prompt
   const [systemPrompt, setSystemPrompt] = useState(initialData?.prompt_instruction || '');
 
@@ -143,6 +148,26 @@ export function JuniorAgentForm({ initialData, companyId, onSuccess }: JuniorAge
       }
   };
 
+  // Constrói o agente temporário para simulação ou salvamento
+  const buildCurrentAgent = (): any => {
+      return {
+          name,
+          level: 'junior',
+          prompt_instruction: systemPrompt,
+          personality_config: {
+              role,
+              tone,
+              context,
+              negative_prompts: negativePrompts,
+              escape_rules: goldenRules,
+              verbosity,
+              emoji_level: emojiLevel
+          },
+          knowledge_config: { text_files: files },
+          links_config: links
+      };
+  };
+
   const handleSave = async () => {
       if (!name.trim() || !systemPrompt.trim()) {
           addToast({ type: 'warning', title: 'Campos Obrigatórios', message: 'Nome e Prompt do Sistema são essenciais.' });
@@ -174,7 +199,9 @@ export function JuniorAgentForm({ initialData, companyId, onSuccess }: JuniorAge
               tone,
               context, 
               negative_prompts: negativePrompts,
-              escape_rules: goldenRules 
+              escape_rules: goldenRules,
+              verbosity, // NOVO
+              emoji_level: emojiLevel // NOVO
           };
 
           const knowledgeConfig = {
@@ -224,6 +251,9 @@ export function JuniorAgentForm({ initialData, companyId, onSuccess }: JuniorAge
           setLoading(false);
       }
   };
+
+  // Compila o prompt completo para o simulador
+  const fullSimulationPrompt = buildSystemPrompt(buildCurrentAgent());
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-12">
@@ -378,25 +408,44 @@ export function JuniorAgentForm({ initialData, companyId, onSuccess }: JuniorAge
                             </p>
                         </div>
 
-                        <div>
-                            <label className="text-xs font-bold text-zinc-500 uppercase mb-2 block flex items-center gap-2">
-                                <AlertOctagon className="w-3 h-3 text-red-500" /> O que NÃO fazer (Prompts Negativos)
+                        {/* NOVO: Verbosidade e Emojis */}
+                        <div className="bg-zinc-950/50 p-3 rounded-lg border border-zinc-800">
+                             <label className="text-xs font-bold text-zinc-500 uppercase mb-2 block flex items-center gap-2">
+                                <MessageSquare className="w-3 h-3 text-cyan-500" /> Estilo de Resposta
                             </label>
-                            <TagInput 
-                                tags={negativePrompts} 
-                                onChange={setNegativePrompts} 
-                                placeholder="Ex: Não use gírias, Não invente preços..." 
-                            />
+                            
+                            <div className="space-y-3">
+                                <div>
+                                    <label className="text-[10px] text-zinc-400 mb-1 block">Fluxo (Tamanho)</label>
+                                    <div className="grid grid-cols-3 gap-1">
+                                        <button onClick={() => setVerbosity('minimalist')} className={cn("text-[10px] py-1 rounded border", verbosity === 'minimalist' ? "bg-cyan-900 border-cyan-700 text-cyan-100" : "bg-zinc-900 border-zinc-800 text-zinc-500")}>Curto</button>
+                                        <button onClick={() => setVerbosity('standard')} className={cn("text-[10px] py-1 rounded border", verbosity === 'standard' ? "bg-cyan-900 border-cyan-700 text-cyan-100" : "bg-zinc-900 border-zinc-800 text-zinc-500")}>Médio</button>
+                                        <button onClick={() => setVerbosity('mixed')} className={cn("text-[10px] py-1 rounded border", verbosity === 'mixed' ? "bg-cyan-900 border-cyan-700 text-cyan-100" : "bg-zinc-900 border-zinc-800 text-zinc-500")}>Misto</button>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="text-[10px] text-zinc-400 mb-1 block">Emojis</label>
+                                    <input 
+                                        type="range" min="0" max="2" step="1" 
+                                        value={emojiLevel === 'rare' ? 0 : emojiLevel === 'moderate' ? 1 : 2}
+                                        onChange={(e) => setEmojiLevel(Number(e.target.value) === 0 ? 'rare' : Number(e.target.value) === 1 ? 'moderate' : 'frequent')}
+                                        className="w-full h-1 bg-zinc-700 rounded-lg appearance-none cursor-pointer"
+                                    />
+                                    <div className="flex justify-between text-[8px] text-zinc-500 mt-1 font-mono uppercase">
+                                        <span>Raro</span><span>Moderado</span><span>Frequente</span>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
                         <div>
                             <label className="text-xs font-bold text-zinc-500 uppercase mb-2 block flex items-center gap-2">
-                                <ShieldCheck className="w-3 h-3 text-yellow-500" /> Regras de Ouro (Diretrizes Fixas)
+                                <AlertOctagon className="w-3 h-3 text-red-500" /> O que NÃO fazer
                             </label>
                             <TagInput 
-                                tags={goldenRules} 
-                                onChange={setGoldenRules} 
-                                placeholder="Ex: Sempre pergunte o nome, Transfira se não souber..." 
+                                tags={negativePrompts} 
+                                onChange={setNegativePrompts} 
+                                placeholder="Ex: Não use gírias..." 
                             />
                         </div>
                     </CardContent>
@@ -544,10 +593,12 @@ export function JuniorAgentForm({ initialData, companyId, onSuccess }: JuniorAge
         <AgentSimulator 
             isOpen={isSimulatorOpen} 
             onClose={() => setIsSimulatorOpen(false)} 
-            systemPrompt={systemPrompt}
+            systemPrompt={fullSimulationPrompt} // USA O FULL PROMPT AQUI!
             agentName={name}
             contextFiles={files.map(f => f.name)}
         />
     </div>
   );
 }
+
+const Check = ({size, className}: any) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="20 6 9 17 4 12"/></svg>;

@@ -2,7 +2,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Agent, AgentLevel, PipelineStage, AgentTriggerConfig, AgentLink } from '@/types';
+import { Agent, AgentLevel, PipelineStage, AgentTriggerConfig, AgentLink, VerbosityLevel, EmojiLevel } from '@/types';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
@@ -10,7 +10,7 @@ import { TagInput } from '@/components/ui/tag-input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { 
     Bot, Save, Briefcase, Mic2, AlertOctagon, ShieldCheck, FileText, Upload, 
-    Trash2, Loader2, Info, Zap, Link as LinkIcon, Plus, ArrowRight, ArrowLeft, Brain, Target, Sparkles, PlayCircle, Phone
+    Trash2, Loader2, Info, Zap, Link as LinkIcon, Plus, ArrowRight, ArrowLeft, Brain, Target, Sparkles, PlayCircle, Phone, Smile, MessageSquare, ZapOff
 } from 'lucide-react';
 import { useToast } from '@/hooks/useToast';
 import { createClient } from '@/utils/supabase/client';
@@ -32,7 +32,8 @@ const ROLES = [
   "Suporte Técnico Nível 2",
   "Closer (Fechamento)",
   "Consultor de Sucesso do Cliente (CS)",
-  "Representante Comercial"
+  "Representante Comercial",
+  "Outro (Personalizado)"
 ];
 
 const SALES_TECHNIQUES = [
@@ -42,6 +43,15 @@ const SALES_TECHNIQUES = [
     { id: 'sandler', label: 'Sandler', desc: 'Foca em quebrar o padrão do vendedor tradicional.' },
     { id: 'consultative', label: 'Venda Consultiva', desc: 'Atua como um conselheiro confiável.' },
     { id: 'none', label: 'Sem Técnica Específica', desc: 'Apenas segue o prompt do sistema.' }
+];
+
+const MENTAL_TRIGGERS_OPTIONS = [
+    { id: 'scarcity', label: 'Escassez' },
+    { id: 'urgency', label: 'Urgência' },
+    { id: 'authority', label: 'Autoridade' },
+    { id: 'social_proof', label: 'Prova Social' },
+    { id: 'reciprocity', label: 'Reciprocidade' },
+    { id: 'novelty', label: 'Novidade' }
 ];
 
 export function PlenoAgentForm({ initialData, companyId, onSuccess }: PlenoAgentFormProps) {
@@ -60,10 +70,19 @@ export function PlenoAgentForm({ initialData, companyId, onSuccess }: PlenoAgent
   const [isDefault, setIsDefault] = useState(initialData?.is_default || false);
   const [stages, setStages] = useState<PipelineStage[]>([]);
 
+  // PERSONALIDADE EXPANDIDA
   const [role, setRole] = useState(initialData?.personality_config?.role || ROLES[0]);
+  const [customRole, setCustomRole] = useState(initialData?.personality_config?.role && !ROLES.includes(initialData.personality_config.role) ? initialData.personality_config.role : '');
+  const [roleDescription, setRoleDescription] = useState(initialData?.personality_config?.role_description || '');
+  
   const [tone, setTone] = useState(initialData?.personality_config?.tone || 'profissional e persuasivo');
   const [context, setContext] = useState((initialData as any)?.personality_config?.context || ''); 
   
+  // NOVAS CONFIGS V5
+  const [verbosity, setVerbosity] = useState<VerbosityLevel>(initialData?.personality_config?.verbosity || 'standard');
+  const [emojiLevel, setEmojiLevel] = useState<EmojiLevel>(initialData?.personality_config?.emoji_level || 'moderate');
+  const [selectedTriggers, setSelectedTriggers] = useState<string[]>(initialData?.personality_config?.mental_triggers || []);
+
   // --- STATES ETAPA 2 (CONHECIMENTO & TÉCNICA) ---
   const [systemPrompt, setSystemPrompt] = useState(initialData?.prompt_instruction || '');
   const [salesTechnique, setSalesTechnique] = useState((initialData as any)?.flow_config?.technique || 'consultative');
@@ -142,6 +161,10 @@ export function PlenoAgentForm({ initialData, companyId, onSuccess }: PlenoAgent
     }
   };
 
+  const toggleTrigger = (id: string) => {
+      setSelectedTriggers(prev => prev.includes(id) ? prev.filter(t => t !== id) : [...prev, id]);
+  };
+
   const handleSave = async () => {
       if (!name.trim() || !systemPrompt.trim()) {
           addToast({ type: 'warning', title: 'Campos Obrigatórios', message: 'Nome e Instrução do Sistema são essenciais.' });
@@ -169,20 +192,22 @@ export function PlenoAgentForm({ initialData, companyId, onSuccess }: PlenoAgent
                }
           }
 
-          // Compilação Inteligente do Prompt
-          // O Pleno injeta a técnica de vendas automaticamente no prompt se ela não estiver lá
+          // Define Cargo Final
+          const finalRole = role === 'Outro (Personalizado)' ? customRole : role;
+
+          // Compilação Inteligente do Prompt (Backend cuida da maioria, mas enviamos configs)
           let finalPrompt = systemPrompt;
-          const techniqueObj = SALES_TECHNIQUES.find(t => t.id === salesTechnique);
-          if (techniqueObj && salesTechnique !== 'none') {
-              finalPrompt = `[DIRETRIZ ESTRATÉGICA: Utilize a técnica ${techniqueObj.label} (${techniqueObj.desc})].\n\n${systemPrompt}`;
-          }
 
           const personalityConfig = {
-              role,
+              role: finalRole,
+              role_description: roleDescription,
               tone,
               context, 
               negative_prompts: negativePrompts,
-              escape_rules: goldenRules 
+              escape_rules: goldenRules,
+              verbosity,
+              emoji_level: emojiLevel,
+              mental_triggers: selectedTriggers
           };
 
           const knowledgeConfig = {
@@ -200,7 +225,7 @@ export function PlenoAgentForm({ initialData, companyId, onSuccess }: PlenoAgent
             reporting_phones: reportPhones
           };
 
-          // Armazenamos a técnica no flow_config para recuperar na edição (mesmo que não usemos nodes visuais)
+          // Armazenamos a técnica no flow_config para recuperar na edição
           const flowConfig = { technique: salesTechnique };
 
           const payload = {
@@ -267,6 +292,8 @@ export function PlenoAgentForm({ initialData, companyId, onSuccess }: PlenoAgent
                                 <label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Nome do Agente</label>
                                 <Input value={name} onChange={e => setName(e.target.value)} className="bg-zinc-950 border-zinc-800" placeholder="Ex: Ricardo Vendas" autoFocus />
                             </div>
+                            
+                            {/* CARGO DINÂMICO */}
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Cargo</label>
@@ -282,6 +309,18 @@ export function PlenoAgentForm({ initialData, companyId, onSuccess }: PlenoAgent
                                     <Input value={tone} onChange={e => setTone(e.target.value)} className="bg-zinc-950 border-zinc-800" placeholder="Ex: Persuasivo" />
                                 </div>
                             </div>
+                            
+                            {/* CAMPO DE CARGO CUSTOMIZADO */}
+                            {role === 'Outro (Personalizado)' && (
+                                <div className="animate-in fade-in slide-in-from-top-2">
+                                     <label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Nome do Cargo Personalizado</label>
+                                     <Input value={customRole} onChange={e => setCustomRole(e.target.value)} className="bg-zinc-950 border-zinc-800 mb-2" placeholder="Ex: Especialista em Energia Solar" />
+                                     
+                                     <label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Descrição da Função (O que ele faz?)</label>
+                                     <Textarea value={roleDescription} onChange={e => setRoleDescription(e.target.value)} className="bg-zinc-950 border-zinc-800 h-20 text-xs" placeholder="Ex: Tira dúvidas técnicas e agenda visitas..." />
+                                </div>
+                            )}
+
                             <div>
                                 <label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Contexto da Empresa</label>
                                 <Textarea 
@@ -290,6 +329,69 @@ export function PlenoAgentForm({ initialData, companyId, onSuccess }: PlenoAgent
                                     placeholder="Quem somos, o que vendemos, quem é nosso público..." 
                                 />
                             </div>
+                        </CardContent>
+                    </Card>
+
+                    {/* CONFIGURAÇÃO DE FLUXO E EMOJIS (V5) */}
+                    <Card className="bg-zinc-900/40 border-zinc-800">
+                        <CardHeader>
+                            <CardTitle className="text-base text-zinc-100 flex items-center gap-2">
+                                <MessageSquare className="w-4 h-4 text-purple-500" /> Estilo de Conversa
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-6">
+                            
+                            {/* Verbosity */}
+                            <div>
+                                <label className="text-xs font-bold text-zinc-500 uppercase mb-2 block">Fluxo de Conversa</label>
+                                <div className="grid grid-cols-3 gap-2">
+                                    <button 
+                                        onClick={() => setVerbosity('minimalist')}
+                                        className={cn("p-2 rounded border text-xs text-center transition-all", verbosity === 'minimalist' ? "bg-zinc-800 border-zinc-600 text-white" : "border-zinc-800 text-zinc-500 hover:bg-zinc-900")}
+                                    >
+                                        Minimalista
+                                    </button>
+                                    <button 
+                                        onClick={() => setVerbosity('standard')}
+                                        className={cn("p-2 rounded border text-xs text-center transition-all", verbosity === 'standard' ? "bg-zinc-800 border-zinc-600 text-white" : "border-zinc-800 text-zinc-500 hover:bg-zinc-900")}
+                                    >
+                                        Padrão
+                                    </button>
+                                    <button 
+                                        onClick={() => setVerbosity('mixed')}
+                                        className={cn("p-2 rounded border text-xs text-center transition-all", verbosity === 'mixed' ? "bg-zinc-800 border-zinc-600 text-white" : "border-zinc-800 text-zinc-500 hover:bg-zinc-900")}
+                                    >
+                                        Misto
+                                    </button>
+                                </div>
+                                <p className="text-[10px] text-zinc-500 mt-1">
+                                    {verbosity === 'minimalist' ? 'Objetivo, poucas palavras. Ideal para triagem.' : 
+                                     verbosity === 'standard' ? 'Equilibrado e cordial.' : 
+                                     'Começa curto, mas aprofunda nas explicações se necessário.'}
+                                </p>
+                            </div>
+
+                            {/* Emojis */}
+                            <div>
+                                <label className="text-xs font-bold text-zinc-500 uppercase mb-2 block flex items-center gap-1">
+                                    <Smile className="w-3 h-3" /> Intensidade de Emojis
+                                </label>
+                                <input 
+                                    type="range" min="0" max="2" step="1" 
+                                    value={emojiLevel === 'rare' ? 0 : emojiLevel === 'moderate' ? 1 : 2}
+                                    onChange={(e) => {
+                                        const val = Number(e.target.value);
+                                        setEmojiLevel(val === 0 ? 'rare' : val === 1 ? 'moderate' : 'frequent');
+                                    }}
+                                    className="w-full h-2 bg-zinc-800 rounded-lg appearance-none cursor-pointer"
+                                />
+                                <div className="flex justify-between text-[10px] text-zinc-500 mt-1 uppercase font-bold">
+                                    <span>Raro/Nunca</span>
+                                    <span>Moderado</span>
+                                    <span>Frequente 🚀</span>
+                                </div>
+                            </div>
+
                         </CardContent>
                     </Card>
 
@@ -350,25 +452,10 @@ export function PlenoAgentForm({ initialData, companyId, onSuccess }: PlenoAgent
                     <Card className="bg-zinc-900/40 border-zinc-800">
                         <CardHeader>
                             <CardTitle className="text-base text-zinc-100 flex items-center gap-2">
-                                <Bot className="w-4 h-4 text-green-500" /> Instruções (System Prompt)
+                                <Bot className="w-4 h-4 text-green-500" /> Instruções & Vendas
                             </CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-4">
-                            <div>
-                                <div className="flex justify-between items-center mb-2">
-                                    <label className="text-xs font-bold text-zinc-500 uppercase">Instrução Mestra</label>
-                                    <Button size="sm" variant="ghost" className="h-6 text-[10px] text-purple-400 hover:text-purple-300 hover:bg-purple-500/10 gap-1" onClick={() => setIsGeneratorOpen(true)}>
-                                        <Sparkles className="w-3 h-3" /> Mágica IA
-                                    </Button>
-                                </div>
-                                <Textarea 
-                                    value={systemPrompt} 
-                                    onChange={e => setSystemPrompt(e.target.value)} 
-                                    className="bg-zinc-950 border-zinc-800 min-h-[250px] font-mono text-xs leading-relaxed" 
-                                    placeholder="Instrua o agente sobre como se comportar, o que perguntar e como conduzir a venda..." 
-                                />
-                            </div>
-
                             <div>
                                 <label className="text-xs font-bold text-zinc-500 uppercase mb-2 block flex items-center gap-2">
                                     <Target className="w-3 h-3 text-purple-500" /> Técnica de Venda
@@ -382,6 +469,42 @@ export function PlenoAgentForm({ initialData, companyId, onSuccess }: PlenoAgent
                                         <option key={t.id} value={t.id}>{t.label} - {t.desc}</option>
                                     ))}
                                 </select>
+                            </div>
+
+                            {/* GATILHOS MENTAIS */}
+                            <div>
+                                <label className="text-xs font-bold text-zinc-500 uppercase mb-2 block flex items-center gap-2">
+                                    <Brain className="w-3 h-3 text-pink-500" /> Gatilhos Mentais
+                                </label>
+                                <div className="grid grid-cols-2 gap-2">
+                                    {MENTAL_TRIGGERS_OPTIONS.map(trig => (
+                                        <div 
+                                            key={trig.id}
+                                            onClick={() => toggleTrigger(trig.id)}
+                                            className={cn(
+                                                "p-2 rounded border text-xs cursor-pointer select-none transition-colors",
+                                                selectedTriggers.includes(trig.id) ? "bg-pink-500/10 border-pink-500/50 text-pink-200" : "bg-zinc-950 border-zinc-800 text-zinc-500 hover:border-zinc-700"
+                                            )}
+                                        >
+                                            {trig.label}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div>
+                                <div className="flex justify-between items-center mb-2 mt-4">
+                                    <label className="text-xs font-bold text-zinc-500 uppercase">Instrução Mestra</label>
+                                    <Button size="sm" variant="ghost" className="h-6 text-[10px] text-purple-400 hover:text-purple-300 hover:bg-purple-500/10 gap-1" onClick={() => setIsGeneratorOpen(true)}>
+                                        <Sparkles className="w-3 h-3" /> Mágica IA
+                                    </Button>
+                                </div>
+                                <Textarea 
+                                    value={systemPrompt} 
+                                    onChange={e => setSystemPrompt(e.target.value)} 
+                                    className="bg-zinc-950 border-zinc-800 min-h-[200px] font-mono text-xs leading-relaxed" 
+                                    placeholder="Instruções específicas sobre seus produtos ou serviços..." 
+                                />
                             </div>
                         </CardContent>
                     </Card>

@@ -89,17 +89,21 @@ export async function simulateChatAction(history: any[], systemInstruction: stri
     try {
         const ai = await getAuthenticatedAI();
 
+        // 🧠 AQUI ESTÁ A MUDANÇA: 
+        // Removemos o "Meta-Prompt" fixo que forçava brevidade.
+        // Agora confiamos 100% no 'systemInstruction' que vem do Frontend (PromptBuilder),
+        // pois ele já contém as regras de verbosidade (Minimalista/Padrão/Misto) escolhidas pelo usuário.
+        
         const fullSystemPrompt = `
         ${systemInstruction}
         
-        --- INFORMAÇÕES DE CONTEXTO ---
+        --- BASE DE CONHECIMENTO SIMULADA ---
         ${knowledgeBase}
         ---------------------------
         
         IMPORTANTE:
-        1. Responda APENAS com base no contexto fornecido ou na sua instrução mestre.
-        2. Se a instrução for agir como vendedor, aja como tal.
-        3. Mantenha a persona definida.
+        1. Responda seguindo estritamente as diretrizes de fluxo e tom acima.
+        2. Use o conhecimento simulado apenas se a pergunta exigir.
         `;
 
         const response = await ai.models.generateContent({
@@ -108,6 +112,7 @@ export async function simulateChatAction(history: any[], systemInstruction: stri
             config: {
                 systemInstruction: fullSystemPrompt,
                 temperature: 0.7,
+                maxOutputTokens: 300, // Aumentado para permitir respostas "Mistas" ou "Longas" se configurado
             }
         });
         return { text: response.text };
@@ -121,10 +126,9 @@ export async function generateAgentPromptAction(inputs: { companyName: string; p
         const ai = await getAuthenticatedAI();
         
         const metaPrompt = `
-        Atue como um Engenheiro de Prompt Senior especializado em LLMs para atendimento e vendas.
+        Atue como um Engenheiro de Prompt Senior especializado em LLMs para atendimento e vendas no WhatsApp.
         
-        Sua tarefa é escrever um "System Instruction" (Prompt de Sistema) altamente eficaz para um Agente de IA.
-        O prompt deve ser estruturado, claro e blindado contra alucinações.
+        Sua tarefa é escrever um "System Instruction" (Prompt de Sistema) para um Agente de IA.
         
         DADOS DA EMPRESA:
         - Nome: ${inputs.companyName}
@@ -135,8 +139,9 @@ export async function generateAgentPromptAction(inputs: { companyName: string; p
         
         SAÍDA ESPERADA:
         Escreva um texto em primeira pessoa ("Você é...") instruindo a IA sobre como se comportar. 
-        Divida em seções: [IDENTIDADE], [OBJETIVO], [DIRETRIZES DE COMUNICAÇÃO], [REGRAS DE NEGOCIAÇÃO].
-        Não use markdown de código (\`\`\`). Apenas o texto plano pronto para ser colado.
+        Divida em seções: [IDENTIDADE], [OBJETIVO], [DIRETRIZES DE COMUNICAÇÃO].
+        
+        Não use markdown de código (\`\`\`). Apenas o texto plano.
         `;
 
         const response = await ai.models.generateContent({

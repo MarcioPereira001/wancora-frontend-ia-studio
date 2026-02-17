@@ -35,7 +35,6 @@ export interface Company {
 }
 
 export interface SystemLog {
-// ... (restante do arquivo mantido inalterado)
     id: string;
     level: 'info' | 'warn' | 'error' | 'fatal';
     source: string;
@@ -289,6 +288,8 @@ export interface DriveFile {
 
 export type AgentLevel = 'junior' | 'pleno' | 'senior';
 export type AgentTriggerType = 'all_messages' | 'first_message_day' | 'first_message_ever' | 'keyword_exact' | 'keyword_contains' | 'pipeline_stage';
+export type VerbosityLevel = 'minimalist' | 'standard' | 'mixed';
+export type EmojiLevel = 'frequent' | 'moderate' | 'rare';
 
 export interface AgentTriggerConfig {
     type: AgentTriggerType;
@@ -305,10 +306,14 @@ export interface AgentFile {
 
 export interface AgentPersonalityConfig {
     role: string;
+    role_description?: string; // Descrição customizada da profissão
     tone: string;
     context?: string;
     negative_prompts?: string[];
     escape_rules?: string[];
+    verbosity?: VerbosityLevel; // Novo: Fluxo de conversa
+    emoji_level?: EmojiLevel;   // Novo: Emojis
+    mental_triggers?: string[]; // Novo: Gatilhos Mentais
 }
 
 export interface AgentToolsConfig {
@@ -336,7 +341,7 @@ export interface Agent {
         text_files: AgentFile[];
         media_files: AgentFile[];
     };
-    flow_config?: any; // Dados do React Flow (Nodes/Edges)
+    flow_config?: any; // Dados do React Flow (Nodes/Edges) ou settings de venda
     tools_config?: AgentToolsConfig;
     links_config?: AgentLink[];
     trigger_config?: AgentTriggerConfig;
