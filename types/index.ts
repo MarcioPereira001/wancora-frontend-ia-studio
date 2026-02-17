@@ -330,6 +330,11 @@ export interface AgentLink {
     description?: string;
 }
 
+export interface AgentTimingConfig {
+    min_delay_seconds: number;
+    max_delay_seconds: number;
+}
+
 export interface Agent {
     id: string;
     company_id: string;
@@ -341,7 +346,10 @@ export interface Agent {
         text_files: AgentFile[];
         media_files: AgentFile[];
     };
-    flow_config?: any; // Dados do React Flow (Nodes/Edges) ou settings de venda
+    flow_config?: {
+        technique?: string;
+        timing?: AgentTimingConfig; // Configuração de Tempo
+    }; 
     tools_config?: AgentToolsConfig;
     links_config?: AgentLink[];
     trigger_config?: AgentTriggerConfig;

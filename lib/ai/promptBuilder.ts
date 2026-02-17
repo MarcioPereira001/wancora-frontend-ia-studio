@@ -1,5 +1,6 @@
 
 
+
 // Engine de Montagem de Prompt (Frontend Version)
 // Mantém a lógica alinhada com o Backend
 
@@ -180,6 +181,13 @@ export const buildSystemPrompt = (agent: any) => {
     if (p.escape_rules && p.escape_rules.length > 0) {
         prompt += `\n[REGRAS DE ESCAPE]\n${p.escape_rules.map((s: string) => '- ' + s).join('\n')}\n`;
     }
+
+    // 12. MODO PENSAMENTO (CHAIN OF THOUGHT) - CORREÇÃO DE CORTE
+    prompt += `
+\n[MODO PENSAMENTO ATIVADO]
+Antes de responder, pense silenciosamente sobre o contexto, a pergunta do cliente e a melhor estratégia.
+IMPORTANTE: Sua resposta final deve ser completa. Se precisar exceder um pouco o tamanho para não cortar a frase, faça isso. 
+NUNCA envie respostas cortadas ou incompletas. Termine sempre a frase ou pensamento.`;
 
     return prompt;
 };

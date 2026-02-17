@@ -223,12 +223,14 @@ Envia mensagens com **Protocolo de Humanização** (Digitando... -> Pausa -> Env
 
 
 ### 3.2.1. Protocolo de Humanização (Deep Dive)
-O envio não é apenas um disparo de socket, mas um fluxo que simula o comportamento humano para evasão de algoritmos de detecção de spam:
+O envio não é apenas um disparo de socket, mas um fluxo que simula o comportamento humano para evasão de algoritmos de detecção de spam.
 
-1.  **Reaction Delay:** Pausa aleatória inicial entre 500ms e 1000ms.
+1.  **Delay Dinâmico Inteligente:** O tempo de espera agora é calculado com base na configuração individual do Agente de IA (`timingConfig`) + o tamanho do texto gerado.
+    *   Fórmula: `Random(Min, Max)` configurado no agente.
+    *   Fator Texto: Textos longos (> 200 chars) tendem automaticamente para o tempo máximo configurado.
 2.  **Presence Simulation:**
-    *   **Texto:** Ativa `composing`. Tempo calculado: `min(caracteres * 50ms, 5000ms)`.
-    *   **Áudio:** Ativa `recording`. Tempo calculado: `random(3000ms, 6000ms)`.
+    *   **Texto:** Ativa `composing`. O tempo de "digitando" é sincronizado com o delay calculado acima.
+    *   **Áudio:** Ativa `recording`. Tempo calculado: `random(2000ms, 5000ms)`.
 3.  **Final Pause:** Transição para o status `paused` antes do disparo efetivo do payload.
 4.  **PTT Nativo:** Áudios enviados com `ptt: true` forçam o mimetype `audio/ogg; codecs=opus` para garantir a renderização da onda sonora (waveform) no cliente final.
 

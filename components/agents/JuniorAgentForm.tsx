@@ -2,13 +2,13 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Agent, AgentLevel, PipelineStage, AgentTriggerConfig, AgentLink, VerbosityLevel, EmojiLevel } from '@/types';
+import { Agent, AgentLevel, PipelineStage, AgentTriggerConfig, AgentLink, VerbosityLevel, EmojiLevel, AgentTimingConfig } from '@/types';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { TagInput } from '@/components/ui/tag-input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Bot, Save, Briefcase, Mic2, AlertOctagon, ShieldCheck, FileText, Upload, Trash2, Loader2, Info, Zap, Link as LinkIcon, Plus, PlayCircle, Phone, Smile, MessageSquare, Sparkles } from 'lucide-react';
+import { Bot, Save, Briefcase, Mic2, AlertOctagon, ShieldCheck, FileText, Upload, Trash2, Loader2, Info, Zap, Link as LinkIcon, Plus, PlayCircle, Phone, Smile, MessageSquare, Sparkles, Clock } from 'lucide-react';
 import { useToast } from '@/hooks/useToast';
 import { createClient } from '@/utils/supabase/client';
 import { cn } from '@/lib/utils';
@@ -69,6 +69,9 @@ export function JuniorAgentForm({ initialData, companyId, onSuccess }: JuniorAge
   // Novas Configs V5
   const [verbosity, setVerbosity] = useState<VerbosityLevel>(initialData?.personality_config?.verbosity || 'minimalist');
   const [emojiLevel, setEmojiLevel] = useState<EmojiLevel>(initialData?.personality_config?.emoji_level || 'moderate');
+
+  // Config de Tempo
+  const [timing, setTiming] = useState<AgentTimingConfig>(initialData?.flow_config?.timing || { min_delay_seconds: 3, max_delay_seconds: 8 });
 
   // Core Prompt
   const [systemPrompt, setSystemPrompt] = useState(initialData?.prompt_instruction || '');
@@ -164,7 +167,8 @@ export function JuniorAgentForm({ initialData, companyId, onSuccess }: JuniorAge
               emoji_level: emojiLevel
           },
           knowledge_config: { text_files: files },
-          links_config: links
+          links_config: links,
+          flow_config: { timing }
       };
   };
 
@@ -200,8 +204,8 @@ export function JuniorAgentForm({ initialData, companyId, onSuccess }: JuniorAge
               context, 
               negative_prompts: negativePrompts,
               escape_rules: goldenRules,
-              verbosity, // NOVO
-              emoji_level: emojiLevel // NOVO
+              verbosity, 
+              emoji_level: emojiLevel 
           };
 
           const knowledgeConfig = {
@@ -219,6 +223,10 @@ export function JuniorAgentForm({ initialData, companyId, onSuccess }: JuniorAge
               reporting_phones: reportPhones
           };
 
+          const flowConfig = {
+              timing // Salva a config de tempo no flow
+          };
+
           const payload = {
               company_id: companyId,
               name,
@@ -227,6 +235,7 @@ export function JuniorAgentForm({ initialData, companyId, onSuccess }: JuniorAge
               personality_config: personalityConfig,
               knowledge_config: knowledgeConfig,
               tools_config: toolsConfig,
+              flow_config: flowConfig,
               trigger_config: triggerConfig,
               links_config: links, 
               is_default: isDefault,
@@ -436,6 +445,36 @@ export function JuniorAgentForm({ initialData, companyId, onSuccess }: JuniorAge
                                     </div>
                                 </div>
                             </div>
+                        </div>
+
+                        {/* NOVO: Tempo de Resposta */}
+                        <div className="bg-zinc-950/50 p-3 rounded-lg border border-zinc-800">
+                             <label className="text-xs font-bold text-zinc-500 uppercase mb-2 block flex items-center gap-2">
+                                <Clock className="w-3 h-3 text-emerald-500" /> Tempo de Resposta (Delay)
+                            </label>
+                            <div className="flex gap-4">
+                                <div>
+                                    <label className="text-[10px] text-zinc-400 mb-1 block">Mínimo (seg)</label>
+                                    <Input 
+                                        type="number" min="0" max="60"
+                                        value={timing.min_delay_seconds}
+                                        onChange={(e) => setTiming(prev => ({ ...prev, min_delay_seconds: Number(e.target.value) }))}
+                                        className="bg-zinc-900 border-zinc-800 h-8 text-xs w-20"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-[10px] text-zinc-400 mb-1 block">Máximo (seg)</label>
+                                    <Input 
+                                        type="number" min="1" max="120"
+                                        value={timing.max_delay_seconds}
+                                        onChange={(e) => setTiming(prev => ({ ...prev, max_delay_seconds: Number(e.target.value) }))}
+                                        className="bg-zinc-900 border-zinc-800 h-8 text-xs w-20"
+                                    />
+                                </div>
+                            </div>
+                            <p className="text-[10px] text-zinc-500 mt-2">
+                                O agente irá simular digitação por um tempo aleatório entre o mínimo e máximo, somado ao tamanho do texto.
+                            </p>
                         </div>
 
                         <div>

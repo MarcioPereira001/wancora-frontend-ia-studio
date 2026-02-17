@@ -112,7 +112,7 @@ export async function simulateChatAction(history: any[], systemInstruction: stri
             config: {
                 systemInstruction: fullSystemPrompt,
                 temperature: 0.7,
-                maxOutputTokens: 300, // Aumentado para permitir respostas "Mistas" ou "Longas" se configurado
+                maxOutputTokens: 1000, // Aumentado para 1000 para evitar corte em respostas longas
             }
         });
         return { text: response.text };

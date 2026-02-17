@@ -294,6 +294,12 @@ Agora possui navegação por **Abas** e controle de visibilidade:
     *   Permite testar a persona, as regras de negócio e o tom de voz do agente **antes** de conectá-lo ao WhatsApp real.
     *   O simulador roda isolado, sem persistir mensagens no histórico do cliente.
 *   **Arquitetura BYOK (Bring Your Own Key):** Suporte a chaves de API próprias para isolamento de custos e privacidade.
+*   **Modo Pensamento (Chain of Thought):**
+    *   Implementação de uma instrução de "pensamento silencioso" no prompt do sistema.
+    *   A IA planeja a resposta internamente antes de gerar o texto final, garantindo maior coerência e evitando cortes abruptos em respostas longas.
+    *   **Token Limit:** Aumentado para 1000 tokens de saída para permitir raciocínios complexos sem truncar a resposta.
+*   **Humanização Configurável:**
+    *   Cada agente possui configurações granulares de tempo de resposta (Mínimo/Máximo em segundos), simulando a velocidade de digitação humana de acordo com a senioridade da persona.
 
 ### 📢 Módulo 4: Campanhas e Agendamentos
 * **Agendamento:** Botão relógio no input -> Salva em `scheduled_messages` com status `pending` -> Cronjob dispara.

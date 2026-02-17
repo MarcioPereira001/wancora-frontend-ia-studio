@@ -172,7 +172,11 @@ Configuração dos Agentes Inteligentes (Junior, Pleno, Sênior).
     * `mental_triggers`: Array de strings (ex: ['scarcity', 'urgency']).
     * `negative_prompts`, `escape_rules`: Arrays de strings.
 * `knowledge_config`: jsonb - Referências a arquivos.
-* `flow_config`: jsonb - Armazena a técnica de vendas (`technique`).
+* `flow_config`: jsonb - **[ATUALIZADO]** Estrutura:
+    * `technique`: Técnica de vendas (SPIN, BANT, etc).
+    * `timing`: Configuração de delay humano.
+        * `min_delay_seconds`: integer (Default: 3)
+        * `max_delay_seconds`: integer (Default: 10)
 * `tools_config`: jsonb - Integrações (Drive, Agenda, CRM).
 * `is_active`: boolean
 * `model`: text ('gemini-3-flash-preview' ou 'gemini-3-pro-preview').

@@ -2,7 +2,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Agent, AgentLevel, PipelineStage, AgentTriggerConfig, AgentLink, VerbosityLevel, EmojiLevel } from '@/types';
+import { Agent, AgentLevel, PipelineStage, AgentTriggerConfig, AgentLink, VerbosityLevel, EmojiLevel, AgentTimingConfig } from '@/types';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
@@ -10,7 +10,7 @@ import { TagInput } from '@/components/ui/tag-input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { 
     Bot, Save, Briefcase, Mic2, AlertOctagon, ShieldCheck, FileText, Upload, 
-    Trash2, Loader2, Info, Zap, Link as LinkIcon, Plus, ArrowRight, ArrowLeft, Brain, Target, Sparkles, PlayCircle, Phone, Smile, MessageSquare, ZapOff
+    Trash2, Loader2, Info, Zap, Link as LinkIcon, Plus, ArrowRight, ArrowLeft, Brain, Target, Sparkles, PlayCircle, Phone, Smile, MessageSquare, ZapOff, Clock
 } from 'lucide-react';
 import { useToast } from '@/hooks/useToast';
 import { createClient } from '@/utils/supabase/client';
@@ -19,6 +19,7 @@ import { uploadChatMedia } from '@/utils/supabase/storage';
 import { AgentTriggerSelector } from './AgentTriggerSelector';
 import { PromptGeneratorModal } from './PromptGeneratorModal';
 import { AgentSimulator } from './AgentSimulator';
+import { buildSystemPrompt } from '@/lib/ai/promptBuilder'; // Engine
 
 interface PlenoAgentFormProps {
   initialData?: Agent | null;
@@ -82,6 +83,9 @@ export function PlenoAgentForm({ initialData, companyId, onSuccess }: PlenoAgent
   const [verbosity, setVerbosity] = useState<VerbosityLevel>(initialData?.personality_config?.verbosity || 'standard');
   const [emojiLevel, setEmojiLevel] = useState<EmojiLevel>(initialData?.personality_config?.emoji_level || 'moderate');
   const [selectedTriggers, setSelectedTriggers] = useState<string[]>(initialData?.personality_config?.mental_triggers || []);
+
+  // Config de Tempo
+  const [timing, setTiming] = useState<AgentTimingConfig>(initialData?.flow_config?.timing || { min_delay_seconds: 4, max_delay_seconds: 12 });
 
   // --- STATES ETAPA 2 (CONHECIMENTO & TÉCNICA) ---
   const [systemPrompt, setSystemPrompt] = useState(initialData?.prompt_instruction || '');
@@ -165,6 +169,29 @@ export function PlenoAgentForm({ initialData, companyId, onSuccess }: PlenoAgent
       setSelectedTriggers(prev => prev.includes(id) ? prev.filter(t => t !== id) : [...prev, id]);
   };
 
+  const buildCurrentAgent = (): any => {
+      const finalRole = role === 'Outro (Personalizado)' ? customRole : role;
+      return {
+          name,
+          level: 'pleno',
+          prompt_instruction: systemPrompt,
+          personality_config: {
+              role: finalRole,
+              role_description: roleDescription,
+              tone,
+              context,
+              negative_prompts: negativePrompts,
+              escape_rules: goldenRules,
+              verbosity,
+              emoji_level: emojiLevel,
+              mental_triggers: selectedTriggers
+          },
+          knowledge_config: { text_files: files },
+          links_config: links,
+          flow_config: { technique: salesTechnique, timing }
+      };
+  };
+
   const handleSave = async () => {
       if (!name.trim() || !systemPrompt.trim()) {
           addToast({ type: 'warning', title: 'Campos Obrigatórios', message: 'Nome e Instrução do Sistema são essenciais.' });
@@ -225,8 +252,8 @@ export function PlenoAgentForm({ initialData, companyId, onSuccess }: PlenoAgent
             reporting_phones: reportPhones
           };
 
-          // Armazenamos a técnica no flow_config para recuperar na edição
-          const flowConfig = { technique: salesTechnique };
+          // Armazenamos a técnica e tempo no flow_config para recuperar na edição
+          const flowConfig = { technique: salesTechnique, timing };
 
           const payload = {
               company_id: companyId,
@@ -261,6 +288,9 @@ export function PlenoAgentForm({ initialData, companyId, onSuccess }: PlenoAgent
           setLoading(false);
       }
   };
+
+  // Compila o prompt completo para o simulador
+  const fullSimulationPrompt = buildSystemPrompt(buildCurrentAgent());
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-12">
@@ -394,6 +424,36 @@ export function PlenoAgentForm({ initialData, companyId, onSuccess }: PlenoAgent
 
                         </CardContent>
                     </Card>
+
+                    {/* NOVO: Tempo de Resposta */}
+                    <div className="bg-zinc-900/50 p-3 rounded-lg border border-zinc-800">
+                            <label className="text-xs font-bold text-zinc-500 uppercase mb-2 block flex items-center gap-2">
+                            <Clock className="w-3 h-3 text-emerald-500" /> Tempo de Resposta (Delay)
+                        </label>
+                        <div className="flex gap-4">
+                            <div>
+                                <label className="text-[10px] text-zinc-400 mb-1 block">Mínimo (seg)</label>
+                                <Input 
+                                    type="number" min="0" max="60"
+                                    value={timing.min_delay_seconds}
+                                    onChange={(e) => setTiming(prev => ({ ...prev, min_delay_seconds: Number(e.target.value) }))}
+                                    className="bg-zinc-900 border-zinc-800 h-8 text-xs w-20"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-[10px] text-zinc-400 mb-1 block">Máximo (seg)</label>
+                                <Input 
+                                    type="number" min="1" max="120"
+                                    value={timing.max_delay_seconds}
+                                    onChange={(e) => setTiming(prev => ({ ...prev, max_delay_seconds: Number(e.target.value) }))}
+                                    className="bg-zinc-900 border-zinc-800 h-8 text-xs w-20"
+                                />
+                            </div>
+                        </div>
+                        <p className="text-[10px] text-zinc-500 mt-2">
+                            O agente irá simular digitação por um tempo aleatório entre o mínimo e máximo, somado ao tamanho do texto.
+                        </p>
+                    </div>
 
                     <div className="flex items-center justify-between p-4 bg-zinc-900/50 rounded-xl border border-zinc-800">
                         <div>
@@ -640,7 +700,7 @@ export function PlenoAgentForm({ initialData, companyId, onSuccess }: PlenoAgent
         <AgentSimulator 
             isOpen={isSimulatorOpen} 
             onClose={() => setIsSimulatorOpen(false)} 
-            systemPrompt={systemPrompt}
+            systemPrompt={fullSimulationPrompt}
             agentName={name}
             contextFiles={files.map(f => f.name)}
         />

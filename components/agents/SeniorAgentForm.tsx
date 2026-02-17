@@ -2,7 +2,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Agent, AgentLevel, PipelineStage, AgentTriggerConfig, AgentLink, VerbosityLevel, EmojiLevel } from '@/types';
+import { Agent, AgentLevel, PipelineStage, AgentTriggerConfig, AgentLink, VerbosityLevel, EmojiLevel, AgentTimingConfig } from '@/types';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
@@ -11,7 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { 
     Bot, Save, Briefcase, Mic2, ShieldCheck, FileText, Upload, 
     Trash2, Loader2, Info, Zap, Link as LinkIcon, Plus, ArrowRight, ArrowLeft, 
-    Brain, Settings, Cloud, Calendar, Database, Phone, MessageSquare, Smile, Target, Sparkles, PlayCircle, RefreshCw
+    Brain, Settings, Cloud, Calendar, Database, Phone, MessageSquare, Smile, Target, Sparkles, PlayCircle, RefreshCw, Clock
 } from 'lucide-react';
 import { useToast } from '@/hooks/useToast';
 import { createClient } from '@/utils/supabase/client';
@@ -84,6 +84,9 @@ export function SeniorAgentForm({ initialData, companyId, onSuccess }: SeniorAge
   const [verbosity, setVerbosity] = useState<VerbosityLevel>(initialData?.personality_config?.verbosity || 'standard');
   const [emojiLevel, setEmojiLevel] = useState<EmojiLevel>(initialData?.personality_config?.emoji_level || 'moderate');
   const [selectedTriggers, setSelectedTriggers] = useState<string[]>(initialData?.personality_config?.mental_triggers || []);
+  
+  // Config de Tempo
+  const [timing, setTiming] = useState<AgentTimingConfig>(initialData?.flow_config?.timing || { min_delay_seconds: 5, max_delay_seconds: 15 });
 
   // --- STATES ETAPA 2 (CÉREBRO & CONHECIMENTO) ---
   const [systemPrompt, setSystemPrompt] = useState(initialData?.prompt_instruction || '');
@@ -226,7 +229,7 @@ export function SeniorAgentForm({ initialData, companyId, onSuccess }: SeniorAge
           },
           knowledge_config: { text_files: files },
           links_config: links,
-          flow_config: { technique: salesTechnique }
+          flow_config: { technique: salesTechnique, timing }
       };
   };
 
@@ -292,7 +295,7 @@ export function SeniorAgentForm({ initialData, companyId, onSuccess }: SeniorAge
               reporting_phones: reportPhones
           };
 
-          const flowConfig = { technique: salesTechnique };
+          const flowConfig = { technique: salesTechnique, timing };
 
           const payload = {
               company_id: companyId,
@@ -471,6 +474,36 @@ export function SeniorAgentForm({ initialData, companyId, onSuccess }: SeniorAge
 
                         </CardContent>
                     </Card>
+
+                    {/* NOVO: Tempo de Resposta */}
+                    <div className="bg-zinc-900/50 p-3 rounded-lg border border-zinc-800">
+                             <label className="text-xs font-bold text-zinc-500 uppercase mb-2 block flex items-center gap-2">
+                                <Clock className="w-3 h-3 text-emerald-500" /> Tempo de Resposta (Delay)
+                            </label>
+                            <div className="flex gap-4">
+                                <div>
+                                    <label className="text-[10px] text-zinc-400 mb-1 block">Mínimo (seg)</label>
+                                    <Input 
+                                        type="number" min="0" max="60"
+                                        value={timing.min_delay_seconds}
+                                        onChange={(e) => setTiming(prev => ({ ...prev, min_delay_seconds: Number(e.target.value) }))}
+                                        className="bg-zinc-900 border-zinc-800 h-8 text-xs w-20"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-[10px] text-zinc-400 mb-1 block">Máximo (seg)</label>
+                                    <Input 
+                                        type="number" min="1" max="120"
+                                        value={timing.max_delay_seconds}
+                                        onChange={(e) => setTiming(prev => ({ ...prev, max_delay_seconds: Number(e.target.value) }))}
+                                        className="bg-zinc-900 border-zinc-800 h-8 text-xs w-20"
+                                    />
+                                </div>
+                            </div>
+                            <p className="text-[10px] text-zinc-500 mt-2">
+                                O agente irá simular digitação por um tempo aleatório entre o mínimo e máximo, somado ao tamanho do texto.
+                            </p>
+                        </div>
 
                     <div className="flex items-center justify-between p-4 bg-zinc-900/50 rounded-xl border border-zinc-800">
                         <div>
@@ -813,5 +846,3 @@ export function SeniorAgentForm({ initialData, companyId, onSuccess }: SeniorAge
     </div>
   );
 }
-
-const Check = ({size, className}: any) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="20 6 9 17 4 12"/></svg>;
