@@ -3,16 +3,17 @@
 
 import React, { useState, useEffect } from 'react';
 import { Node } from '@xyflow/react';
-import { X, Upload, Trash2, Loader2, FileText, Folder, Check, RefreshCw } from 'lucide-react';
+import { X, Upload, Trash2, Loader2, FileText, Folder, Check, RefreshCw, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { TagInput } from '@/components/ui/tag-input';
 import { uploadChatMedia } from '@/utils/supabase/storage';
 import { useToast } from '@/hooks/useToast';
-import { AgentLevel } from '@/types';
+import { AgentLevel, PipelineStage } from '@/types';
 import { cn } from '@/lib/utils';
 import { api } from '@/services/api';
+import { AgentTriggerSelector } from '../AgentTriggerSelector';
 
 interface NodeInspectorProps {
   node: Node | null;
@@ -20,13 +21,14 @@ interface NodeInspectorProps {
   onUpdate: (id: string, data: any) => void;
   agentLevel: AgentLevel;
   companyId: string;
+  stages: PipelineStage[]; // Nova prop para o seletor
 }
 
 const ROLES = [
   "Vendedor Consultivo", "Closer (Fechamento)", "Suporte Técnico N2", "Gerente de Contas", "Secretária Executiva"
 ];
 
-export function NodeInspector({ node, onClose, onUpdate, agentLevel, companyId }: NodeInspectorProps) {
+export function NodeInspector({ node, onClose, onUpdate, agentLevel, companyId, stages }: NodeInspectorProps) {
   const { addToast } = useToast();
   const [data, setData] = useState<any>({});
   const [uploading, setUploading] = useState(false);
@@ -134,6 +136,23 @@ export function NodeInspector({ node, onClose, onUpdate, agentLevel, companyId }
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar">
             
+            {/* START NODE (TRIGGER CONFIG) */}
+            {node.type === 'start' && (
+                <>
+                    <div className="bg-green-500/10 border border-green-500/20 p-3 rounded-lg mb-2">
+                        <p className="text-xs text-green-200 flex items-center gap-2">
+                            <Zap className="w-4 h-4" />
+                            Defina quando este agente entra em ação.
+                        </p>
+                    </div>
+                    <AgentTriggerSelector 
+                        value={data.trigger || { type: 'all_messages' }}
+                        onChange={(val) => handleChange('trigger', val)}
+                        stages={stages}
+                    />
+                </>
+            )}
+
             {/* PERSONALITY CONFIG */}
             {node.type === 'personality' && (
                 <>

@@ -2,17 +2,18 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Agent, AgentLevel } from '@/types';
+import { Agent, AgentLevel, PipelineStage, AgentTriggerConfig, AgentLink } from '@/types';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { TagInput } from '@/components/ui/tag-input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Bot, Save, Briefcase, Mic2, AlertOctagon, ShieldCheck, FileText, Upload, Trash2, Loader2, Info } from 'lucide-react';
+import { Bot, Save, Briefcase, Mic2, AlertOctagon, ShieldCheck, FileText, Upload, Trash2, Loader2, Info, Zap, Link as LinkIcon, Plus } from 'lucide-react';
 import { useToast } from '@/hooks/useToast';
 import { createClient } from '@/utils/supabase/client';
 import { cn } from '@/lib/utils';
 import { uploadChatMedia } from '@/utils/supabase/storage';
+import { AgentTriggerSelector } from './AgentTriggerSelector';
 
 interface JuniorAgentFormProps {
   initialData?: Agent | null;
@@ -48,12 +49,19 @@ export function JuniorAgentForm({ initialData, companyId, onSuccess }: JuniorAge
   const [name, setName] = useState(initialData?.name || 'Agente Junior');
   const [isActive, setIsActive] = useState(initialData?.is_active ?? true);
   
+  // Gatilhos e Padrão
+  const [triggerConfig, setTriggerConfig] = useState<AgentTriggerConfig>(
+      initialData?.trigger_config || { type: 'all_messages' }
+  );
+  const [isDefault, setIsDefault] = useState(initialData?.is_default || false);
+  const [stages, setStages] = useState<PipelineStage[]>([]);
+
   // Personality Config
   const [role, setRole] = useState(initialData?.personality_config?.role || ROLES[0]);
   const [tone, setTone] = useState(initialData?.personality_config?.tone || 'profissional');
-  const [context, setContext] = useState((initialData as any)?.personality_config?.context || ''); // Campo custom para UI
+  const [context, setContext] = useState((initialData as any)?.personality_config?.context || ''); 
   const [negativePrompts, setNegativePrompts] = useState<string[]>(initialData?.personality_config?.negative_prompts || []);
-  const [goldenRules, setGoldenRules] = useState<string[]>(initialData?.personality_config?.escape_rules || []); // Usando escape_rules como golden rules genericas
+  const [goldenRules, setGoldenRules] = useState<string[]>(initialData?.personality_config?.escape_rules || []); 
   
   // Core Prompt
   const [systemPrompt, setSystemPrompt] = useState(initialData?.prompt_instruction || '');
@@ -64,6 +72,20 @@ export function JuniorAgentForm({ initialData, companyId, onSuccess }: JuniorAge
   );
   const [uploadingFile, setUploadingFile] = useState(false);
 
+  // Links Config (NOVO)
+  const [links, setLinks] = useState<AgentLink[]>(initialData?.links_config || []);
+  const [newLinkTitle, setNewLinkTitle] = useState('');
+  const [newLinkUrl, setNewLinkUrl] = useState('');
+
+  // Carrega estágios do funil para o seletor de gatilho
+  useEffect(() => {
+      const fetchStages = async () => {
+          const { data } = await supabase.from('pipeline_stages').select('*').eq('company_id', companyId).order('position');
+          if (data) setStages(data as PipelineStage[]);
+      };
+      fetchStages();
+  }, [companyId]);
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file) return;
@@ -73,7 +95,7 @@ export function JuniorAgentForm({ initialData, companyId, onSuccess }: JuniorAge
           return;
       }
 
-      if (file.size > 2 * 1024 * 1024) { // 2MB
+      if (file.size > 2 * 1024 * 1024) { 
           addToast({ type: 'error', title: 'Muito Grande', message: 'Máximo 2MB por arquivo para Junior.' });
           return;
       }
@@ -91,6 +113,17 @@ export function JuniorAgentForm({ initialData, companyId, onSuccess }: JuniorAge
       }
   };
 
+  const handleAddLink = () => {
+      if (!newLinkTitle.trim() || !newLinkUrl.trim()) return;
+      setLinks([...links, { title: newLinkTitle, url: newLinkUrl }]);
+      setNewLinkTitle('');
+      setNewLinkUrl('');
+  };
+
+  const handleRemoveLink = (index: number) => {
+      setLinks(links.filter((_, i) => i !== index));
+  };
+
   const handleSave = async () => {
       if (!name.trim() || !systemPrompt.trim()) {
           addToast({ type: 'warning', title: 'Campos Obrigatórios', message: 'Nome e Prompt do Sistema são essenciais.' });
@@ -99,13 +132,33 @@ export function JuniorAgentForm({ initialData, companyId, onSuccess }: JuniorAge
 
       setLoading(true);
       try {
+          // Verifica conflito de agente padrão (apenas se estiver ativando)
+          if (isDefault) {
+               const { data: existingDefault } = await supabase
+                  .from('agents')
+                  .select('id, name')
+                  .eq('company_id', companyId)
+                  .eq('is_default', true)
+                  .neq('id', initialData?.id || 'new') // Ignora o próprio
+                  .maybeSingle();
+               
+               if (existingDefault) {
+                   if (!confirm(`O agente "${existingDefault.name}" já é o Padrão. Deseja substituí-lo por este?`)) {
+                       setLoading(false);
+                       return;
+                   }
+                   // Remove o padrão do anterior
+                   await supabase.from('agents').update({ is_default: false }).eq('id', existingDefault.id);
+               }
+          }
+
           // Compilação do JSONB
           const personalityConfig = {
               role,
               tone,
-              context, // Salvamos o contexto isolado para re-edição fácil
+              context, 
               negative_prompts: negativePrompts,
-              escape_rules: goldenRules // Mapeando Regras de Ouro para escape_rules
+              escape_rules: goldenRules 
           };
 
           const knowledgeConfig = {
@@ -115,7 +168,7 @@ export function JuniorAgentForm({ initialData, companyId, onSuccess }: JuniorAge
                   type: 'text' as const, 
                   url: f.url 
               })),
-              media_files: [] // Junior não suporta mídia na KB
+              media_files: [] 
           };
 
           const payload = {
@@ -125,8 +178,11 @@ export function JuniorAgentForm({ initialData, companyId, onSuccess }: JuniorAge
               prompt_instruction: systemPrompt,
               personality_config: personalityConfig,
               knowledge_config: knowledgeConfig,
+              trigger_config: triggerConfig,
+              links_config: links, // [NOVO] Links Salvos
+              is_default: isDefault,
               is_active: isActive,
-              model: 'gemini-3-flash-preview', // Modelo padrão para Junior
+              model: 'gemini-3-flash-preview', 
               transcription_enabled: true
           };
 
@@ -138,7 +194,7 @@ export function JuniorAgentForm({ initialData, companyId, onSuccess }: JuniorAge
               if (error) throw error;
           }
 
-          addToast({ type: 'success', title: 'Agente Salvo', message: 'Seu Agente Junior está pronto.' });
+          addToast({ type: 'success', title: 'Agente Salvo', message: 'Configurações aplicadas com sucesso.' });
           onSuccess();
       } catch (error: any) {
           addToast({ type: 'error', title: 'Erro ao Salvar', message: error.message });
@@ -177,8 +233,34 @@ export function JuniorAgentForm({ initialData, companyId, onSuccess }: JuniorAge
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             
-            {/* COLUNA 1: IDENTIDADE & PERFIL */}
+            {/* COLUNA 1: GATILHOS & IDENTIDADE */}
             <div className="space-y-6">
+                
+                {/* Gatilhos */}
+                <Card className="bg-zinc-900/40 border-zinc-800 border-l-4 border-l-yellow-500">
+                    <CardHeader><CardTitle className="text-base text-zinc-100 flex items-center gap-2"><Zap className="w-4 h-4 text-yellow-500" /> Regras de Ativação</CardTitle></CardHeader>
+                    <CardContent className="space-y-4">
+                        <AgentTriggerSelector 
+                            value={triggerConfig} 
+                            onChange={setTriggerConfig} 
+                            stages={stages}
+                        />
+
+                        <div className="flex items-center justify-between p-3 bg-zinc-950 rounded-lg border border-zinc-800">
+                            <div>
+                                <span className="text-sm font-bold text-zinc-300">Sentinela Padrão</span>
+                                <p className="text-[10px] text-zinc-500">Ativar se nenhum outro agente corresponder.</p>
+                            </div>
+                            <div 
+                                onClick={() => setIsDefault(!isDefault)}
+                                className={cn("w-10 h-5 rounded-full relative cursor-pointer transition-colors", isDefault ? "bg-yellow-500" : "bg-zinc-700")}
+                            >
+                                <div className={cn("absolute top-1 w-3 h-3 bg-white rounded-full transition-all", isDefault ? "left-6" : "left-1")} />
+                            </div>
+                        </div>
+                    </CardContent>
+                </Card>
+
                 <Card className="bg-zinc-900/40 border-zinc-800">
                     <CardHeader><CardTitle className="text-base text-zinc-100 flex items-center gap-2"><Briefcase className="w-4 h-4 text-blue-500" /> Identidade</CardTitle></CardHeader>
                     <CardContent className="space-y-4">
@@ -204,29 +286,6 @@ export function JuniorAgentForm({ initialData, companyId, onSuccess }: JuniorAge
                                 className="bg-zinc-950 border-zinc-800 min-h-[100px]" 
                                 placeholder="Descreva a empresa, o que ela vende e quem é o cliente ideal..." 
                             />
-                        </div>
-                    </CardContent>
-                </Card>
-
-                <Card className="bg-zinc-900/40 border-zinc-800">
-                    <CardHeader><CardTitle className="text-base text-zinc-100 flex items-center gap-2"><Mic2 className="w-4 h-4 text-purple-500" /> Tom de Voz</CardTitle></CardHeader>
-                    <CardContent className="space-y-3">
-                        <div className="grid grid-cols-1 gap-2">
-                            {TONES.map((t) => (
-                                <button
-                                    key={t.id}
-                                    onClick={() => setTone(t.id)}
-                                    className={cn(
-                                        "flex flex-col items-start p-3 rounded-lg border transition-all text-left",
-                                        tone === t.id 
-                                            ? "bg-purple-500/10 border-purple-500/50" 
-                                            : "bg-zinc-950/50 border-zinc-800 hover:border-zinc-700"
-                                    )}
-                                >
-                                    <span className={cn("text-xs font-bold", tone === t.id ? "text-purple-400" : "text-zinc-300")}>{t.label}</span>
-                                    <span className="text-[10px] text-zinc-500 mt-0.5">{t.desc}</span>
-                                </button>
-                            ))}
                         </div>
                     </CardContent>
                 </Card>
@@ -283,8 +342,79 @@ export function JuniorAgentForm({ initialData, companyId, onSuccess }: JuniorAge
                 </Card>
             </div>
 
-            {/* COLUNA 3: CONHECIMENTO */}
+            {/* COLUNA 3: CONHECIMENTO & RECURSOS */}
             <div className="space-y-6">
+                <Card className="bg-zinc-900/40 border-zinc-800">
+                    <CardHeader><CardTitle className="text-base text-zinc-100 flex items-center gap-2"><Mic2 className="w-4 h-4 text-purple-500" /> Tom de Voz</CardTitle></CardHeader>
+                    <CardContent className="space-y-3">
+                        <div className="grid grid-cols-1 gap-2">
+                            {TONES.map((t) => (
+                                <button
+                                    key={t.id}
+                                    onClick={() => setTone(t.id)}
+                                    className={cn(
+                                        "flex flex-col items-start p-3 rounded-lg border transition-all text-left",
+                                        tone === t.id 
+                                            ? "bg-purple-500/10 border-purple-500/50" 
+                                            : "bg-zinc-950/50 border-zinc-800 hover:border-zinc-700"
+                                    )}
+                                >
+                                    <span className={cn("text-xs font-bold", tone === t.id ? "text-purple-400" : "text-zinc-300")}>{t.label}</span>
+                                    <span className="text-[10px] text-zinc-500 mt-0.5">{t.desc}</span>
+                                </button>
+                            ))}
+                        </div>
+                    </CardContent>
+                </Card>
+
+                {/* NOVO: CARD DE LINKS ESTRATÉGICOS */}
+                <Card className="bg-zinc-900/40 border-zinc-800">
+                    <CardHeader>
+                        <CardTitle className="text-base text-zinc-100 flex items-center gap-2">
+                            <LinkIcon className="w-4 h-4 text-cyan-500" /> Links Estratégicos
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                        <p className="text-xs text-zinc-400">
+                            Adicione links que o agente pode enviar quando o cliente pedir (Catálogo, Agenda, Site).
+                        </p>
+                        <div className="space-y-2">
+                            <div className="flex gap-2">
+                                <Input 
+                                    value={newLinkTitle} 
+                                    onChange={e => setNewLinkTitle(e.target.value)} 
+                                    placeholder="Ex: Agenda / Catálogo" 
+                                    className="bg-zinc-950 border-zinc-800 text-xs h-8"
+                                />
+                                <Input 
+                                    value={newLinkUrl} 
+                                    onChange={e => setNewLinkUrl(e.target.value)} 
+                                    placeholder="https://..." 
+                                    className="bg-zinc-950 border-zinc-800 text-xs h-8"
+                                />
+                                <Button size="sm" onClick={handleAddLink} className="h-8 bg-cyan-600 hover:bg-cyan-500 px-2">
+                                    <Plus className="w-4 h-4" />
+                                </Button>
+                            </div>
+                            
+                            <div className="space-y-1">
+                                {links.map((link, idx) => (
+                                    <div key={idx} className="flex items-center justify-between p-2 bg-zinc-950 border border-zinc-800 rounded text-xs group">
+                                        <div className="flex flex-col overflow-hidden">
+                                            <span className="font-bold text-zinc-300">{link.title}</span>
+                                            <span className="text-zinc-500 truncate">{link.url}</span>
+                                        </div>
+                                        <button onClick={() => handleRemoveLink(idx)} className="text-zinc-600 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                    </div>
+                                ))}
+                                {links.length === 0 && <p className="text-[10px] text-zinc-600 text-center py-2">Nenhum link adicionado.</p>}
+                            </div>
+                        </div>
+                    </CardContent>
+                </Card>
+
                 <Card className="bg-zinc-900/40 border-zinc-800">
                     <CardHeader>
                         <CardTitle className="text-base text-zinc-100 flex items-center gap-2">
@@ -294,7 +424,7 @@ export function JuniorAgentForm({ initialData, companyId, onSuccess }: JuniorAge
                     <CardContent className="space-y-4">
                         <div className="bg-orange-500/5 border border-orange-500/20 p-4 rounded-lg">
                             <p className="text-xs text-orange-200/80 leading-relaxed mb-3">
-                                O Agente Junior pode ler até <strong>2 arquivos de texto</strong> para usar como base de resposta. Ideal para FAQs, Tabelas de Preço simples ou Scripts.
+                                O Agente Junior pode ler até <strong>2 arquivos de texto</strong> para usar como base de resposta.
                             </p>
                             
                             <label className={cn(
@@ -337,9 +467,6 @@ export function JuniorAgentForm({ initialData, companyId, onSuccess }: JuniorAge
                                     </button>
                                 </div>
                             ))}
-                            {files.length === 0 && (
-                                <p className="text-center text-xs text-zinc-600 py-4 italic">Nenhum arquivo anexado.</p>
-                            )}
                         </div>
                     </CardContent>
                 </Card>

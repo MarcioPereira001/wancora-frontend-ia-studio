@@ -1,7 +1,7 @@
 
 import { 
   LayoutDashboard, Users, MessageSquare, Send, Bot, 
-  QrCode, Settings, Calendar, Monitor, LogOut, Bell
+  QrCode, Settings, Calendar, Monitor, Plug
 } from 'lucide-react';
 
 export const NAV_ITEMS = {
@@ -12,13 +12,13 @@ export const NAV_ITEMS = {
     { icon: Users, label: 'CRM', href: '/crm' },
     { icon: Send, label: 'Campanhas', href: '/campaigns' },
     { icon: Bot, label: 'Agentes', href: '/agents' },
-    // Item 'Mesa' removido conforme solicitado para evitar duplicidade com 'Área de Trabalho'
   ],
   // Utilitário (Direita no Desktop / Menu Perfil no Mobile)
   utility: [
     { icon: Monitor, label: 'Área de Trabalho', href: '/cloud' }, // Desktop Only
     { icon: Calendar, label: 'Agenda', href: '/calendar' },
     { icon: QrCode, label: 'Conexões', href: '/connections' },
+    { icon: Plug, label: 'Integrações', href: '/settings/integrations' }, // NOVO
     { icon: Settings, label: 'Configurações', href: '/settings' },
   ]
 };
