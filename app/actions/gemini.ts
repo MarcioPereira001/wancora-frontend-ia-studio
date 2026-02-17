@@ -89,10 +89,8 @@ export async function simulateChatAction(history: any[], systemInstruction: stri
     try {
         const ai = await getAuthenticatedAI();
 
-        // 🧠 AQUI ESTÁ A MUDANÇA: 
-        // Removemos o "Meta-Prompt" fixo que forçava brevidade.
-        // Agora confiamos 100% no 'systemInstruction' que vem do Frontend (PromptBuilder),
-        // pois ele já contém as regras de verbosidade (Minimalista/Padrão/Misto) escolhidas pelo usuário.
+        // 🧠 SIMULADOR COM REGRAS RÍGIDAS
+        // Utilizamos o prompt completo gerado pelo promptBuilder
         
         const fullSystemPrompt = `
         ${systemInstruction}
@@ -112,7 +110,7 @@ export async function simulateChatAction(history: any[], systemInstruction: stri
             config: {
                 systemInstruction: fullSystemPrompt,
                 temperature: 0.7,
-                maxOutputTokens: 1000, // Aumentado para 1000 para evitar corte em respostas longas
+                maxOutputTokens: 8192, // Liberado para evitar cortes
             }
         });
         return { text: response.text };

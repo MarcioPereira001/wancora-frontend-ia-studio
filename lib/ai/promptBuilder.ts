@@ -1,8 +1,25 @@
 
-
-
 // Engine de Montagem de Prompt (Frontend Version)
 // Mantém a lógica alinhada com o Backend
+
+const RAPPORT_INSTRUCTIONS = `
+[DIRETRIZ DE RAPPORT E ESPELHAMENTO (IMPORTANTE)]
+1. Analise o tamanho da mensagem do usuário:
+   - Se ele mandou texto curto (1-2 frases), responda de forma CURTA.
+   - Se ele mandou texto longo/detalhado, você pode elaborar mais.
+2. Analise o uso de Emojis:
+   - Se o usuário usa emojis, sinta-se livre para usar também.
+   - Se ele for muito seco/formal, reduza os emojis.
+3. Adapte-se ao ritmo: Não seja um robô que vomita informações. Seja uma pessoa conversando.
+`;
+
+const FLOW_CONTROL_INSTRUCTIONS = `
+[CONTROLE DE FLUXO E FORMATAÇÃO]
+1. REGRA DE OURO: Se você fizer uma pergunta ao final da sua fala, PARE IMEDIATAMENTE. Não adicione mais informações, não mude de assunto. Aguarde a resposta.
+2. Separe parágrafos/ideias distintas sempre com DUAS quebras de linha (\\n\\n) para facilitar a leitura no WhatsApp.
+3. Não tente vender/agendar tudo na primeira mensagem. Siga o ritmo da conversa.
+4. NUNCA envie respostas cortadas. Se o pensamento for longo, resuma para caber, mas termine a frase.
+`;
 
 export const VERBOSITY_PROMPTS = {
     minimalist: `
@@ -107,6 +124,7 @@ export const WHATSAPP_FORMATTING_RULES = `
 - Listas: Use hífens ou emojis (- Item ou • Item).
 - Citação: Use (> Texto).
 - Combine formatos se necessário (*_Negrito e Itálico_*).
+- PARÁGRAFOS: Use duas quebras de linha (\\n\\n) para separar parágrafos visualmente.
 `;
 
 /**
@@ -140,7 +158,9 @@ export const buildSystemPrompt = (agent: any) => {
     const emojiKey = (p.emoji_level || 'moderate') as keyof typeof EMOJI_PROMPTS;
     prompt += `\n${EMOJI_PROMPTS[emojiKey] || EMOJI_PROMPTS.moderate}\n`;
 
-    // 6. Formatação
+    // 6. Formatação e Controle de Fluxo (NOVO)
+    prompt += `\n${FLOW_CONTROL_INSTRUCTIONS}\n`;
+    prompt += `\n${RAPPORT_INSTRUCTIONS}\n`;
     prompt += `\n${WHATSAPP_FORMATTING_RULES}\n`;
 
     // 7. Técnica de Vendas (Se aplicável)
@@ -154,7 +174,7 @@ export const buildSystemPrompt = (agent: any) => {
 
     // 8. Gatilhos Mentais
     if (p.mental_triggers && p.mental_triggers.length > 0) {
-        prompt += `\n[GATILHOS MENTAIS ATIVOS]\nUtilize estrategicamente os seguintes gatilhos:\n`;
+        prompt += `\n[GATILHOS MENTAIS DISPONÍVEIS]\nUse com moderação quando o contexto pedir:\n`;
         p.mental_triggers.forEach((t: string) => {
             const key = t as keyof typeof MENTAL_TRIGGERS_DEFINITIONS;
             if (MENTAL_TRIGGERS_DEFINITIONS[key]) {
