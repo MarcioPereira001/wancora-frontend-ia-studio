@@ -1,53 +1,54 @@
 
 'use server';
 
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { createClient } from "@/utils/supabase/server";
 
-// 🛡️ SECURITY GUARD: Impede execução no Client-Side
+// 🛡️ SECURITY GUARD
 if (typeof window !== 'undefined') {
-    throw new Error("⚠️ FATAL: Tentativa de executar código de IA no navegador. Esta ação deve ser Server-Side.");
+    throw new Error("⚠️ FATAL: Tentativa de executar código de IA no navegador.");
 }
 
-// Definição MOCK das Tools para a Simulação (Para o Gemini saber que elas existem)
-const MOCK_TOOLS = [
-    {
-        name: "schedule_meeting",
-        description: "Agenda uma reunião ou compromisso no calendário.",
-        parameters: {
-            type: "OBJECT",
-            properties: {
-                title: { type: "STRING", description: "Título do evento." },
-                dateISO: { type: "STRING", description: "Data e hora ISO 8601." },
-            },
-            required: ["title", "dateISO"]
+// Configuração MOCK para Simulador
+const SIMULATOR_TOOLS = {
+    functionDeclarations: [
+        {
+            name: "schedule_meeting",
+            description: "Agenda uma reunião ou compromisso no calendário.",
+            parameters: {
+                type: "OBJECT",
+                properties: {
+                    title: { type: "STRING", description: "Título do evento." },
+                    dateISO: { type: "STRING", description: "Data e hora ISO 8601." },
+                },
+                required: ["title", "dateISO"]
+            }
+        },
+        {
+            name: "search_files",
+            description: "Busca arquivos no drive.",
+            parameters: {
+                type: "OBJECT",
+                properties: {
+                    query: { type: "STRING" }
+                },
+                required: ["query"]
+            }
         }
-    },
-    {
-        name: "search_files",
-        description: "Busca arquivos no drive.",
-        parameters: {
-            type: "OBJECT",
-            properties: {
-                query: { type: "STRING" }
-            },
-            required: ["query"]
-        }
-    }
-];
+    ]
+};
 
-// Helper de Retry (Backoff)
-const generateWithRetry = async (modelInstance: any, params: any, retries = 3) => {
+const generateWithRetry = async (modelInstance: any, prompt: any, retries = 3) => {
     for (let i = 0; i < retries; i++) {
         try {
-            return await modelInstance.generateContent(params);
+            return await modelInstance.generateContent(prompt);
         } catch (error: any) {
             const msg = error.message || '';
-            const isOverloaded = msg.includes('503') || msg.includes('Overloaded') || error.status === 503;
+            const status = error.status || 0;
             
-            if (isOverloaded && i < retries - 1) {
-                const delay = 1500 * Math.pow(2, i); // 1.5s, 3s, 6s
-                console.warn(`⚠️ [GEMINI SERVER] 503 Detectado. Tentativa ${i + 1} em ${delay}ms`);
+            if (msg.includes('429') || status === 429 || msg.includes('503')) {
+                if (i === retries - 1) throw error;
+                const delay = 2000 * Math.pow(2, i);
                 await new Promise(r => setTimeout(r, delay));
                 continue;
             }
@@ -72,20 +73,21 @@ const getAuthenticatedAI = async () => {
 
     if (!apiKey) throw new Error("Nenhuma API Key de IA configurada.");
 
-    return new GoogleGenAI({ apiKey });
+    return new GoogleGenerativeAI(apiKey);
 };
 
 export async function generateSmartReplyAction(history: string, tone: string = 'professional') {
   try {
-    const ai = await getAuthenticatedAI();
+    const genAI = await getAuthenticatedAI();
     const systemPrompt = `Você é um assistente CRM. Responda em PT-BR. Tom: ${tone}. Conciso.`;
     
-    const response = await generateWithRetry(ai.models, {
-      model: 'gemini-2.0-flash', // FIX: Modelo V2
-      contents: history,
-      config: { systemInstruction: systemPrompt }
+    const model = genAI.getGenerativeModel({ 
+        model: 'gemini-1.5-flash',
+        systemInstruction: systemPrompt 
     });
-    return { text: response.text };
+    
+    const result = await generateWithRetry(model, history);
+    return { text: result.response.text() };
   } catch (error: any) {
     console.error("Erro SmartReply:", error);
     return { error: "Falha na IA: " + error.message };
@@ -94,64 +96,74 @@ export async function generateSmartReplyAction(history: string, tone: string = '
 
 export async function optimizePromptAction(currentPrompt: string) {
   try {
-    const ai = await getAuthenticatedAI();
-    const response = await generateWithRetry(ai.models, {
-      model: 'gemini-2.0-flash', // FIX: Modelo V2
-      contents: `Atue como Engenheiro de Prompt Senior. Otimize: "${currentPrompt}"`
-    });
-    return { text: response.text };
+    const genAI = await getAuthenticatedAI();
+    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    
+    const result = await generateWithRetry(model, `Atue como Engenheiro de Prompt Senior. Melhore e estrutura o seguinte prompt para um agente de vendas: "${currentPrompt}"`);
+    return { text: result.response.text() };
   } catch (error: any) {
-    console.error("Erro OptimizePrompt:", error);
     return { error: "Erro ao otimizar: " + error.message };
   }
 }
 
 export async function simulateChatAction(history: any[], systemInstruction: string, knowledgeBase: string) {
     try {
-        const ai = await getAuthenticatedAI();
-        const fullSystemPrompt = `${systemInstruction}\n\n--- CONHECIMENTO SIMULADO ---\n${knowledgeBase}`;
+        const genAI = await getAuthenticatedAI();
+        const fullSystemPrompt = `${systemInstruction}\n\n--- CONHECIMENTO SIMULADO (RAG) ---\n${knowledgeBase}`;
 
-        const response = await generateWithRetry(ai.models, {
-            model: 'gemini-2.0-flash', // FIX: Modelo V2
-            contents: history,
-            config: {
-                systemInstruction: fullSystemPrompt,
+        const model = genAI.getGenerativeModel({
+            model: 'gemini-1.5-flash',
+            systemInstruction: fullSystemPrompt,
+            // Cast as any para evitar conflito de tipagem estrita entre versões do TS
+            tools: [SIMULATOR_TOOLS as any]
+        });
+
+        const chatHistory = history.map((h: any) => ({
+            role: h.role === 'assistant' ? 'model' : h.role,
+            parts: h.parts
+        }));
+
+        const lastMsg = chatHistory.pop();
+        
+        const chat = model.startChat({
+            history: chatHistory,
+            generationConfig: {
                 temperature: 0.7,
-                maxOutputTokens: 8192,
-                tools: [{ functionDeclarations: MOCK_TOOLS }] // Injeta tools mockados
+                maxOutputTokens: 1000
             }
         });
 
-        // 🛡️ TRATAMENTO DE TOOL CALL
-        if (response.functionCalls && response.functionCalls.length > 0) {
-            const call = response.functionCalls[0];
+        const result = await chat.sendMessage(lastMsg?.parts[0]?.text || "");
+        const response = result.response;
+        
+        const functionCalls = response.functionCalls();
+        if (functionCalls && functionCalls.length > 0) {
+            const call = functionCalls[0];
             const args = JSON.stringify(call.args);
             return { 
-                text: `[🤖 AÇÃO SIMULADA DO SISTEMA]\nO agente tentou executar: *${call.name}*\nParâmetros: \`\`\`${args}\`\`\`` 
+                text: `[🤖 AÇÃO DO SISTEMA]\nO agente executou: *${call.name}*\nDados: \`\`\`${args}\`\`\`` 
             };
         }
 
-        return { text: response.text };
+        return { text: response.text() };
+
     } catch (error: any) {
-        // Expondo o erro real para o console do servidor e para o frontend (para debug)
         console.error("❌ [SIMULATION ERROR]", error);
-        return { text: `[ERRO NA SIMULAÇÃO] ${error.message || 'Erro desconhecido na API Gemini'}` };
+        return { text: `[ERRO TÉCNICO] ${error.message || 'Erro na API Gemini'}` };
     }
 }
 
 export async function generateAgentPromptAction(inputs: any) {
     try {
-        const ai = await getAuthenticatedAI();
+        const genAI = await getAuthenticatedAI();
+        const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+        
         const metaPrompt = `Crie um System Instruction para um Agente de Vendas. Empresa: ${inputs.companyName}. Produto: ${inputs.product}. Público: ${inputs.audience}. Tom: ${inputs.tone}. Extra: ${inputs.extra}. Responda apenas o prompt.`;
 
-        const response = await generateWithRetry(ai.models, {
-            model: 'gemini-2.0-flash', // FIX: Modelo V2
-            contents: metaPrompt
-        });
+        const result = await generateWithRetry(model, metaPrompt);
         
-        return { text: response.text };
+        return { text: result.response.text() };
     } catch (error: any) {
-        console.error("Erro GeneratePrompt:", error);
         return { error: "Falha ao gerar prompt: " + error.message };
     }
 }
