@@ -518,6 +518,7 @@ O serviço de inteligência (`sentinel.js`) implementa uma estratégia de resolu
 2.  **Key Resolution Strategy:**
     *   **Prioridade 1 (Tenant):** Busca `companies.ai_config->apiKey`. Se existir, instancia um cliente Gemini exclusivo para aquela requisição.
     *   **Prioridade 2 (System):** Se não houver chave na empresa, utiliza `process.env.API_KEY` como fallback global.
+    * **Modelos:** Utiliza exclusivamente o **Gemini 1.5 Flash** para garantir a melhor relação custo/benefício e velocidade em escala comercial, tanto para agentes Junior quanto Sênior.
 3.  **Isolation:** Instâncias de clientes IA são cacheadas em memória (`Map<apiKey, Client>`) para performance, mas isoladas logicamente.
 
 * **Gatilhos Imediatos (`on_booking`):**
@@ -695,7 +696,7 @@ Cria um System Prompt estruturado baseado em inputs brutos do usuário.
     }
     ```
 *   **Output:** `{ "text": "VOCÊ É um especialista em vendas... [Prompt Completo]" }`
-*   **Modelo:** `gemini-3-flash-preview` (Otimizado para instrução).
+* **Modelo:** `gemini-1.5-flash` (Otimizado para instrução e velocidade).
 
 #### `simulateChatAction`
 Simula a resposta do agente em um ambiente de teste (Sandbox).

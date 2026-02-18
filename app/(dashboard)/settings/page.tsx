@@ -86,7 +86,7 @@ export default function SettingsPage() {
           const newAiConfig = {
               provider: 'gemini',
               apiKey: geminiKey,
-              model: 'gemini-3-flash-preview',
+              model: 'gemini-1.5-flash', // ATUALIZADO: Modelo Estável de Produção
               updatedAt: new Date().toISOString()
           };
 
@@ -220,6 +220,10 @@ export default function SettingsPage() {
                                 {showGeminiKey ? "Ocultar" : "Mostrar"}
                              </Button>
                           </div>
+                          <p className="text-[10px] text-zinc-500 mt-2">
+                              A chave configurada será utilizada para todos os agentes da empresa usando o modelo <strong>Gemini 1.5 Flash</strong>.
+                              <br/><span className="text-yellow-500">Nota:</span> Certifique-se de que o projeto no Google Cloud tem faturamento ativado para evitar erros 404/403.
+                          </p>
                       </div>
                       <div className="flex justify-end pt-2 border-t border-white/5 mt-4">
                           <Button onClick={handleSaveConfig} disabled={loading} className="bg-emerald-600 hover:bg-emerald-500 text-white">

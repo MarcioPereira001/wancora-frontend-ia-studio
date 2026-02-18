@@ -268,7 +268,7 @@ export function PlenoAgentForm({ initialData, companyId, onSuccess }: PlenoAgent
               flow_config: flowConfig,
               is_default: isDefault,
               is_active: isActive,
-              model: 'gemini-1.5-flash', // ATUALIZADO: Modelo Estável
+              model: 'gemini-1.5-flash', // ATUALIZADO: Modelo Comercial
               transcription_enabled: true
           };
 

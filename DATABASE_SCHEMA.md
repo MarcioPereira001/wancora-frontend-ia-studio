@@ -11,8 +11,8 @@ Tabela mestre das organizações.
 * `name`: text
 * `plan`: text
 * `status`: text
-* `ai_config`: jsonb (Default: '{}') - Armazena configurações de IA por empresa.
- * Estrutura: `{ "provider": "gemini", "apiKey": "...", "model": "gemini-3-flash-preview" }`
+* `ai_config`: jsonb
+ * Estrutura: `{ "provider": "gemini", "apiKey": "...", "model": "gemini-1.5-flash" }`
 * `storage_retention_days`: integer (Default: 30) - [NOVO] Ciclo de vida da mídia. Arquivos no Supabase mais antigos que isso são movidos para o Google Drive e deletados do bucket.
 
 ### `instances` (Conexões)
@@ -180,7 +180,7 @@ Configuração dos Agentes Inteligentes (Junior, Pleno, Sênior).
     * `response_mode`: text ('standard', 'verbose').
 * `tools_config`: jsonb - Integrações (Drive, Agenda, CRM).
 * `is_active`: boolean
-* `model`: text ('gemini-3-flash-preview' ou 'gemini-3-pro-preview').
+* `model`: text ('gemini-1.5-flash' - Modelo Padrão Comercial).
 
 ### `campaigns` (Motor de Disparos)
 Gestão avançada de disparos em massa.

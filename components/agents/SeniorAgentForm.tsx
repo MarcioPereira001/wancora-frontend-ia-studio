@@ -310,7 +310,7 @@ export function SeniorAgentForm({ initialData, companyId, onSuccess }: SeniorAge
               flow_config: flowConfig,
               is_default: isDefault,
               is_active: isActive,
-              model: 'gemini-1.5-pro', // ATUALIZADO: Modelo Estável
+              model: 'gemini-1.5-flash', // ATUALIZADO: Modelo Comercial Padrão (Flash)
               transcription_enabled: true
           };
 
