@@ -268,7 +268,7 @@ export function PlenoAgentForm({ initialData, companyId, onSuccess }: PlenoAgent
               flow_config: flowConfig,
               is_default: isDefault,
               is_active: isActive,
-              model: 'gemini-1.5-flash-latest', // ATUALIZADO: Modelo Comercial
+              model: 'gemini-1.5-flash', // ATUALIZADO: Modelo Comercial Padrão (Sem 'latest')
               transcription_enabled: true
           };
 
@@ -471,7 +471,7 @@ export function PlenoAgentForm({ initialData, companyId, onSuccess }: PlenoAgent
 
                 <div className="space-y-6">
                     <Card className="bg-zinc-900/40 border-zinc-800 border-l-4 border-l-yellow-500">
-                        <CardHeader><CardTitle className="text-base text-zinc-100 flex items-center gap-2"><Zap className="w-4 h-4 text-yellow-500" /> Quando ativar?</CardTitle></CardHeader>
+                        <CardHeader><CardTitle className="text-base text-zinc-100 flex items-center gap-2"><Zap className="w-4 h-4 text-yellow-500" /> Gatilhos</CardTitle></CardHeader>
                         <CardContent className="space-y-4">
                             <AgentTriggerSelector 
                                 value={triggerConfig} 
@@ -591,7 +591,7 @@ export function PlenoAgentForm({ initialData, companyId, onSuccess }: PlenoAgent
                         <CardContent className="space-y-4">
                             <div className="bg-orange-500/5 border border-orange-500/20 p-4 rounded-lg">
                                 <p className="text-xs text-orange-200/80 leading-relaxed mb-3">
-                                    O Agente Pleno pode ler até <strong>10 arquivos</strong> (PDF, DOCX, TXT) para usar como contexto.
+                                    O Agente Pleno pode ler até <strong>10 arquivos de texto</strong> para usar como contexto.
                                 </p>
                                 
                                 <label className={cn("flex items-center justify-center w-full h-20 border-2 border-dashed rounded-lg cursor-pointer transition-colors", files.length >= 10 ? "border-zinc-800 opacity-50 cursor-not-allowed" : "border-zinc-700 hover:border-orange-500/50 hover:bg-zinc-900")}>
@@ -707,3 +707,5 @@ export function PlenoAgentForm({ initialData, companyId, onSuccess }: PlenoAgent
     </div>
   );
 }
+
+const Check = ({size, className}: any) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="20 6 9 17 4 12"/></svg>;

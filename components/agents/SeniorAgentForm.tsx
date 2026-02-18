@@ -310,7 +310,7 @@ export function SeniorAgentForm({ initialData, companyId, onSuccess }: SeniorAge
               flow_config: flowConfig,
               is_default: isDefault,
               is_active: isActive,
-              model: 'gemini-1.5-flash-latest', // ATUALIZADO: Modelo Comercial Padrão (Flash Latest)
+              model: 'gemini-1.5-flash', // ATUALIZADO: Modelo Comercial Padrão (Sem 'latest')
               transcription_enabled: true
           };
 
@@ -653,7 +653,7 @@ export function SeniorAgentForm({ initialData, companyId, onSuccess }: SeniorAge
                                 {files.map((file, idx) => (
                                     <div key={idx} className="flex items-center justify-between p-2 bg-zinc-950 border border-zinc-800 rounded group">
                                         <span className="text-xs text-zinc-200 truncate">{file.name}</span>
-                                        <button onClick={() => setFiles(prev => prev.filter((_, i) => i !== idx))} className="text-zinc-600 hover:text-red-500 p-1 opacity-0 group-hover:opacity-100"><Trash2 size={14} /></button>
+                                        <button onClick={() => setFiles(prev => prev.filter((_, i) => i !== idx))} className="text-zinc-600 hover:text-red-500 p-1 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={14} /></button>
                                     </div>
                                 ))}
                             </div>
@@ -847,3 +847,5 @@ export function SeniorAgentForm({ initialData, companyId, onSuccess }: SeniorAge
     </div>
   );
 }
+
+const Check = ({size, className}: any) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="20 6 9 17 4 12"/></svg>;

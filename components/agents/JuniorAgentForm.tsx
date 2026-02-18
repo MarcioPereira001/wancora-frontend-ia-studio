@@ -240,7 +240,7 @@ export function JuniorAgentForm({ initialData, companyId, onSuccess }: JuniorAge
               links_config: links, 
               is_default: isDefault,
               is_active: isActive,
-              model: 'gemini-1.5-flash-latest', // ATUALIZADO: Modelo Comercial Padrão (Alias)
+              model: 'gemini-1.5-flash', // ATUALIZADO: Modelo Comercial Padrão (Sem 'latest')
               transcription_enabled: true
           };
 
