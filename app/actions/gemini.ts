@@ -9,6 +9,33 @@ if (typeof window !== 'undefined') {
     throw new Error("⚠️ FATAL: Tentativa de executar código de IA no navegador. Esta ação deve ser Server-Side.");
 }
 
+// Definição MOCK das Tools para a Simulação (Para o Gemini saber que elas existem)
+const MOCK_TOOLS = [
+    {
+        name: "schedule_meeting",
+        description: "Agenda uma reunião ou compromisso no calendário.",
+        parameters: {
+            type: "OBJECT",
+            properties: {
+                title: { type: "STRING", description: "Título do evento." },
+                dateISO: { type: "STRING", description: "Data e hora ISO 8601." },
+            },
+            required: ["title", "dateISO"]
+        }
+    },
+    {
+        name: "search_files",
+        description: "Busca arquivos no drive.",
+        parameters: {
+            type: "OBJECT",
+            properties: {
+                query: { type: "STRING" }
+            },
+            required: ["query"]
+        }
+    }
+];
+
 // Helper de Retry (Backoff)
 const generateWithRetry = async (modelInstance: any, params: any, retries = 3) => {
     for (let i = 0; i < retries; i++) {
@@ -87,12 +114,25 @@ export async function simulateChatAction(history: any[], systemInstruction: stri
             config: {
                 systemInstruction: fullSystemPrompt,
                 temperature: 0.7,
-                maxOutputTokens: 8192, 
+                maxOutputTokens: 8192,
+                tools: [{ functionDeclarations: MOCK_TOOLS }] // Injeta tools mockados
             }
         });
+
+        // 🛡️ TRATAMENTO DE TOOL CALL
+        // Se a IA chamar uma tool, 'response.text' pode ser undefined ou vazio.
+        // Precisamos verificar 'functionCalls' e retornar uma mensagem simulada.
+        if (response.functionCalls && response.functionCalls.length > 0) {
+            const call = response.functionCalls[0];
+            const args = JSON.stringify(call.args);
+            return { 
+                text: `[🤖 AÇÃO SIMULADA DO SISTEMA]\nO agente tentou executar: *${call.name}*\nParâmetros: \`\`\`${args}\`\`\`` 
+            };
+        }
+
         return { text: response.text };
     } catch (error: any) {
-        return { text: `Erro na simulação: ${error.message}` };
+        return { text: `[ERRO NA SIMULAÇÃO] ${error.message}` };
     }
 }
 

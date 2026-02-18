@@ -9,6 +9,14 @@ const RAPPORT_INSTRUCTIONS = `
 3. Chame pelo nome (se souber) apenas uma vez no início, não repita em toda frase.
 `;
 
+const TRIAGE_INSTRUCTIONS = `
+[FASE 1: TRIAGEM OBRIGATÓRIA (CRÍTICO)]
+NÃO assuma que todo "Olá" é uma venda imediata.
+1. No início, apresente-se brevemente e pergunte: "Como posso ajudar?" ou "O que te traz por aqui?".
+2. Verifique o contexto: É cliente antigo? É suporte? É venda nova?
+3. SÓ inicie o pitch de vendas ou qualificação DEPOIS que o usuário demonstrar interesse no produto/serviço.
+`;
+
 const FLOW_CONTROL_INSTRUCTIONS = `
 [ESTRUTURA VISUAL OBRIGATÓRIA (3 BLOCOS)]
 Suas mensagens DEVEM seguir estritamente este layout visual para não cansar a leitura no celular. Separe os blocos com DUAS quebras de linha (\\n\\n):
@@ -157,6 +165,7 @@ export const buildSystemPrompt = (agent: any) => {
     
     if (p.tone) prompt += `TOM DE VOZ: ${p.tone}.\n`;
 
+    prompt += `\n${TRIAGE_INSTRUCTIONS}\n`; 
     prompt += `\n${FLOW_CONTROL_INSTRUCTIONS}\n`;
     prompt += `\n${ZERO_FRICTION_INSTRUCTIONS}\n`;
     prompt += `\n${RAPPORT_INSTRUCTIONS}\n`;

@@ -3,7 +3,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Modal } from '@/components/ui/Modal';
-import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea'; // Mudado de Input para Textarea
 import { Button } from '@/components/ui/button';
 import { simulateChatAction } from '@/app/actions/gemini';
 import { Bot, User, Send, Trash2, Loader2, PlayCircle } from 'lucide-react';
@@ -69,7 +69,11 @@ export function AgentSimulator({ isOpen, onClose, systemPrompt, agentName, conte
     };
 
     const handleKeyDown = (e: React.KeyboardEvent) => {
-        if (e.key === 'Enter') handleSend();
+        // Envia com Enter (sem Shift)
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            handleSend();
+        }
     };
 
     return (
@@ -92,7 +96,7 @@ export function AgentSimulator({ isOpen, onClose, systemPrompt, agentName, conte
                                 </div>
                             )}
                             <div className={cn(
-                                "max-w-[80%] p-3 rounded-xl text-sm leading-relaxed",
+                                "max-w-[85%] p-3 rounded-xl text-sm leading-relaxed whitespace-pre-wrap", // whitespace-pre-wrap permite quebras de linha
                                 msg.role === 'user' 
                                     ? "bg-blue-600 text-white rounded-tr-none" 
                                     : "bg-zinc-800 text-zinc-200 rounded-tl-none border border-zinc-700"
@@ -121,18 +125,22 @@ export function AgentSimulator({ isOpen, onClose, systemPrompt, agentName, conte
                 </div>
 
                 {/* Controls */}
-                <div className="flex gap-2">
-                    <Button variant="ghost" size="icon" onClick={() => setMessages([])} title="Limpar Chat" className="text-zinc-500 hover:text-red-500 hover:bg-zinc-900 border border-zinc-800">
+                <div className="flex gap-2 items-end">
+                    <Button variant="ghost" size="icon" onClick={() => setMessages([])} title="Limpar Chat" className="text-zinc-500 hover:text-red-500 hover:bg-zinc-900 border border-zinc-800 h-10 w-10">
                         <Trash2 className="w-4 h-4" />
                     </Button>
-                    <Input 
+                    
+                    {/* Textarea no lugar de Input para permitir multiplas linhas */}
+                    <Textarea 
                         value={input}
                         onChange={e => setInput(e.target.value)}
                         onKeyDown={handleKeyDown}
                         placeholder="Digite sua mensagem de teste..."
-                        className="flex-1 bg-zinc-950 border-zinc-800"
+                        className="flex-1 bg-zinc-950 border-zinc-800 min-h-[40px] max-h-[120px] resize-none py-2 text-sm"
+                        rows={1}
                     />
-                    <Button onClick={handleSend} disabled={loading || !input.trim()} className="bg-blue-600 hover:bg-blue-500">
+                    
+                    <Button onClick={handleSend} disabled={loading || !input.trim()} className="bg-blue-600 hover:bg-blue-500 h-10 w-10 p-0">
                         <Send className="w-4 h-4" />
                     </Button>
                 </div>
