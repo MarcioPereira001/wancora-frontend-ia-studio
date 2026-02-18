@@ -47,6 +47,7 @@ const generateWithRetry = async (modelInstance: any, params: any, retries = 3) =
             
             if (isOverloaded && i < retries - 1) {
                 const delay = 1500 * Math.pow(2, i); // 1.5s, 3s, 6s
+                console.warn(`⚠️ [GEMINI SERVER] 503 Detectado. Tentativa ${i + 1} em ${delay}ms`);
                 await new Promise(r => setTimeout(r, delay));
                 continue;
             }
@@ -80,12 +81,13 @@ export async function generateSmartReplyAction(history: string, tone: string = '
     const systemPrompt = `Você é um assistente CRM. Responda em PT-BR. Tom: ${tone}. Conciso.`;
     
     const response = await generateWithRetry(ai.models, {
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-1.5-flash',
       contents: history,
       config: { systemInstruction: systemPrompt }
     });
     return { text: response.text };
   } catch (error: any) {
+    console.error("Erro SmartReply:", error);
     return { error: "Falha na IA: " + error.message };
   }
 }
@@ -94,12 +96,13 @@ export async function optimizePromptAction(currentPrompt: string) {
   try {
     const ai = await getAuthenticatedAI();
     const response = await generateWithRetry(ai.models, {
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-1.5-flash',
       contents: `Atue como Engenheiro de Prompt Senior. Otimize: "${currentPrompt}"`
     });
     return { text: response.text };
   } catch (error: any) {
-    return { error: "Erro ao otimizar." };
+    console.error("Erro OptimizePrompt:", error);
+    return { error: "Erro ao otimizar: " + error.message };
   }
 }
 
@@ -109,7 +112,7 @@ export async function simulateChatAction(history: any[], systemInstruction: stri
         const fullSystemPrompt = `${systemInstruction}\n\n--- CONHECIMENTO SIMULADO ---\n${knowledgeBase}`;
 
         const response = await generateWithRetry(ai.models, {
-            model: 'gemini-3-flash-preview',
+            model: 'gemini-1.5-flash',
             contents: history,
             config: {
                 systemInstruction: fullSystemPrompt,
@@ -120,8 +123,6 @@ export async function simulateChatAction(history: any[], systemInstruction: stri
         });
 
         // 🛡️ TRATAMENTO DE TOOL CALL
-        // Se a IA chamar uma tool, 'response.text' pode ser undefined ou vazio.
-        // Precisamos verificar 'functionCalls' e retornar uma mensagem simulada.
         if (response.functionCalls && response.functionCalls.length > 0) {
             const call = response.functionCalls[0];
             const args = JSON.stringify(call.args);
@@ -132,7 +133,9 @@ export async function simulateChatAction(history: any[], systemInstruction: stri
 
         return { text: response.text };
     } catch (error: any) {
-        return { text: `[ERRO NA SIMULAÇÃO] ${error.message}` };
+        // Expondo o erro real para o console do servidor e para o frontend (para debug)
+        console.error("❌ [SIMULATION ERROR]", error);
+        return { text: `[ERRO NA SIMULAÇÃO] ${error.message || 'Erro desconhecido na API Gemini'}` };
     }
 }
 
@@ -142,12 +145,13 @@ export async function generateAgentPromptAction(inputs: any) {
         const metaPrompt = `Crie um System Instruction para um Agente de Vendas. Empresa: ${inputs.companyName}. Produto: ${inputs.product}. Público: ${inputs.audience}. Tom: ${inputs.tone}. Extra: ${inputs.extra}. Responda apenas o prompt.`;
 
         const response = await generateWithRetry(ai.models, {
-            model: 'gemini-3-flash-preview',
+            model: 'gemini-1.5-flash',
             contents: metaPrompt
         });
         
         return { text: response.text };
     } catch (error: any) {
-        return { error: "Falha ao gerar prompt." };
+        console.error("Erro GeneratePrompt:", error);
+        return { error: "Falha ao gerar prompt: " + error.message };
     }
 }
