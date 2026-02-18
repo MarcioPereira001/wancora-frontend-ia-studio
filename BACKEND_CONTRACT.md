@@ -225,9 +225,9 @@ Envia mensagens com **Protocolo de Humanização** (Digitando... -> Pausa -> Env
 ### 3.2.1. Protocolo de Humanização (Deep Dive)
 O envio não é apenas um disparo de socket, mas um fluxo que simula o comportamento humano para evasão de algoritmos de detecção de spam.
 
-1.  **Delay Dinâmico Inteligente:** O tempo de espera agora é calculado com base na configuração individual do Agente de IA (`timingConfig`) + o tamanho do texto gerado.
-    *   Fórmula: `Random(Min, Max)` configurado no agente.
-    *   Fator Texto: Textos longos (> 200 chars) tendem automaticamente para o tempo máximo configurado.
+1.  **Delay Dinâmico Inteligente (20s - 120s):** O tempo de espera é calculado com base na configuração individual do Agente de IA (`flow_config.timing`).
+    *   **Fórmula:** `Random(Min, Max)` configurado no agente.
+    *   **Objetivo:** Simular o tempo real de leitura e digitação de um humano ocupado, evitando respostas instantâneas robóticas.
 2.  **Presence Simulation:**
     *   **Texto:** Ativa `composing`. O tempo de "digitando" é sincronizado com o delay calculado acima.
     *   **Áudio:** Ativa `recording`. Tempo calculado: `random(2000ms, 5000ms)`.
@@ -523,13 +523,24 @@ O serviço de inteligência (`sentinel.js`) implementa uma estratégia de resolu
 * **Gatilhos Imediatos (`on_booking`):**
     *   Devem ser disparados via **Database Webhook** ou processados imediatamente após a inserção do agendamento, sem esperar o Cron.
 
-### 4.7. Smart Sync Strategy (Filtragem de Histórico)
-Para otimizar o tempo de carregamento e reduzir custos de armazenamento, o sistema implementa uma estratégia de "Janela Deslizante" na importação inicial:
+4.  **Guardião do Tempo (Time Guardian Protocol):**
+Para evitar que a IA responda mensagens antigas durante uma importação de histórico ou após uma queda do servidor (ou conexão inicial):
+*   O Sentinel verifica o `created_at` da mensagem.
+*   **Regra de Corte:** Se a mensagem for mais antiga que **2 a 5 minutos**, ela é ignorada silenciosamente.
+*   **Filtro de Sistema:** Mensagens oficiais do WhatsApp (`0@s.whatsapp.net` e `12345678@broadcast`) são bloqueadas na entrada para não acionar a IA nem criar Leads sujos.
+
+5.  **Tools Habilitadas (Capacidades):**
+*   `transfer_to_human`: Transbordo para atendimento humano.
+*   `schedule_meeting`: Criação de agendamento na tabela `appointments`.
+*   `search_files` / `send_file`: Acesso RAG (Retrieval-Augmented Generation) ao Drive da empresa.
+
+### 4.7. Smart Sync Strategy (Filtragem de Histórico) - Padrão Definitivamente Fixado e Validado (Sem nunca alterar)
+Para otimizar o tempo de carregamento e reduzir o risco de estouro de memória (OOM), o sistema implementa uma estratégia de "Janela Deslizante Restrita" na importação inicial:
 1. O Baileys envia o histórico completo bruto.
 2. O Backend agrupa as mensagens por conversa (`remote_jid`).
-3. Apenas as **10 mensagens mais recentes** de cada conversa são processadas e salvas.
-4. Para essas mensagens selecionadas, o sistema **força o download de mídias** e a **atualização da foto de perfil** do contato.
-5. Mensagens antigas (>10) são descartadas silenciosamente para manter o banco leve e rápido.
+3. **Limite Rígido:** Apenas as **10 mensagens mais recentes** de cada conversa são processadas e salvas no banco.
+4. **Mídia Ativa:** Para essas 10 mensagens recentes, o download de mídia (fotos/áudios) é **ATIVADO** (`downloadMedia: true`). Isso garante contexto visual imediato para a IA e o atendente.
+5. Mensagens antigas (>10) são descartadas silenciosamente para manter a leveza do sistema.
 
 ### 4.8. Regras Estritas de Lead (Lead Guard)
 O sistema possui um **"Centralized Gatekeeper"** (`ensureLeadExists` em `sync.js`) que atua como autoridade única para criação de Leads.

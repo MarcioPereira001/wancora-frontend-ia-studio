@@ -70,8 +70,8 @@ export function JuniorAgentForm({ initialData, companyId, onSuccess }: JuniorAge
   const [verbosity, setVerbosity] = useState<VerbosityLevel>(initialData?.personality_config?.verbosity || 'minimalist');
   const [emojiLevel, setEmojiLevel] = useState<EmojiLevel>(initialData?.personality_config?.emoji_level || 'moderate');
 
-  // Config de Tempo
-  const [timing, setTiming] = useState<AgentTimingConfig>(initialData?.flow_config?.timing || { min_delay_seconds: 3, max_delay_seconds: 8 });
+  // Config de Tempo (Humanizado: 20s - 120s)
+  const [timing, setTiming] = useState<AgentTimingConfig>(initialData?.flow_config?.timing || { min_delay_seconds: 20, max_delay_seconds: 120 });
 
   // Core Prompt
   const [systemPrompt, setSystemPrompt] = useState(initialData?.prompt_instruction || '');

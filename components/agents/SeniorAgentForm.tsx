@@ -85,8 +85,8 @@ export function SeniorAgentForm({ initialData, companyId, onSuccess }: SeniorAge
   const [emojiLevel, setEmojiLevel] = useState<EmojiLevel>(initialData?.personality_config?.emoji_level || 'moderate');
   const [selectedTriggers, setSelectedTriggers] = useState<string[]>(initialData?.personality_config?.mental_triggers || []);
   
-  // Config de Tempo
-  const [timing, setTiming] = useState<AgentTimingConfig>(initialData?.flow_config?.timing || { min_delay_seconds: 5, max_delay_seconds: 15 });
+  // Config de Tempo (Humanizado: 20s - 120s)
+  const [timing, setTiming] = useState<AgentTimingConfig>(initialData?.flow_config?.timing || { min_delay_seconds: 20, max_delay_seconds: 120 });
 
   // --- STATES ETAPA 2 (CÉREBRO & CONHECIMENTO) ---
   const [systemPrompt, setSystemPrompt] = useState(initialData?.prompt_instruction || '');
@@ -366,7 +366,7 @@ export function SeniorAgentForm({ initialData, companyId, onSuccess }: SeniorAge
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 animate-in slide-in-from-right-8">
                 <div className="space-y-6">
                     <Card className="bg-zinc-900/40 border-zinc-800">
-                        <CardHeader><CardTitle className="text-base text-zinc-100 flex items-center gap-2"><Briefcase className="w-4 h-4 text-blue-500" /> Perfil Executivo</CardTitle></CardHeader>
+                        <CardHeader><CardTitle className="text-base text-zinc-100 flex items-center gap-2"><Briefcase className="w-4 h-4 text-blue-500" /> Perfil Profissional</CardTitle></CardHeader>
                         <CardContent className="space-y-4">
                             <div>
                                 <label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Nome do Agente</label>
@@ -508,6 +508,7 @@ export function SeniorAgentForm({ initialData, companyId, onSuccess }: SeniorAge
                     <div className="flex items-center justify-between p-4 bg-zinc-900/50 rounded-xl border border-zinc-800">
                         <div>
                             <span className="text-sm font-bold text-zinc-200">Status do Agente</span>
+                            <p className="text-[10px] text-zinc-500">Se desativado, ele não responderá a ninguém.</p>
                         </div>
                         <div 
                             onClick={() => setIsActive(!isActive)}
@@ -536,8 +537,8 @@ export function SeniorAgentForm({ initialData, companyId, onSuccess }: SeniorAge
                                     <div className={cn("absolute top-1 w-3 h-3 bg-white rounded-full transition-all", isDefault ? "left-6" : "left-1")} />
                                 </div>
                                 <div>
-                                    <span className="text-xs font-bold text-zinc-300">Tornar Agente Padrão</span>
-                                    <p className="text-[10px] text-zinc-500">Fallback geral do sistema.</p>
+                                    <span className="text-xs font-bold text-zinc-300">Tornar Agente Padrão (Fallback)</span>
+                                    <p className="text-[10px] text-zinc-500">Responde se nenhum outro gatilho disparar.</p>
                                 </div>
                             </div>
                         </CardContent>
