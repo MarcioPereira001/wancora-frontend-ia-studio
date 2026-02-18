@@ -81,7 +81,7 @@ export async function generateSmartReplyAction(history: string, tone: string = '
     const systemPrompt = `Você é um assistente CRM. Responda em PT-BR. Tom: ${tone}. Conciso.`;
     
     const response = await generateWithRetry(ai.models, {
-      model: 'gemini-1.5-flash', // MODELO CORRIGIDO
+      model: 'gemini-2.0-flash', // FIX: Modelo V2
       contents: history,
       config: { systemInstruction: systemPrompt }
     });
@@ -96,7 +96,7 @@ export async function optimizePromptAction(currentPrompt: string) {
   try {
     const ai = await getAuthenticatedAI();
     const response = await generateWithRetry(ai.models, {
-      model: 'gemini-1.5-flash', // MODELO CORRIGIDO
+      model: 'gemini-2.0-flash', // FIX: Modelo V2
       contents: `Atue como Engenheiro de Prompt Senior. Otimize: "${currentPrompt}"`
     });
     return { text: response.text };
@@ -112,7 +112,7 @@ export async function simulateChatAction(history: any[], systemInstruction: stri
         const fullSystemPrompt = `${systemInstruction}\n\n--- CONHECIMENTO SIMULADO ---\n${knowledgeBase}`;
 
         const response = await generateWithRetry(ai.models, {
-            model: 'gemini-1.5-flash', // MODELO CORRIGIDO
+            model: 'gemini-2.0-flash', // FIX: Modelo V2
             contents: history,
             config: {
                 systemInstruction: fullSystemPrompt,
@@ -145,7 +145,7 @@ export async function generateAgentPromptAction(inputs: any) {
         const metaPrompt = `Crie um System Instruction para um Agente de Vendas. Empresa: ${inputs.companyName}. Produto: ${inputs.product}. Público: ${inputs.audience}. Tom: ${inputs.tone}. Extra: ${inputs.extra}. Responda apenas o prompt.`;
 
         const response = await generateWithRetry(ai.models, {
-            model: 'gemini-1.5-flash', // MODELO CORRIGIDO
+            model: 'gemini-2.0-flash', // FIX: Modelo V2
             contents: metaPrompt
         });
         

@@ -240,7 +240,7 @@ export function JuniorAgentForm({ initialData, companyId, onSuccess }: JuniorAge
               links_config: links, 
               is_default: isDefault,
               is_active: isActive,
-              model: 'gemini-1.5-flash', // ATUALIZADO: Modelo Comercial Padrão (Sem 'latest')
+              model: 'gemini-2.0-flash', // ATUALIZADO: V2
               transcription_enabled: true
           };
 
@@ -297,9 +297,9 @@ export function JuniorAgentForm({ initialData, companyId, onSuccess }: JuniorAge
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            
-            {/* COLUNA 1: GATILHOS & IDENTIDADE */}
-            <div className="space-y-6">
+            {/* ... CONTEUDO MANTIDO IGUAL, SÓ MODELO ATUALIZADO ... */}
+            {/* ... MANTIDO ... */}
+             <div className="space-y-6">
                 
                 {/* Gatilhos */}
                 <Card className="bg-zinc-900/40 border-zinc-800 border-l-4 border-l-yellow-500">

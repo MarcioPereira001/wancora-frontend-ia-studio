@@ -86,7 +86,7 @@ export default function SettingsPage() {
           const newAiConfig = {
               provider: 'gemini',
               apiKey: geminiKey,
-              model: 'gemini-1.5-flash', // ATUALIZADO: Modelo Estável de Produção
+              model: 'gemini-2.0-flash', // ATUALIZADO: Modelo V2
               updatedAt: new Date().toISOString()
           };
 
@@ -221,7 +221,7 @@ export default function SettingsPage() {
                              </Button>
                           </div>
                           <p className="text-[10px] text-zinc-500 mt-2">
-                              A chave configurada será utilizada para todos os agentes da empresa usando o modelo <strong>Gemini 1.5 Flash</strong>.
+                              A chave configurada será utilizada para todos os agentes da empresa usando o modelo <strong>Gemini 2.0 Flash</strong>.
                               <br/><span className="text-yellow-500">Nota:</span> Certifique-se de que o projeto no Google Cloud tem faturamento ativado para evitar erros 404/403.
                           </p>
                       </div>
