@@ -1,6 +1,5 @@
-
 // Engine de Montagem de Prompt (Frontend Version)
-// Mantém a lógica alinhada com o Backend
+// Sincronizado RIGOROSAMENTE com backend/utils/promptBuilder.js
 
 const EMPATHY_AND_CONNECTION_INSTRUCTIONS = `
 [CONEXÃO HUMANA E EMPATIA (MANDATÓRIO)]
@@ -66,10 +65,10 @@ const ZERO_FRICTION_INSTRUCTIONS = `
 1. NÃO peça dados que você já tem. (Ex: você já tem o número do WhatsApp dele).
 2. Para agendamentos: NÃO PEÇA E-MAIL se não for uma regra explícita repassada a você. Use as informações básicas do cliente.
 3. Se o cliente já concordou com um dia/horário, não fique pedindo mais permissões ("Posso marcar então?"). Aja com autonomia, use a tool 'schedule_meeting' e depois avise que marcou.
-4. Nunca envie "muros de texto" pesados.
+4. Nunca envie "muros de texto" pesados. O WhatsApp é para mensagens rápidas.
 `;
 
-const VERBOSITY_PROMPTS = {
+export const VERBOSITY_PROMPTS = {
     minimalist: `
 [DIRETRIZ DE FLUXO: MINIMALISTA]
 - Suas respostas devem ser extremamente curtas e diretas.
@@ -88,7 +87,7 @@ const VERBOSITY_PROMPTS = {
 - Se o cliente perguntar detalhes técnicos ou quiser entender a metodologia profundamente, forneça explicações mais ricas, mas sempre quebradas em parágrafos fáceis de ler no celular.`
 };
 
-const EMOJI_PROMPTS = {
+export const EMOJI_PROMPTS = {
     frequent: `
 [USO DE EMOJIS: FREQUENTE]
 - Use emojis para transmitir forte emoção e simpatia 🚀🔥.
@@ -104,7 +103,7 @@ const EMOJI_PROMPTS = {
 - Mantenha um tom estritamente profissional e sério. Evite emojis a não ser que o cliente os use muito.`
 };
 
-const SALES_TECHNIQUES_PROMPTS = {
+export const SALES_TECHNIQUES_PROMPTS = {
     spin: `
 [TÉCNICA DE VENDAS: SPIN SELLING]
 - 1. Situação: Entenda o contexto atual do cliente.
@@ -134,7 +133,16 @@ const SALES_TECHNIQUES_PROMPTS = {
 - Foco absoluto em resolver o problema do cliente, indicando o melhor caminho, gerando imensa confiança e reciprocidade.`
 };
 
-const WHATSAPP_FORMATTING_RULES = `
+export const MENTAL_TRIGGERS_DEFINITIONS = {
+    scarcity: "ESCASSEZ: Mencione que restam poucas vagas, unidades ou tempo limitado.",
+    urgency: "URGÊNCIA: Incentive a ação imediata, mostrando que esperar pode ser prejudicial.",
+    authority: "AUTORIDADE: Demonstre conhecimento profundo, cite anos de experiência ou resultados comprovados.",
+    social_proof: "PROVA SOCIAL: Cite que 'muitos clientes' ou 'empresas do setor' já usam a solução.",
+    reciprocity: "RECIPROCIDADE: Ofereça valor (dica, insight) antes de pedir algo em troca.",
+    novelty: "NOVIDADE: Destaque o que é novo, exclusivo ou inovador no produto/serviço."
+};
+
+export const WHATSAPP_FORMATTING_RULES = `
 [REGRAS DE FORMATAÇÃO WHATSAPP]
 - Use a formatação nativa do WhatsApp (NÃO use Markdown web).
 - Negrito: *texto*
@@ -145,10 +153,10 @@ const WHATSAPP_FORMATTING_RULES = `
 `;
 
 /**
- * Constrói o Prompt de Sistema Final combinando todas as configurações
- * @param {object} agent - Objeto do agente vindo do banco de dados
+ * Constrói o Prompt de Sistema Final combinando todas as configurações do Frontend
+ * @param {any} agent - Objeto do agente vindo do banco de dados (Simulação)
  */
-export const buildSystemPrompt = (agent) => {
+export const buildSystemPromptClient = (agent: any) => {
     const p = agent.personality_config || {};
     const f = agent.flow_config || {};
     
@@ -178,39 +186,43 @@ export const buildSystemPrompt = (agent) => {
     // ------------------------------------------------
 
     // 4. Fluxo de Conversa (Verbosity)
-    const verbosityKey = p.verbosity || 'standard';
+    const verbosityKey = (p.verbosity || 'standard') as keyof typeof VERBOSITY_PROMPTS;
     prompt += `\n${VERBOSITY_PROMPTS[verbosityKey] || VERBOSITY_PROMPTS.standard}\n`;
 
     // 5. Emojis
-    const emojiKey = p.emoji_level || 'moderate';
+    const emojiKey = (p.emoji_level || 'moderate') as keyof typeof EMOJI_PROMPTS;
     prompt += `\n${EMOJI_PROMPTS[emojiKey] || EMOJI_PROMPTS.moderate}\n`;
 
     // 6. Formatação
     prompt += `\n${WHATSAPP_FORMATTING_RULES}\n`;
 
     // 7. Técnica de Vendas
-    const technique = f.technique;
-    if (technique && technique !== 'none' && SALES_TECHNIQUES_PROMPTS[technique]) {
-        prompt += `\n${SALES_TECHNIQUES_PROMPTS[technique]}\n`;
+    const technique = f.technique as string;
+    if (technique && technique !== 'none') {
+        const salesTechniquePrompt = SALES_TECHNIQUES_PROMPTS[technique as keyof typeof SALES_TECHNIQUES_PROMPTS];
+        if (salesTechniquePrompt) {
+            prompt += `\n${salesTechniquePrompt}\n`;
+        }
     }
 
     // 8. Gatilhos Mentais
     if (p.mental_triggers && Array.isArray(p.mental_triggers) && p.mental_triggers.length > 0) {
         prompt += `\n[GATILHOS MENTAIS ATIVOS]\nUtilize de forma sutil e estratégica os seguintes gatilhos:\n`;
-        p.mental_triggers.forEach(t => {
-            prompt += `- ${t}\n`; // Modificado para pegar o valor do formulário dinâmico
+        p.mental_triggers.forEach((t: string) => {
+            // Em TypeScript, não usamos definições mapeadas se o front passa só a string do form
+            prompt += `- ${t}\n`; 
         });
     }
 
-    // 9. Links Úteis Dinâmicos (Para fallback)
+    // 9. Links Úteis Dinâmicos
     if (agent.links_config && Array.isArray(agent.links_config) && agent.links_config.length > 0) {
-        prompt += `\n[LINKS DA EMPRESA (FERRAMENTAS DE APOIO)]\nVocê possui os seguintes links cadastrados. Use-os APENAS se o cliente pedir para fazer algo manualmente ou pedir mais informações externas:\n`;
-        agent.links_config.forEach(link => {
+        prompt += `\n[LINKS DA EMPRESA (FERRAMENTAS DE APOIO)]\nVocê possui os seguintes links cadastrados. Use-os APENAS no PLANO B de agendamento ou se o cliente pedir informações externas:\n`;
+        agent.links_config.forEach((link: any) => {
             prompt += `- ${link.title}: ${link.url}\n`;
         });
     }
 
-    // 10. Instrução Mestra do Usuário (O que o usuário digitou no formulário)
+    // 10. Instrução Mestra do Usuário
     if (agent.prompt_instruction) {
         prompt += `\n[SISTEMA DE CRENÇAS / MISSÃO ESPECÍFICA]\n${agent.prompt_instruction}\n`;
     }
@@ -222,18 +234,18 @@ export const buildSystemPrompt = (agent) => {
 
     // 12. Regras Negativas e Escape
     if (p.negative_prompts && p.negative_prompts.length > 0) {
-        prompt += `\n[PROIBIÇÕES ABSOLUTAS (O QUE NÃO FAZER)]\n${p.negative_prompts.map(s => '- ' + s).join('\n')}\n`;
+        prompt += `\n[PROIBIÇÕES ABSOLUTAS (O QUE NÃO FAZER)]\n${p.negative_prompts.map((s: string) => '- ' + s).join('\n')}\n`;
     }
     
     if (p.escape_rules && p.escape_rules.length > 0) {
-        prompt += `\n[REGRAS DE ESCAPE (QUANDO ACIONAR HUMANO OU FINALIZAR)]\n${p.escape_rules.map(s => '- ' + s).join('\n')}\n`;
+        prompt += `\n[REGRAS DE ESCAPE (QUANDO ACIONAR HUMANO OU FINALIZAR)]\n${p.escape_rules.map((s: string) => '- ' + s).join('\n')}\n`;
     }
 
     // 13. MODO PENSAMENTO E REGRAS DE EXECUÇÃO
     prompt += `
 \n[DIRETRIZES FINAIS DE EXECUÇÃO]
-- NUNCA imprima pensamentos internos (como "Meu objetivo é agendar" ou "Analisando a mensagem...") para o cliente. Responda APENAS a fala final, interpretando o seu papel perfeitamente.
-- O cliente NUNCA deve descobrir que você é uma IA, a menos que seja confrontado diretamente (e, dependendo da sua regra de escape, transfira para um humano nesses casos).
+- NUNCA imprima pensamentos internos (como "Analisando a mensagem...") para o cliente. Responda APENAS a fala final, interpretando o seu papel perfeitamente.
+- O cliente NUNCA deve descobrir que você é uma IA, a menos que seja confrontado diretamente (transfira para um humano nesses casos).
 - Revise mentalmente se a sua resposta contém os 3 blocos visuais e se não é um "muro de texto" antes de gerar a saída.
 `;
 
