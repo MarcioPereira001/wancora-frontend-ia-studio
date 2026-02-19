@@ -75,7 +75,7 @@ export default function SettingsPage() {
           const newAiConfig = {
               provider: 'gemini',
               apiKey: geminiKey,
-              model: 'gemini-1.5-flash', // FIX: Modelo Estável v1.5
+              model: 'gemini-2.5-flash', // FIX: Modelo Padrão Atualizado
               updatedAt: new Date().toISOString()
           };
 
@@ -147,7 +147,7 @@ export default function SettingsPage() {
                              <input type={showGeminiKey ? "text" : "password"} value={geminiKey} onChange={(e) => setGeminiKey(e.target.value)} placeholder="Cole sua API Key aqui..." className="w-full bg-zinc-900 border border-zinc-800 rounded-lg pl-9 pr-3 py-2 text-zinc-300 font-mono text-xs focus:ring-1 focus:ring-emerald-500 outline-none" />
                              <Button variant="outline" size="sm" onClick={() => setShowGeminiKey(!showGeminiKey)} className="border-zinc-800 bg-zinc-900 min-w-[80px]">{showGeminiKey ? "Ocultar" : "Mostrar"}</Button>
                           </div>
-                          <p className="text-[10px] text-zinc-500 mt-2">Usaremos o modelo <strong>Gemini 1.5 Flash</strong> (Rápido e Estável).</p>
+                          <p className="text-[10px] text-zinc-500 mt-2">Usaremos o modelo <strong>Gemini 2.5 Flash</strong> (Rápido e Estável).</p>
                       </div>
                       <div className="flex justify-end pt-2 border-t border-white/5 mt-4"><Button onClick={handleSaveConfig} disabled={loading} className="bg-emerald-600 hover:bg-emerald-500 text-white">{loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />} Salvar Configurações</Button></div>
                   </div>
