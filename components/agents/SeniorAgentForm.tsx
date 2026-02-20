@@ -21,7 +21,7 @@ import { AgentTriggerSelector } from './AgentTriggerSelector';
 import { api } from '@/services/api';
 import { PromptGeneratorModal } from './PromptGeneratorModal';
 import { AgentSimulator } from './AgentSimulator';
-import { buildSystemPrompt } from '@/lib/ai/promptBuilder'; // Engine
+import { buildSystemPromptClient } from '@/lib/ai/promptBuilder'; // Engine
 
 interface SeniorAgentFormProps {
   initialData?: Agent | null;
@@ -328,7 +328,7 @@ export function SeniorAgentForm({ initialData, companyId, onSuccess }: SeniorAge
     setNewLinkUrl('');
   };
 
-  const fullSimulationPrompt = buildSystemPrompt(buildCurrentAgent());
+  const fullSimulationPrompt = buildSystemPromptClient(buildCurrentAgent());
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-12">
