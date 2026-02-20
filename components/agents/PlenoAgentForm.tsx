@@ -19,7 +19,7 @@ import { uploadChatMedia } from '@/utils/supabase/storage';
 import { AgentTriggerSelector } from './AgentTriggerSelector';
 import { PromptGeneratorModal } from './PromptGeneratorModal';
 import { AgentSimulator } from './AgentSimulator';
-import { buildSystemPrompt } from '@/lib/ai/promptBuilder'; 
+import { buildSystemPromptClient } from '@/lib/ai/promptBuilder';
 
 interface PlenoAgentFormProps {
   initialData?: Agent | null;
@@ -274,7 +274,7 @@ export function PlenoAgentForm({ initialData, companyId, onSuccess }: PlenoAgent
       }
   };
 
-  const fullSimulationPrompt = buildSystemPrompt(buildCurrentAgent());
+  const fullSimulationPrompt = buildSystemPromptClient(buildCurrentAgent());
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-12">
