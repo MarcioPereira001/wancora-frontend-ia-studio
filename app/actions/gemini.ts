@@ -82,9 +82,9 @@ export async function generateSmartReplyAction(history: string, tone: string = '
     const genAI = await getAuthenticatedAI();
     const systemPrompt = `Você é um assistente CRM. Responda em PT-BR. Tom: ${tone}. Conciso.`;
     
-    // FIX: Modelo 2.5 Flash (Production Ready)
+    // FIX: Modelo 2.0 Flash (Production Ready)
     const model = genAI.getGenerativeModel({ 
-        model: 'gemini-2.5-flash',
+        model: 'gemini-2.0-flash',
         systemInstruction: systemPrompt 
     });
     
@@ -99,7 +99,7 @@ export async function generateSmartReplyAction(history: string, tone: string = '
 export async function optimizePromptAction(currentPrompt: string) {
   try {
     const genAI = await getAuthenticatedAI();
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
     
     const result = await generateWithRetry(model, `Atue como Engenheiro de Prompt Senior. Melhore e estrutura o seguinte prompt para um agente de vendas: "${currentPrompt}"`);
     return { text: result.response.text() };
@@ -114,7 +114,7 @@ export async function simulateChatAction(history: any[], systemInstruction: stri
         const fullSystemPrompt = `${systemInstruction}\n\n--- CONHECIMENTO SIMULADO (RAG) ---\n${knowledgeBase}`;
 
         const model = genAI.getGenerativeModel({
-            model: 'gemini-2.5-flash', // FIX: Modelo Atualizado
+            model: 'gemini-2.0-flash', // FIX: Modelo Atualizado
             systemInstruction: fullSystemPrompt,
             tools: [SIMULATOR_TOOLS as any]
         });
@@ -154,7 +154,7 @@ export async function simulateChatAction(history: any[], systemInstruction: stri
         console.error("❌ [SIMULATION ERROR]", error);
         
         let errorMsg = error.message || 'Erro na API Gemini';
-        if (errorMsg.includes('404')) errorMsg = 'Modelo não encontrado. Verifique se sua API Key tem acesso ao gemini-2.5-flash.';
+        if (errorMsg.includes('404')) errorMsg = 'Modelo não encontrado. Verifique se sua API Key tem acesso ao gemini-2.0-flash.';
         if (errorMsg.includes('429')) errorMsg = 'Cota excedida. Verifique o faturamento no Google Cloud.';
 
         return { text: `[ERRO TÉCNICO] ${errorMsg}` };
@@ -164,7 +164,7 @@ export async function simulateChatAction(history: any[], systemInstruction: stri
 export async function generateAgentPromptAction(inputs: any) {
     try {
         const genAI = await getAuthenticatedAI();
-        const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+        const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
         
         const metaPrompt = `Crie um System Instruction para um Agente de Vendas. Empresa: ${inputs.companyName}. Produto: ${inputs.product}. Público: ${inputs.audience}. Tom: ${inputs.tone}. Extra: ${inputs.extra}. Responda apenas o prompt.`;
 
