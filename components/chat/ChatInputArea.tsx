@@ -304,12 +304,7 @@ export function ChatInputArea() {
                       await dispatchMessage({ type: 'audio', url: publicUrl, mimetype: mimeType, ptt: true });
                   } catch (e) {}
               }
-              
-              // Limpeza crítica de tracks
-              if (audioStreamRef.current) {
-                  audioStreamRef.current.getTracks().forEach(track => track.stop());
-                  audioStreamRef.current = null;
-              }
+              // 🔥 Limpeza removida daqui (agora é feita instantaneamente no stopRecording abaixo)
           };
           mediaRecorder.start();
           setIsRecording(true);
@@ -323,20 +318,23 @@ export function ChatInputArea() {
           if (cancel) {
               // Remove listener para não disparar envio
               mediaRecorderRef.current.onstop = null;
-              // Limpa tracks imediatamente
-              if (audioStreamRef.current) {
-                  audioStreamRef.current.getTracks().forEach(track => track.stop());
-                  audioStreamRef.current = null;
-              }
           }
           mediaRecorderRef.current.stop();
           mediaRecorderRef.current = null; // Zera referência
       }
+      
+      // 🔥 UX FIX: A limpeza foi movida para fora do "if (cancel)". 
+      // Agora o microfone corta IMEDIATAMENTE tanto no "Enviar" quanto no "Cancelar"!
+      if (audioStreamRef.current) {
+          audioStreamRef.current.getTracks().forEach(track => track.stop());
+          audioStreamRef.current = null;
+      }
+
       setIsRecording(false);
       if (timerRef.current) clearInterval(timerRef.current);
       setRecordingTime(0);
   };
-
+  
   const canDeleteForEveryone = () => {
       if (selectedMsgIds.size === 0) return false;
       const selected = messages.filter(m => selectedMsgIds.has(m.id));
