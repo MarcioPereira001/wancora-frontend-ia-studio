@@ -96,9 +96,10 @@ export default function NewCampaignPage() {
         addToast({ type: 'success', title: "Sucesso!", message: `Processando ${data.leadsCount || 'vários'} envios.` });
         router.push("/dashboard"); 
 
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Erro no disparo:", error);
-      addToast({ type: 'error', title: "Erro de Conexão", message: error.message || "Falha ao conectar com o servidor de campanhas." });
+      const errorMessage = error instanceof Error ? error.message : "Falha ao conectar com o servidor de campanhas.";
+      addToast({ type: 'error', title: "Erro de Conexão", message: errorMessage });
     } finally {
       setIsSending(false);
     }

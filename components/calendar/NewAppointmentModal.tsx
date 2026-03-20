@@ -49,7 +49,7 @@ export function NewAppointmentModal({ isOpen, onClose, preSelectedDate, appointm
   
   // Participant Management
   const [leadSearch, setLeadSearch] = useState('');
-  const [leadSuggestions, setLeadSuggestions] = useState<any[]>([]);
+  const [leadSuggestions, setLeadSuggestions] = useState<Record<string, unknown>[]>([]);
   // Guest List: Pode ser Lead (com ID) ou Manual (sem ID)
   const [guests, setGuests] = useState<{id?: string, name: string, phone: string, type: 'lead' | 'manual'}[]>([]);
   
@@ -83,7 +83,7 @@ export function NewAppointmentModal({ isOpen, onClose, preSelectedDate, appointm
               setIsTask(appointmentToEdit.is_task || false);
               
               // Load Guests (Backward compatibility with lead_id + guests column)
-              const initialGuests = [];
+              const initialGuests: {id?: string, name: string, phone: string, type: 'lead' | 'manual'}[] = [];
               if (appointmentToEdit.lead) {
                   initialGuests.push({
                       id: appointmentToEdit.lead.id,
@@ -92,14 +92,15 @@ export function NewAppointmentModal({ isOpen, onClose, preSelectedDate, appointm
                       type: 'lead'
                   });
               }
-              if ((appointmentToEdit as any).guests && Array.isArray((appointmentToEdit as any).guests)) {
-                  initialGuests.push(...(appointmentToEdit as any).guests);
+              const editGuests = (appointmentToEdit as Record<string, unknown>).guests;
+              if (editGuests && Array.isArray(editGuests)) {
+                  initialGuests.push(...(editGuests as {id?: string, name: string, phone: string, type: 'lead' | 'manual'}[]));
               }
               // Deduplicate based on phone
               const uniqueGuests = initialGuests.filter((g, index, self) => 
                   index === self.findIndex((t) => (t.phone === g.phone))
               );
-              setGuests(uniqueGuests as any);
+              setGuests(uniqueGuests);
 
               setSendNotifications(appointmentToEdit.send_notifications !== false);
               setIsRecurring(false);
@@ -139,9 +140,9 @@ export function NewAppointmentModal({ isOpen, onClose, preSelectedDate, appointm
       setLeadSuggestions(data || []);
   };
 
-  const addLeadGuest = (lead: any) => {
+  const addLeadGuest = (lead: Record<string, unknown>) => {
       if (guests.some(g => g.phone === lead.phone)) return;
-      setGuests([...guests, { id: lead.id, name: lead.name, phone: lead.phone, type: 'lead' }]);
+      setGuests([...guests, { id: lead.id as string, name: lead.name as string, phone: lead.phone as string, type: 'lead' }]);
       setLeadSearch('');
       setLeadSuggestions([]);
   };
@@ -281,8 +282,8 @@ export function NewAppointmentModal({ isOpen, onClose, preSelectedDate, appointm
 
           onClose();
 
-      } catch (error: any) {
-          addToast({ type: 'error', title: 'Erro', message: error.message });
+      } catch (error: unknown) {
+          addToast({ type: 'error', title: 'Erro', message: error instanceof Error ? error.message : 'Erro desconhecido' });
       } finally {
           setLoading(false);
       }
@@ -300,8 +301,8 @@ export function NewAppointmentModal({ isOpen, onClose, preSelectedDate, appointm
           removeAppointmentOptimistic(appointmentToEdit.id);
           addToast({ type: 'success', title: 'Excluído', message: 'Evento removido.' });
           onClose();
-      } catch (error: any) {
-          addToast({ type: 'error', title: 'Erro', message: error.message });
+      } catch (error: unknown) {
+          addToast({ type: 'error', title: 'Erro', message: error instanceof Error ? error.message : 'Erro desconhecido' });
       } finally {
           setLoading(false);
       }

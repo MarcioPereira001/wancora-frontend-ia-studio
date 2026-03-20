@@ -128,8 +128,9 @@ export default function ConnectionsPage() {
           
           const newInstance = await whatsappService.connectInstance(sessionId, nameToUse);
           setCurrentInstance(newInstance);
-      } catch (error: any) {
-          addToast({ type: 'error', title: 'Falha', message: error.message });
+      } catch (error: unknown) {
+          const msg = error instanceof Error ? error.message : String(error);
+          addToast({ type: 'error', title: 'Falha', message: msg });
           setStep('setup');
       }
   };
@@ -421,32 +422,35 @@ export default function ConnectionsPage() {
 const ConnectionCard: React.FC<{ instance: Instance, refresh: () => void, onRestart: () => void, onWebhook: () => void }> = ({ instance, refresh, onRestart, onWebhook }) => {
     const { addToast } = useToast();
     const [loadingAction, setLoadingAction] = useState(false);
+    const [showConfirm, setShowConfirm] = useState<'delete' | 'logout' | null>(null);
     
     const handleDelete = async () => {
-        if (!confirm(`TEM CERTEZA? Isso excluirá a instância e todas as chaves de criptografia. Os dados de leads serão mantidos.`)) return;
         setLoadingAction(true);
         try {
             await whatsappService.deleteInstance(instance.session_id);
             addToast({ type: 'success', title: 'Excluído', message: 'Instância removida com sucesso. Conecte novamente.' });
             refresh();
-        } catch (e: any) {
-            addToast({ type: 'error', title: 'Erro', message: e.message });
+        } catch (e: unknown) {
+            const msg = e instanceof Error ? e.message : String(e);
+            addToast({ type: 'error', title: 'Erro', message: msg });
         } finally {
             setLoadingAction(false);
+            setShowConfirm(null);
         }
     };
 
     const handleLogout = async () => {
-         if (!confirm(`Desconectar sessão?`)) return;
          setLoadingAction(true);
          try {
              await whatsappService.logoutInstance(instance.session_id);
              addToast({ type: 'success', title: 'Desconectado', message: 'Sessão encerrada.' });
              refresh();
-         } catch (e: any) {
-             addToast({ type: 'error', title: 'Erro', message: e.message });
+         } catch (e: unknown) {
+             const msg = e instanceof Error ? e.message : String(e);
+             addToast({ type: 'error', title: 'Erro', message: msg });
          } finally {
              setLoadingAction(false);
+             setShowConfirm(null);
          }
     };
 
@@ -474,40 +478,56 @@ const ConnectionCard: React.FC<{ instance: Instance, refresh: () => void, onRest
                     </div>
                 </div>
                 
-                <div className="flex gap-2">
-                    <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        onClick={onWebhook}
-                        disabled={loadingAction}
-                        className="hover:bg-purple-500/10 hover:text-purple-500" 
-                        title="Configurar Webhook"
-                    >
-                        <Webhook className="w-5 h-5" />
-                    </Button>
+                <div className="flex gap-2 items-center">
+                    {showConfirm === 'delete' ? (
+                        <div className="flex items-center gap-2 bg-red-500/10 p-1.5 rounded-lg border border-red-500/20 animate-in fade-in slide-in-from-right-2">
+                            <span className="text-[10px] font-bold text-red-500 uppercase px-1">Excluir?</span>
+                            <Button size="sm" variant="ghost" onClick={() => setShowConfirm(null)} className="h-7 text-[10px] px-2 hover:bg-zinc-800">NÃO</Button>
+                            <Button size="sm" variant="destructive" onClick={handleDelete} disabled={loadingAction} className="h-7 text-[10px] px-2 bg-red-600 hover:bg-red-700">SIM</Button>
+                        </div>
+                    ) : showConfirm === 'logout' ? (
+                        <div className="flex items-center gap-2 bg-yellow-500/10 p-1.5 rounded-lg border border-yellow-500/20 animate-in fade-in slide-in-from-right-2">
+                            <span className="text-[10px] font-bold text-yellow-500 uppercase px-1">Sair?</span>
+                            <Button size="sm" variant="ghost" onClick={() => setShowConfirm(null)} className="h-7 text-[10px] px-2 hover:bg-zinc-800">NÃO</Button>
+                            <Button size="sm" variant="ghost" onClick={handleLogout} disabled={loadingAction} className="h-7 text-[10px] px-2 bg-yellow-600 hover:bg-yellow-700 text-white">SIM</Button>
+                        </div>
+                    ) : (
+                        <>
+                            <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                onClick={onWebhook}
+                                disabled={loadingAction}
+                                className="hover:bg-purple-500/10 hover:text-purple-500" 
+                                title="Configurar Webhook"
+                            >
+                                <Webhook className="w-5 h-5" />
+                            </Button>
 
-                    {instance.status !== 'connected' && (
-                        <Button 
-                            variant="ghost" 
-                            size="icon" 
-                            onClick={onRestart} 
-                            disabled={loadingAction} 
-                            className="bg-blue-500/10 text-blue-500 hover:bg-blue-500/20 hover:text-blue-400 border border-blue-500/20" 
-                            title="Reiniciar Conexão"
-                        >
-                            <RotateCcw className="w-5 h-5" />
-                        </Button>
-                    )}
+                            {instance.status !== 'connected' && (
+                                <Button 
+                                    variant="ghost" 
+                                    size="icon" 
+                                    onClick={onRestart} 
+                                    disabled={loadingAction} 
+                                    className="bg-blue-500/10 text-blue-500 hover:bg-blue-500/20 hover:text-blue-400 border border-blue-500/20" 
+                                    title="Reiniciar Conexão"
+                                >
+                                    <RotateCcw className="w-5 h-5" />
+                                </Button>
+                            )}
 
-                    {instance.status === 'connected' && (
-                        <Button variant="ghost" size="icon" onClick={handleLogout} disabled={loadingAction} className="hover:bg-yellow-500/10 hover:text-yellow-500" title="Desconectar">
-                            <Power className="w-5 h-5" />
-                        </Button>
+                            {instance.status === 'connected' && (
+                                <Button variant="ghost" size="icon" onClick={() => setShowConfirm('logout')} disabled={loadingAction} className="hover:bg-yellow-500/10 hover:text-yellow-500" title="Desconectar">
+                                    <Power className="w-5 h-5" />
+                                </Button>
+                            )}
+                            
+                            <Button variant="ghost" size="icon" onClick={() => setShowConfirm('delete')} disabled={loadingAction} className="hover:bg-red-500/10 hover:text-red-500" title="Excluir (Resetar Chaves)">
+                                {loadingAction ? <Loader2 className="w-5 h-5 animate-spin" /> : <Trash2 className="w-5 h-5" />}
+                            </Button>
+                        </>
                     )}
-                    
-                    <Button variant="ghost" size="icon" onClick={handleDelete} disabled={loadingAction} className="hover:bg-red-500/10 hover:text-red-500" title="Excluir (Resetar Chaves)">
-                        {loadingAction ? <Loader2 className="w-5 h-5 animate-spin" /> : <Trash2 className="w-5 h-5" />}
-                    </Button>
                 </div>
             </div>
 

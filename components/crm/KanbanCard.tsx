@@ -8,11 +8,15 @@ import { DeadlineTimer } from './DeadlineTimer';
 interface KanbanCardProps {
   lead: Lead;
   owner?: TeamMember; 
-  onDragStart: (e: React.DragEvent, leadId: string) => void;
   onClick: (lead: Lead) => void;
+  setNodeRef?: (node: HTMLElement | null) => void;
+  attributes?: any;
+  listeners?: any;
+  style?: React.CSSProperties;
+  isDragging?: boolean;
 }
 
-export function KanbanCard({ lead, owner, onDragStart, onClick }: KanbanCardProps) {
+export function KanbanCard({ lead, owner, onClick, setNodeRef, attributes, listeners, style, isDragging }: KanbanCardProps) {
   
   const getTempConfig = (temp?: string) => {
     switch(temp) {
@@ -30,10 +34,15 @@ export function KanbanCard({ lead, owner, onDragStart, onClick }: KanbanCardProp
 
   return (
     <div
-      draggable
-      onDragStart={(e) => onDragStart(e, lead.id)}
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
       onClick={() => onClick(lead)}
-      className="group bg-zinc-900/90 hover:bg-zinc-900/95 backdrop-blur-md border border-zinc-800 p-3.5 rounded-xl mb-3 hover:border-primary/40 hover:shadow-[0_0_15px_-5px_rgba(34,197,94,0.15)] transition-all duration-300 relative cursor-grab active:cursor-grabbing select-none overflow-hidden"
+      className={cn(
+        "group bg-zinc-900/90 hover:bg-zinc-900/95 backdrop-blur-md border border-zinc-800 p-3.5 rounded-xl mb-3 hover:border-primary/40 hover:shadow-[0_0_15px_-5px_rgba(34,197,94,0.15)] transition-all duration-300 relative cursor-grab active:cursor-grabbing select-none overflow-hidden",
+        isDragging && "opacity-30 grayscale scale-95 shadow-2xl border-primary/50 z-50"
+      )}
     >
       {/* Efeito Glow Lateral */}
       <div className={cn("absolute left-0 top-0 bottom-0 w-[3px] transition-all group-hover:w-[4px]", temp.bg.replace('/10', ''))} />

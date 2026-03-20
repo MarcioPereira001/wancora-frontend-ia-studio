@@ -180,7 +180,7 @@ export default function AgentsPage() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   {/* JUNIOR */}
                   <div 
-                      onClick={() => { setSelectedLevel('junior'); setSelectedAgent({ level: 'junior' } as any); }}
+                      onClick={() => { setSelectedLevel('junior'); setSelectedAgent({ level: 'junior' } as Partial<Agent>); }}
                       className="bg-zinc-900 border border-zinc-800 hover:border-blue-500/50 p-6 rounded-2xl cursor-pointer transition-all hover:-translate-y-2 hover:shadow-xl hover:shadow-blue-500/10 group"
                   >
                       <div className="w-16 h-16 bg-blue-500/10 rounded-2xl flex items-center justify-center text-blue-500 mb-6 group-hover:scale-110 transition-transform border border-blue-500/20">
@@ -197,7 +197,7 @@ export default function AgentsPage() {
 
                   {/* PLENO */}
                   <div 
-                      onClick={() => { setSelectedLevel('pleno'); setSelectedAgent({ level: 'pleno' } as any); }}
+                      onClick={() => { setSelectedLevel('pleno'); setSelectedAgent({ level: 'pleno' } as Partial<Agent>); }}
                       className="bg-zinc-900 border border-zinc-800 hover:border-green-500/50 p-6 rounded-2xl cursor-pointer transition-all hover:-translate-y-2 hover:shadow-xl hover:shadow-green-500/10 group relative overflow-hidden"
                   >
                       <div className="absolute top-0 right-0 bg-green-600 text-white text-[10px] font-bold px-3 py-1 rounded-bl-xl shadow-lg">MAIS USADO</div>
@@ -215,7 +215,7 @@ export default function AgentsPage() {
 
                   {/* SENIOR */}
                   <div 
-                      onClick={() => { setSelectedLevel('senior'); setSelectedAgent({ level: 'senior' } as any); }}
+                      onClick={() => { setSelectedLevel('senior'); setSelectedAgent({ level: 'senior' } as Partial<Agent>); }}
                       className="bg-zinc-900 border border-zinc-800 hover:border-purple-500/50 p-6 rounded-2xl cursor-pointer transition-all hover:-translate-y-2 hover:shadow-xl hover:shadow-purple-500/10 group"
                   >
                       <div className="w-16 h-16 bg-purple-500/10 rounded-2xl flex items-center justify-center text-purple-500 mb-6 group-hover:scale-110 transition-transform border border-purple-500/20">
@@ -247,4 +247,4 @@ export default function AgentsPage() {
   );
 }
 
-const Check = ({size, className}: any) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="20 6 9 17 4 12"/></svg>;
+const Check = ({size, className}: {size: number, className?: string}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="20 6 9 17 4 12"/></svg>;

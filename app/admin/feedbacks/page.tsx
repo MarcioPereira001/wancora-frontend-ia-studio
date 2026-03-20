@@ -12,7 +12,7 @@ import { format } from 'date-fns';
 
 export default function AdminFeedbacksPage() {
     const { addToast } = useToast();
-    const [feedbacks, setFeedbacks] = useState<any[]>([]);
+    const [feedbacks, setFeedbacks] = useState<Record<string, unknown>[]>([]);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {

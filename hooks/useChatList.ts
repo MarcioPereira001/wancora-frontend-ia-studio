@@ -83,8 +83,8 @@ export function useChatList() {
 
           // Filtra LIDs que possam ter escapado da RPC por segurança
           const formatted: ChatContact[] = (data || [])
-            .filter((row: any) => !row.jid.includes('@lid')) 
-            .map((row: any) => ({
+            .filter((row: { jid: string }) => !row.jid.includes('@lid')) 
+            .map((row: { jid: string, last_message_at: string, phone_number: string, name: string, is_community: boolean, lead_tags: string[] }) => ({
               ...row,
               id: row.jid, 
               remote_jid: row.jid, 
@@ -97,9 +97,10 @@ export function useChatList() {
 
           setContacts(formatted); 
           setError(null);
-      } catch (e: any) {
-          console.error("ChatList Error:", e.message);
-          setError(e.message);
+      } catch (e: unknown) {
+          const msg = e instanceof Error ? e.message : String(e);
+          console.error("ChatList Error:", msg);
+          setError(msg);
       } finally {
           if (showLoading) setLoading(false);
       }

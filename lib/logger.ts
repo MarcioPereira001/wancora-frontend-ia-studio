@@ -11,7 +11,7 @@ type LogLevel = 'info' | 'warn' | 'error' | 'fatal';
 interface LogEntry {
     level: LogLevel;
     message: string;
-    metadata: any;
+    metadata: Record<string, unknown>;
     company_id: string | null;
     user_id: string | null;
     created_at: string;
@@ -81,7 +81,7 @@ const scheduleFlush = () => {
 };
 
 export const SystemLogger = {
-    log: (level: LogLevel, message: string, meta: any = {}) => {
+    log: (level: LogLevel, message: string, meta: Record<string, unknown> = {}) => {
         // Ignora logs informativos em localhost para não poluir
         if (process.env.NODE_ENV === 'development' && level !== 'error' && level !== 'fatal') {
             // Uncomment to see logs in dev console
@@ -115,9 +115,9 @@ export const SystemLogger = {
         }
     },
 
-    error: (message: string, meta?: any) => SystemLogger.log('error', message, meta),
-    warn: (message: string, meta?: any) => SystemLogger.log('warn', message, meta),
-    info: (message: string, meta?: any) => SystemLogger.log('info', message, meta),
+    error: (message: string, meta?: Record<string, unknown>) => SystemLogger.log('error', message, meta),
+    warn: (message: string, meta?: Record<string, unknown>) => SystemLogger.log('warn', message, meta),
+    info: (message: string, meta?: Record<string, unknown>) => SystemLogger.log('info', message, meta),
     
     // Inicializador de listeners globais
     initGlobalHandlers: () => {

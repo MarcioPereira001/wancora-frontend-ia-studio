@@ -9,7 +9,7 @@ import { formatCurrency } from '@/lib/utils';
 
 interface SalesChartProps {
   funnelData: FunnelStat[];
-  revenueData?: any[]; // Dados temporais para o AreaChart
+  revenueData?: Record<string, unknown>[]; // Dados temporais para o AreaChart
   loading: boolean;
 }
 

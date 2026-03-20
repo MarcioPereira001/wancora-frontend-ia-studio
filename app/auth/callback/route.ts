@@ -16,23 +16,21 @@ export async function GET(request: NextRequest) {
       SUPABASE_URL || '',
       SUPABASE_ANON_KEY || '',
       {
+        cookieOptions: {
+          sameSite: 'none',
+          secure: true,
+        },
         cookies: {
-          get(name: string) {
-            return request.cookies.get(name)?.value;
+          getAll() {
+            return request.cookies.getAll();
           },
-          set(name: string, value: string, options: CookieOptions) {
-            // Em Route Handlers, devemos definir os cookies no objeto NextResponse
-            response.cookies.set({
-              name,
-              value,
-              ...options,
-            });
-          },
-          remove(name: string, options: CookieOptions) {
-            response.cookies.set({
-              name,
-              value: '',
-              ...options,
+          setAll(cookiesToSet) {
+            cookiesToSet.forEach(({ name, value, options }) => {
+              response.cookies.set({
+                name,
+                value,
+                ...options,
+              });
             });
           },
         },

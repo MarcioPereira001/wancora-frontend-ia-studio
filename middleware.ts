@@ -35,6 +35,10 @@ export async function middleware(request: NextRequest) {
         supabaseUrl,
         supabaseKey,
         {
+          cookieOptions: {
+            sameSite: 'none',
+            secure: true,
+          },
           cookies: {
             getAll() {
               return request.cookies.getAll()
@@ -96,9 +100,20 @@ export async function middleware(request: NextRequest) {
       return response
 
   } catch (e) {
-      // 7. Fail Open: Se o middleware crashar, permite o acesso (evita 500 total)
-      // O layout ou a página vão tratar a falta de dados.
+      // 7. Fail Closed: Se o middleware crashar (ex: erro de rede, token malformado),
+      // redireciona para o login para garantir a segurança.
       console.error('🔥 Middleware Critical Error:', e);
+      
+      // Se for rota pública, permite. Se não, bloqueia.
+      if (
+          request.nextUrl.pathname.startsWith('/dashboard') || 
+          request.nextUrl.pathname.startsWith('/crm') || 
+          request.nextUrl.pathname.startsWith('/chat') ||
+          request.nextUrl.pathname.startsWith('/settings')
+      ) {
+          return NextResponse.redirect(new URL('/auth/login', request.url));
+      }
+      
       return response;
   }
 }

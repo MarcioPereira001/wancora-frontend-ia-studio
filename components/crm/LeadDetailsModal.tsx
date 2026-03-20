@@ -110,7 +110,7 @@ export function LeadDetailsModal({ lead, isOpen, onClose }: LeadDetailsModalProp
         
         addToast({ type: 'success', title: 'Salvo', message: 'Lead atualizado.' });
         onClose();
-      } catch (error: any) {
+      } catch (error: unknown) {
         console.error(error);
         addToast({ type: 'error', title: 'Erro', message: 'Erro ao salvar alterações.' });
       } finally {
@@ -124,8 +124,9 @@ export function LeadDetailsModal({ lead, isOpen, onClose }: LeadDetailsModalProp
       try {
         await deleteLead(data.id);
         onClose();
-      } catch (error: any) {
-        addToast({ type: 'error', title: 'Erro', message: error.message });
+      } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : String(error);
+        addToast({ type: 'error', title: 'Erro', message: msg });
       } finally {
         setLoading(false);
       }

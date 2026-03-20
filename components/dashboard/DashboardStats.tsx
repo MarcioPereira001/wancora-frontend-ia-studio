@@ -9,7 +9,7 @@ interface DashboardStatsProps {
   loading: boolean;
 }
 
-const StatItem = ({ title, value, isPositive, icon: Icon, color, loading }: any) => (
+const StatItem = ({ title, value, isPositive, icon: Icon, color, loading }: { title: string, value: string | number, isPositive: boolean, icon: any, color: string, loading: boolean }) => (
   <Card className="glass-panel border-zinc-800 bg-zinc-900/40 hover:bg-zinc-900/60 transition-all duration-300 group">
     <CardContent className="p-6">
         <div className="flex items-center justify-between mb-4">

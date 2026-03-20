@@ -447,7 +447,7 @@ export function SeniorAgentForm({ initialData, companyId, onSuccess }: SeniorAge
         )}
 
         <PromptGeneratorModal isOpen={isGeneratorOpen} onClose={() => setIsGeneratorOpen(false)} onGenerated={(text) => setSystemPrompt(text)} />
-        <AgentSimulator isOpen={isSimulatorOpen} onClose={() => setIsSimulatorOpen(false)} systemPrompt={fullSimulationPrompt} agentName={name} contextFiles={files.map(f => f.name)} />
+        <AgentSimulator isOpen={isSimulatorOpen} onClose={() => setIsSimulatorOpen(false)} systemPrompt={fullSimulationPrompt} agentName={name} contextFiles={files} />
     </div>
   );
 }

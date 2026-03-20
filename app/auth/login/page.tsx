@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,12 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
+  const [isIframe, setIsIframe] = useState(false);
+
+  useEffect(() => {
+    setIsIframe(window !== window.top);
+  }, []);
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -31,11 +37,14 @@ export default function LoginPage() {
       if (error) throw error;
 
       addToast({ type: 'success', title: "Sucesso", message: "Login realizado com sucesso!" });
-      router.push("/dashboard");
-      router.refresh();
       
-    } catch (error: any) {
-      addToast({ type: 'error', title: "Erro", message: error.message || "Credenciais inválidas." });
+      // No ambiente de preview do AI Studio, o router.push pode sofrer com cache de middleware.
+      // Usar window.location.href força um reload completo e garante que os cookies sejam lidos.
+      window.location.href = "/dashboard";
+      
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      addToast({ type: 'error', title: "Erro", message: msg || "Credenciais inválidas." });
     } finally {
       setLoading(false);
     }
@@ -53,6 +62,11 @@ export default function LoginPage() {
           <CardDescription className="text-center text-zinc-400">Entre para gerenciar seu atendimento</CardDescription>
         </CardHeader>
         <CardContent>
+          {isIframe && (
+            <div className="mb-4 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg text-xs text-yellow-500 text-center">
+              ⚠️ <strong>Aviso de Preview:</strong> O login pode falhar neste ambiente devido ao bloqueio de cookies de terceiros pelo navegador. Por favor, <strong>abra o app em uma nova aba</strong> para fazer login.
+            </div>
+          )}
           <form onSubmit={handleLogin} className="space-y-4">
             <div className="space-y-2">
               <label className="text-xs font-medium text-zinc-400 uppercase">Email</label>

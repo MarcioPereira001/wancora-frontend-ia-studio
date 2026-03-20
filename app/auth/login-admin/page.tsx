@@ -1,7 +1,7 @@
 
 'use client';
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,12 @@ export default function AdminLoginPage() {
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+
+  const [isIframe, setIsIframe] = useState(false);
+
+  useEffect(() => {
+    setIsIframe(window !== window.top);
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -41,11 +47,13 @@ export default function AdminLoginPage() {
       }
 
       addToast({ type: 'success', title: "Acesso Concedido", message: "Bem-vindo à Matrix, Admin." });
-      router.push("/admin/dashboard");
-      router.refresh();
       
-    } catch (error: any) {
-      addToast({ type: 'error', title: "Acesso Negado", message: error.message || "Credenciais inválidas." });
+      // No ambiente de preview do AI Studio, o router.push pode sofrer com cache de middleware.
+      // Usar window.location.href força um reload completo e garante que os cookies sejam lidos.
+      window.location.href = "/admin/dashboard";
+      
+    } catch (error: unknown) {
+      addToast({ type: 'error', title: "Acesso Negado", message: error instanceof Error ? error.message : "Credenciais inválidas." });
     } finally {
       setLoading(false);
     }
@@ -68,6 +76,11 @@ export default function AdminLoginPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
+          {isIframe && (
+            <div className="mb-4 p-3 bg-red-900/20 border border-red-900/50 rounded-lg text-xs text-red-400 text-center font-mono">
+              ⚠️ <strong>AVISO DE SEGURANÇA:</strong> Ambiente de preview detectado. O login falhará devido ao bloqueio de cookies de terceiros. <strong>Abra em uma nova aba</strong>.
+            </div>
+          )}
           <form onSubmit={handleLogin} className="space-y-4">
             <div className="space-y-2">
               <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">ID de Comando</label>

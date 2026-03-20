@@ -6,7 +6,7 @@ import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { generateAgentPromptAction } from '@/app/actions/gemini';
+import { geminiService } from '@/services/geminiService';
 import { Sparkles, Loader2, ArrowRight } from 'lucide-react';
 import { useToast } from '@/hooks/useToast';
 
@@ -36,7 +36,7 @@ export function PromptGeneratorModal({ isOpen, onClose, onGenerated }: PromptGen
 
         setLoading(true);
         try {
-            const res = await generateAgentPromptAction(formData);
+            const res = await geminiService.generateAgentPrompt(formData);
             if (res.text) {
                 onGenerated(res.text);
                 addToast({ type: 'success', title: 'Sucesso', message: 'Prompt gerado com IA!' });

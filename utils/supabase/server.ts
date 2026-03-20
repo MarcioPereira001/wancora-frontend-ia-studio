@@ -19,6 +19,10 @@ export async function createClient() {
     url || '',
     key || '',
     {
+      cookieOptions: {
+        sameSite: 'none',
+        secure: true,
+      },
       cookies: {
         getAll() {
           return cookieStore.getAll()

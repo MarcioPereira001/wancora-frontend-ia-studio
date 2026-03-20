@@ -46,8 +46,8 @@ export default function AdminSettingsPage() {
             const { error } = await supabase.from('system_config').update(config).eq('id', '00000000-0000-0000-0000-000000000000');
             if (error) throw error;
             addToast({ type: 'success', title: 'Salvo', message: 'Configurações globais aplicadas.' });
-        } catch (e: any) {
-            addToast({ type: 'error', title: 'Erro', message: e.message });
+        } catch (e: unknown) {
+            addToast({ type: 'error', title: 'Erro', message: e instanceof Error ? e.message : String(e) });
         } finally {
             setSaving(false);
         }

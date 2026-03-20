@@ -126,7 +126,7 @@ export async function bookAppointment(formData: BookingData) {
 
       return { success: true };
 
-  } catch (err: any) {
+  } catch (err: unknown) {
       console.error("[Booking] Exception:", err);
       return { error: "Erro inesperado no servidor." };
   }

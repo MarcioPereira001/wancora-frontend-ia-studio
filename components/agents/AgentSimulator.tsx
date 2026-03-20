@@ -5,7 +5,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Modal } from '@/components/ui/Modal';
 import { Textarea } from '@/components/ui/textarea'; // Mudado de Input para Textarea
 import { Button } from '@/components/ui/button';
-import { simulateChatAction } from '@/app/actions/gemini';
+import { geminiService } from '@/services/geminiService';
 import { Bot, User, Send, Trash2, Loader2, PlayCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -14,7 +14,7 @@ interface AgentSimulatorProps {
     onClose: () => void;
     systemPrompt: string;
     agentName: string;
-    contextFiles?: string[]; // Nomes dos arquivos para simular contexto
+    contextFiles?: {name: string, url: string, type: string}[]; // Arquivos reais para contexto
 }
 
 interface Message {
@@ -53,10 +53,10 @@ export function AgentSimulator({ isOpen, onClose, systemPrompt, agentName, conte
 
             // Simula conhecimento básico dos arquivos (apenas nomes por enquanto no simulador leve)
             const knowledgeBase = contextFiles.length > 0 
-                ? `O agente tem acesso aos seguintes arquivos (simulado): ${contextFiles.join(', ')}.` 
+                ? `O agente tem acesso aos seguintes arquivos reais anexados: ${contextFiles.map(f => f.name).join(', ')}.` 
                 : "Sem arquivos anexados.";
 
-            const res = await simulateChatAction(historyPayload, systemPrompt, knowledgeBase);
+            const res = await geminiService.simulateChat(historyPayload, systemPrompt, knowledgeBase, contextFiles);
             
             if (res.text) {
                 setMessages(prev => [...prev, { role: 'model', text: res.text || '' }]);

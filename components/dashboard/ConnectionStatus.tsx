@@ -24,8 +24,8 @@ export function ConnectionStatus() {
         const sessionId = instance?.session_id || 'default';
         await whatsappService.connectInstance(sessionId, instance?.name);
         addToast({ type: 'info', title: 'Iniciando', message: 'Solicitando QR Code ao servidor...' });
-    } catch (e: any) {
-        addToast({ type: 'error', title: 'Erro', message: e.message });
+    } catch (e: unknown) {
+        addToast({ type: 'error', title: 'Erro', message: e instanceof Error ? e.message : 'Erro desconhecido' });
     } finally {
         setLoadingAction(false);
     }
@@ -37,8 +37,8 @@ export function ConnectionStatus() {
     setLoadingAction(true);
     try {
         await whatsappService.logoutInstance(instance.session_id);
-    } catch (e: any) {
-        addToast({ type: 'error', title: 'Erro', message: e.message });
+    } catch (e: unknown) {
+        addToast({ type: 'error', title: 'Erro', message: e instanceof Error ? e.message : 'Erro desconhecido' });
     } finally {
         setLoadingAction(false);
     }

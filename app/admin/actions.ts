@@ -17,7 +17,7 @@ const supabaseAdmin = createClient(
 );
 
 // Helper de Log
-const logAdminAction = async (action: string, details: any, level: 'info' | 'error' = 'info') => {
+const logAdminAction = async (action: string, details: Record<string, unknown>, level: 'info' | 'error' = 'info') => {
     try {
         await supabaseAdmin.from('system_logs').insert({
             level,
@@ -56,9 +56,8 @@ export async function getAdminClients() {
 
         // Normaliza dados para o formato da view
         return companies.map(c => {
-            const owner = Array.isArray(c.profiles) 
-                ? c.profiles.find((p: any) => p.role === 'owner') || c.profiles[0] 
-                : c.profiles;
+            const profilesArray = Array.isArray(c.profiles) ? c.profiles : [c.profiles];
+            const owner = profilesArray.find((p: { role?: string, id?: string, email?: string, name?: string }) => p?.role === 'owner') || profilesArray[0];
                 
             return {
                 company_id: c.id,
@@ -73,9 +72,10 @@ export async function getAdminClients() {
             };
         });
 
-    } catch (error: any) {
-        console.error("Admin Fetch Error:", error.message);
-        await logAdminAction('getAdminClients', { error: error.message }, 'error');
+    } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : String(error);
+        console.error("Admin Fetch Error:", msg);
+        await logAdminAction('getAdminClients', { error: msg }, 'error');
         return []; 
     }
 }
@@ -94,8 +94,9 @@ export async function toggleCompanyStatus(companyId: string, currentStatus: stri
         await logAdminAction('toggleCompanyStatus', { companyId, newStatus });
         revalidatePath('/admin/users');
         return { success: true, newStatus };
-    } catch (error: any) {
-        throw new Error("Erro ao atualizar status: " + error.message);
+    } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : String(error);
+        throw new Error("Erro ao atualizar status: " + msg);
     }
 }
 
@@ -111,8 +112,9 @@ export async function updateCompanyPlan(companyId: string, newPlan: string) {
         await logAdminAction('updateCompanyPlan', { companyId, newPlan });
         revalidatePath('/admin/users');
         return { success: true };
-    } catch (error: any) {
-        throw new Error("Erro ao atualizar plano: " + error.message);
+    } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : String(error);
+        throw new Error("Erro ao atualizar plano: " + msg);
     }
 }
 
@@ -122,7 +124,7 @@ export async function impersonateByEmail(email: string) {
 
     try {
         // Gera um Magic Link com validade curta (60s)
-        const { data, error } = await (supabaseAdmin.auth as any).admin.generateLink({
+        const { data, error } = await supabaseAdmin.auth.admin.generateLink({
             type: 'magiclink',
             email: email,
             options: {
@@ -137,8 +139,9 @@ export async function impersonateByEmail(email: string) {
         // Retorna a URL de ação que contém o token de acesso
         // Ao visitar essa URL, o Supabase setará os cookies do usuário alvo
         return { url: data.properties?.action_link };
-    } catch (error: any) {
-        await logAdminAction('impersonateUser_Failed', { email, error: error.message }, 'error');
+    } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : String(error);
+        await logAdminAction('impersonateUser_Failed', { email, error: msg }, 'error');
         throw error;
     }
 }
@@ -158,7 +161,7 @@ export async function getAdminFeedbacks() {
 
         if (error) throw error;
         return data;
-    } catch (error: any) {
+    } catch (error: unknown) {
         return [];
     }
 }

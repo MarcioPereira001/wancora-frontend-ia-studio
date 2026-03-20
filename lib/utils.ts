@@ -78,23 +78,26 @@ export function formatPhone(jid: string | null | undefined): string {
 }
 
 // LÓGICA DE OURO v4: HIERARQUIA DE NOMES (NULL SAFE)
-export function getDisplayName(contact: any): string {
+export function getDisplayName(contact: Record<string, unknown> | null | undefined): string {
     if (!contact) return "Usuário";
 
-    if (contact.is_group || contact.remote_jid?.includes('@g.us')) {
-        if (contact.name && contact.name !== contact.remote_jid) return contact.name;
+    if (contact.is_group || (typeof contact.remote_jid === 'string' && contact.remote_jid.includes('@g.us'))) {
+        if (typeof contact.name === 'string' && contact.name !== contact.remote_jid) return contact.name;
         return "Grupo Sem Nome";
     }
     
-    if (contact.name && contact.name.trim() !== '') {
+    if (typeof contact.name === 'string' && contact.name.trim() !== '') {
         return contact.name;
     }
     
-    if (contact.push_name && contact.push_name.trim() !== '') {
+    if (typeof contact.push_name === 'string' && contact.push_name.trim() !== '') {
         return `~${contact.push_name}`; 
     }
     
-    return formatPhone(contact.remote_jid || contact.jid || contact.phone_number || '');
+    const phone = typeof contact.remote_jid === 'string' ? contact.remote_jid : 
+                  typeof contact.jid === 'string' ? contact.jid : 
+                  typeof contact.phone_number === 'string' ? contact.phone_number : '';
+    return formatPhone(phone);
 }
 
 export const delay = (ms: number) => new Promise(res => setTimeout(res, ms));

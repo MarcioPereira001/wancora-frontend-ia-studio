@@ -5,6 +5,7 @@ import { createClient } from '@/utils/supabase/client';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { KanbanColumn, Lead, Pipeline, PipelineStage } from '@/types';
 import { useToast } from '@/hooks/useToast';
+import { SystemLogger } from '@/lib/logger';
 
 export function useKanban() {
   const { user } = useAuthStore();
@@ -98,21 +99,35 @@ export function useKanban() {
       // 1. Atualização Visual Instantânea (Store Local)
       moveLeadOptimistic(leadId, toStageId, newPosition);
 
-      // 2. Gravação no Banco (Server)
-      const { error } = await supabase
-        .from('leads')
-        .update({ 
-            pipeline_stage_id: toStageId, 
-            position: newPosition,
-            updated_at: new Date().toISOString() 
-        })
-        .eq('id', leadId); 
-      
-      if (error) throw error;
+      // 2. Gravação no Banco (Server) via RPC para evitar Race Conditions
+      // A RPC 'move_lead_atomic' garante que a posição seja atualizada de forma segura
+      // mesmo se múltiplos usuários moverem cards ao mesmo tempo.
+      try {
+          const { error } = await supabase.rpc('move_lead_atomic', {
+              p_lead_id: leadId,
+              p_new_stage_id: toStageId,
+              p_new_position: newPosition
+          });
+          
+          if (error) throw error;
+      } catch (e) {
+          // Fallback para update direto caso a RPC não exista no banco ainda
+          SystemLogger.warn('RPC move_lead_atomic falhou, usando fallback direto', { error: e });
+          const { error: fallbackError } = await supabase
+            .from('leads')
+            .update({ 
+                pipeline_stage_id: toStageId, 
+                position: newPosition,
+                updated_at: new Date().toISOString() 
+            })
+            .eq('id', leadId); 
+          
+          if (fallbackError) throw fallbackError;
+      }
     },
     onError: (err) => {
       console.error(err);
-      addToast({ type: 'error', title: 'Erro', message: 'Falha ao sincronizar movimento.' });
+      addToast({ type: 'error', title: 'Erro de Sincronização', message: 'O card voltou à posição original. Tente novamente.' });
       // Se der erro, força um refresh total para garantir a verdade do banco
       useCRMStore.getState().initializeCRM(user?.company_id || '');
     }
@@ -175,7 +190,7 @@ export function useKanban() {
 
   const updateStageMutation = useMutation({
       mutationFn: async ({ id, name, color }: { id: string, name?: string, color?: string }) => {
-          const updates: any = {};
+          const updates: Record<string, string> = {};
           if(name) updates.name = name;
           if(color) updates.color = color;
           await supabase.from('pipeline_stages').update(updates).eq('id', id);
@@ -193,13 +208,13 @@ export function useKanban() {
   });
 
   // Funções simples de CRUD (A Store atualizará sozinha via WebSocket)
-  const createLead = async (data: any) => {
+  const createLead = async (data: Record<string, unknown>) => {
       const position = Date.now(); 
       const { error } = await supabase.from('leads').insert({ ...data, company_id: user?.company_id, position });
       if(error) throw error;
   };
 
-  const updateLead = async ({id, data}: any) => {
+  const updateLead = async ({id, data}: {id: string, data: Record<string, unknown>}) => {
       const { error } = await supabase.from('leads').update(data).eq('id', id);
       if(error) throw error;
   };

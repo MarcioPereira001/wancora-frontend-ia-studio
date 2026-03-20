@@ -61,8 +61,8 @@ export default function SettingsPage() {
           if (error) throw error;
           setUser({ ...user, name });
           addToast({ type: 'success', title: 'Sucesso', message: 'Perfil atualizado.' });
-      } catch (error: any) {
-          addToast({ type: 'error', title: 'Erro', message: error.message });
+      } catch (error: unknown) {
+          addToast({ type: 'error', title: 'Erro', message: error instanceof Error ? error.message : 'Erro desconhecido' });
       } finally {
           setLoading(false);
       }
@@ -86,8 +86,8 @@ export default function SettingsPage() {
 
           if (error) throw error;
           addToast({ type: 'success', title: 'Salvo', message: 'Configurações atualizadas.' });
-      } catch (error: any) {
-          addToast({ type: 'error', title: 'Erro', message: error.message });
+      } catch (error: unknown) {
+          addToast({ type: 'error', title: 'Erro', message: error instanceof Error ? error.message : 'Erro desconhecido' });
       } finally {
           setLoading(false);
       }

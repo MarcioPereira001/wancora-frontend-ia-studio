@@ -1,6 +1,5 @@
-
-import React, { useState, useRef, useMemo } from 'react';
-import { Search, RefreshCw, Filter, Loader2, DollarSign, GripVertical, Settings2, Users } from 'lucide-react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
+import { Search, RefreshCw, Loader2, DollarSign, GripVertical, Settings2, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useKanban } from '@/hooks/useKanban';
@@ -8,37 +7,168 @@ import { KanbanCard } from './KanbanCard';
 import { Lead, KanbanColumn } from '@/types';
 import { cn, formatCurrency } from '@/lib/utils';
 import { LeadDetailsModal } from './LeadDetailsModal';
-import { NewLeadModal } from './NewLeadModal';
 import { EditStageModal } from './EditStageModal';
 import { useTeam } from '@/hooks/useTeam';
 import { useSound } from '@/hooks/useSound';
 
+import {
+  DndContext,
+  DragOverlay,
+  closestCorners,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragStartEvent,
+  DragOverEvent,
+  DragEndEvent,
+  defaultDropAnimationSideEffects,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  arrayMove,
+  sortableKeyboardCoordinates,
+  horizontalListSortingStrategy,
+  verticalListSortingStrategy,
+  useSortable,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+
+// --- SORTABLE CARD COMPONENT ---
+function SortableCard({ lead, owner, onClick }: { lead: Lead, owner: any, onClick: any }) {
+  const { setNodeRef, attributes, listeners, transform, transition, isDragging } = useSortable({
+    id: lead.id,
+    data: { type: 'CARD', lead },
+  });
+
+  const style = {
+    transition,
+    transform: CSS.Transform.toString(transform),
+  };
+
+  return (
+    <KanbanCard 
+      lead={lead} 
+      owner={owner} 
+      onClick={onClick}
+      setNodeRef={setNodeRef}
+      attributes={attributes}
+      listeners={listeners}
+      style={style}
+      isDragging={isDragging}
+    />
+  );
+}
+
+// --- SORTABLE COLUMN COMPONENT ---
+function SortableColumn({ col, items, members, onEdit, onClickCard }: any) {
+  const { setNodeRef, setActivatorNodeRef, attributes, listeners, transform, transition, isDragging } = useSortable({
+    id: col.id,
+    data: { type: 'COLUMN', col },
+  });
+
+  const style = {
+    transition,
+    transform: CSS.Transform.toString(transform),
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div 
+      ref={setNodeRef}
+      style={style}
+      className={cn(
+        "min-w-[340px] w-[340px] flex flex-col h-full shrink-0 bg-zinc-900/20 rounded-xl border transition-colors duration-200",
+        isDragging ? "border-dashed border-primary" : "border-zinc-800/50 hover:border-zinc-700/50"
+      )}
+    >
+      {/* Column Header */}
+      <div 
+        ref={setActivatorNodeRef}
+        {...attributes}
+        {...listeners}
+        className="p-3 border-b border-zinc-800/50 bg-zinc-900/50 rounded-t-xl backdrop-blur-sm group/header relative hover:bg-zinc-900/80 transition-colors cursor-grab active:cursor-grabbing interactive"
+      >
+        <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                <div className="text-zinc-600 hover:text-zinc-300 transition-colors">
+                    <GripVertical size={14} />
+                </div>
+                <div className="w-3 h-3 rounded-full shadow-[0_0_8px_currentColor] opacity-80 shrink-0" style={{ backgroundColor: col.color || '#52525b', color: col.color || '#52525b' }} />
+                <span className="font-bold text-zinc-100 text-sm tracking-tight truncate">{col.title}</span>
+            </div>
+            
+            <div className="flex items-center gap-2">
+                <span className="bg-zinc-950 text-zinc-500 text-[10px] px-2 py-0.5 rounded-full font-mono font-bold border border-zinc-800">
+                    {items.length}
+                </span>
+                <button 
+                    onClick={(e) => { e.stopPropagation(); onEdit(col); }}
+                    className="p-1 text-zinc-600 hover:text-zinc-300 opacity-0 group-hover/header:opacity-100 transition-opacity interactive"
+                >
+                    <Settings2 size={14} />
+                </button>
+            </div>
+        </div>
+        
+        <div className="flex items-center gap-1 text-xs text-zinc-500 pl-8">
+            <DollarSign size={10} />
+            <span className="font-mono">{formatCurrency(col.totalValue)}</span>
+        </div>
+      </div>
+      
+      {/* Column Body */}
+      <div className="flex-1 p-2 overflow-y-auto custom-scrollbar space-y-3 relative interactive">
+        <SortableContext items={items.map((i: any) => i.id)} strategy={verticalListSortingStrategy}>
+          {items.map((lead: any) => (
+            <SortableCard 
+              key={lead.id}
+              lead={lead}
+              owner={members.find((m: any) => m.id === lead.owner_id)}
+              onClick={onClickCard}
+            />
+          ))}
+        </SortableContext>
+        {items.length === 0 && (
+            <div className="h-32 flex flex-col items-center justify-center text-zinc-600 border-2 border-dashed border-zinc-800/30 rounded-xl m-1">
+                <p className="text-xs font-medium opacity-50">Solte aqui</p>
+            </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function KanbanBoard() {
   const { columns, loading, refresh, moveLead, reorderStages } = useKanban();
   const { members } = useTeam();
-  const { play } = useSound(); // Hook de som
+  const { play } = useSound();
   
+  const [localColumns, setLocalColumns] = useState<KanbanColumn[]>([]);
+  
+  useEffect(() => {
+    setLocalColumns(columns);
+  }, [columns]);
+
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedUserId, setSelectedUserId] = useState<string>('all');
   
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [editingStage, setEditingStage] = useState<KanbanColumn | null>(null);
 
-  const [draggingType, setDraggingType] = useState<'CARD' | 'COLUMN' | null>(null);
-  const [draggingId, setDraggingId] = useState<string | null>(null);
-  const [draggingFromCol, setDraggingFromCol] = useState<string | null>(null); 
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [activeType, setActiveType] = useState<'COLUMN' | 'CARD' | null>(null);
+  const [activeData, setActiveData] = useState<any>(null);
   
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const isDown = useRef(false);
   const startX = useRef(0);
   const scrollLeft = useRef(0);
 
-  // Filtering Optimization: Memoize to avoid recalc on every render
   const filteredColumns = useMemo(() => {
-      return columns.map(col => ({
+      return localColumns.map(col => ({
           ...col,
           items: col.items.filter(item => {
-              // SAFE SEARCH: Garante que name nunca seja null antes do toLowerCase
               const itemName = (item.name || '').toLowerCase();
               const itemPhone = (item.phone || '').toLowerCase();
               const searchLower = searchTerm.toLowerCase();
@@ -53,107 +183,155 @@ export function KanbanBoard() {
               return matchesSearch && matchesUser;
           })
       }));
-  }, [columns, searchTerm, selectedUserId]);
+  }, [localColumns, searchTerm, selectedUserId]);
 
-  // --- DND HANDLERS ---
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 5,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
 
-  const handleDragStart = (e: React.DragEvent, type: 'CARD' | 'COLUMN', id: string, colId?: string) => {
-    e.stopPropagation(); 
-    setDraggingType(type);
-    setDraggingId(id);
-    if (type === 'CARD' && colId) setDraggingFromCol(colId);
-    e.dataTransfer.effectAllowed = "move";
+  const handleDragStart = (event: DragStartEvent) => {
+    const { active } = event;
+    setActiveId(active.id as string);
+    setActiveType(active.data.current?.type);
+    setActiveData(active.data.current);
   };
 
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault(); 
+  const handleDragOver = (event: DragOverEvent) => {
+    const { active, over } = event;
+    if (!over) return;
+
+    const activeId = active.id as string;
+    const overId = over.id as string;
+
+    if (activeId === overId) return;
+
+    const isActiveCard = active.data.current?.type === 'CARD';
+    const isOverColumn = over.data.current?.type === 'COLUMN';
+
+    if (!isActiveCard) return;
+
+    setLocalColumns((prev) => {
+      const activeColumn = prev.find(c => c.items.some(i => i.id === activeId));
+      const overColumn = isOverColumn 
+        ? prev.find(c => c.id === overId)
+        : prev.find(c => c.items.some(i => i.id === overId));
+
+      if (!activeColumn || !overColumn) return prev;
+
+      if (activeColumn.id !== overColumn.id) {
+        const activeItems = [...activeColumn.items];
+        const overItems = [...overColumn.items];
+        
+        const activeIndex = activeItems.findIndex(i => i.id === activeId);
+        const overIndex = isOverColumn 
+          ? overItems.length 
+          : overItems.findIndex(i => i.id === overId);
+
+        const [item] = activeItems.splice(activeIndex, 1);
+        const updatedItem = { ...item, pipeline_stage_id: overColumn.id };
+        
+        overItems.splice(overIndex, 0, updatedItem);
+
+        return prev.map(c => {
+          if (c.id === activeColumn.id) return { ...c, items: activeItems };
+          if (c.id === overColumn.id) return { ...c, items: overItems };
+          return c;
+        });
+      }
+
+      return prev;
+    });
   };
 
-  const handleDrop = (e: React.DragEvent, targetId: string, type: 'CARD' | 'COLUMN') => {
-    e.preventDefault();
-    e.stopPropagation();
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    setActiveId(null);
+    setActiveType(null);
+    setActiveData(null);
 
-    // CARD DROP - LÓGICA SMART (Posicionamento Matemático)
-    if (draggingType === 'CARD' && type === 'COLUMN') {
-        const column = filteredColumns.find(c => c.id === targetId);
-        if (!column) return;
-
-        // 1. Identificar cards na coluna alvo
-        const cardsInColumn = column.items;
-        
-        // 2. Calcular onde soltou (baseado no Y do mouse)
-        // Precisamos encontrar o card que está LOGO ABAIXO do mouse
-        const dropY = e.clientY;
-        
-        // Itera sobre os elementos visuais da coluna (usando o DOM, pois a geometria importa)
-        if (draggingId) {
-            let newPosition = 0;
-            
-            // Re-analisa posição exata para inserção precisa
-            // Se não temos elementos visuais suficientes para calcular, usamos a lógica de lista
-            const elements = Array.from(document.querySelectorAll(`[data-column-id="${targetId}"] .kanban-card-wrapper`));
-            let indexToInsert = elements.length; // Default: final
-
-            for (let i = 0; i < elements.length; i++) {
-                const rect = elements[i].getBoundingClientRect();
-                const middleY = rect.top + rect.height / 2;
-                if (e.clientY < middleY) {
-                    indexToInsert = i;
-                    break;
-                }
-            }
-
-            // Cards visuais nesta ordem
-            const targetCards = [...cardsInColumn];
-            const existingIdx = targetCards.findIndex(c => c.id === draggingId);
-            if (existingIdx !== -1) targetCards.splice(existingIdx, 1);
-
-            if (targetCards.length === 0) {
-                // Coluna vazia: Usa Date.now() + Random para evitar colisão absoluta em drops rápidos
-                newPosition = Date.now() + Math.random();
-            } else if (indexToInsert === 0) {
-                // Topo
-                newPosition = (targetCards[0].position || 0) - 1000;
-            } else if (indexToInsert >= targetCards.length) {
-                // Fundo
-                newPosition = (targetCards[targetCards.length - 1].position || 0) + 1000;
-            } else {
-                // Meio (Média aritmética)
-                const posAbove = targetCards[indexToInsert - 1]?.position || 0;
-                const posBelow = targetCards[indexToInsert]?.position || 0;
-                newPosition = (posAbove + posBelow) / 2;
-            }
-
-            // Move e toca som
-            moveLead(draggingId, targetId, newPosition);
-            play('success'); // Toca som de sucesso
-        }
+    if (!over) {
+      setLocalColumns(columns);
+      return;
     }
 
-    // COLUMN DROP (Reorder)
-    if (draggingType === 'COLUMN' && type === 'COLUMN') {
-        if (draggingId && draggingId !== targetId) {
-            const oldIndex = columns.findIndex(c => c.id === draggingId);
-            const newIndex = columns.findIndex(c => c.id === targetId);
-            
-            if (oldIndex !== -1 && newIndex !== -1) {
-                const newOrder = [...columns];
-                const [moved] = newOrder.splice(oldIndex, 1);
-                newOrder.splice(newIndex, 0, moved);
-                const payload = newOrder.map((col, idx) => ({ id: col.id, position: idx }));
-                reorderStages(payload);
-            }
-        }
+    const activeId = active.id as string;
+    const overId = over.id as string;
+
+    const isActiveColumn = active.data.current?.type === 'COLUMN';
+    if (isActiveColumn) {
+      if (activeId !== overId) {
+        const oldIndex = localColumns.findIndex(c => c.id === activeId);
+        const newIndex = localColumns.findIndex(c => c.id === overId);
+        const newOrder = arrayMove(localColumns, oldIndex, newIndex);
+        setLocalColumns(newOrder);
+        
+        const payload = newOrder.map((col, idx) => ({ id: col.id, position: idx }));
+        reorderStages(payload);
+      }
+      return;
     }
 
-    setDraggingType(null);
-    setDraggingId(null);
-    setDraggingFromCol(null);
+    // It's a CARD
+    const activeColumn = localColumns.find(c => c.items.some(i => i.id === activeId));
+    const overColumn = over.data.current?.type === 'COLUMN' 
+      ? localColumns.find(c => c.id === overId)
+      : localColumns.find(c => c.items.some(i => i.id === overId));
+
+    if (!activeColumn || !overColumn) {
+      setLocalColumns(columns);
+      return;
+    }
+
+    const activeIndex = activeColumn.items.findIndex(i => i.id === activeId);
+    const overIndex = over.data.current?.type === 'COLUMN'
+      ? overColumn.items.length
+      : overColumn.items.findIndex(i => i.id === overId);
+
+    if (activeColumn.id === overColumn.id) {
+      if (activeIndex !== overIndex) {
+        const newItems = arrayMove(activeColumn.items, activeIndex, overIndex);
+        setLocalColumns(prev => prev.map(c => c.id === activeColumn.id ? { ...c, items: newItems } : c));
+        
+        const newPos = calculateNewPosition(newItems, overIndex);
+        moveLead(activeId, overColumn.id, newPos);
+        play('success');
+      }
+    } else {
+      const newItems = [...overColumn.items];
+      const currentItemIndex = newItems.findIndex(i => i.id === activeId);
+      if (currentItemIndex !== -1 && currentItemIndex !== overIndex) {
+          const finalItems = arrayMove(newItems, currentItemIndex, overIndex);
+          setLocalColumns(prev => prev.map(c => c.id === overColumn.id ? { ...c, items: finalItems } : c));
+          const newPos = calculateNewPosition(finalItems, overIndex);
+          moveLead(activeId, overColumn.id, newPos);
+      } else {
+          const newPos = calculateNewPosition(newItems, currentItemIndex !== -1 ? currentItemIndex : overIndex);
+          moveLead(activeId, overColumn.id, newPos);
+      }
+      play('success');
+    }
   };
+
+  function calculateNewPosition(items: any[], index: number) {
+    if (items.length <= 1) return Date.now() + Math.random();
+    if (index === 0) return (items[1]?.position || 0) - 1000;
+    if (index === items.length - 1) return (items[items.length - 2]?.position || 0) + 1000;
+    
+    const posAbove = items[index - 1]?.position || 0;
+    const posBelow = items[index + 1]?.position || 0;
+    return (posAbove + posBelow) / 2;
+  }
 
   // --- SCROLL PAN HANDLERS ---
   const onMouseDown = (e: React.MouseEvent) => {
-     if ((e.target as HTMLElement).closest('.interactive') || draggingType) return;
+     if ((e.target as HTMLElement).closest('.interactive') || activeId) return;
      e.preventDefault(); 
      isDown.current = true;
      if(scrollContainerRef.current) {
@@ -192,7 +370,7 @@ export function KanbanBoard() {
     );
   }
 
-  const totalPipelineValue = columns.reduce((acc, col) => acc + col.totalValue, 0);
+  const totalPipelineValue = localColumns.reduce((acc, col) => acc + col.totalValue, 0);
 
   return (
     <div className="flex flex-col h-full space-y-4 animate-in fade-in duration-500 select-none">
@@ -235,103 +413,56 @@ export function KanbanBoard() {
       </div>
 
       {/* Board Container */}
-      <div 
-        ref={scrollContainerRef}
-        onMouseDown={onMouseDown}
-        onMouseLeave={onMouseLeave}
-        onMouseUp={onMouseUp}
-        onMouseMove={onMouseMove}
-        className="flex-1 flex gap-4 overflow-x-auto pb-4 px-1 cursor-grab active:cursor-grabbing custom-scrollbar"
-        style={{ scrollBehavior: 'auto' }} 
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCorners}
+        onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
+        onDragEnd={handleDragEnd}
       >
-        {filteredColumns.map((col) => {
-          // Itens já estão filtrados pelo useMemo
-          const items = col.items;
-          
-          return (
-            <div 
+        <div 
+          ref={scrollContainerRef}
+          onMouseDown={onMouseDown}
+          onMouseLeave={onMouseLeave}
+          onMouseUp={onMouseUp}
+          onMouseMove={onMouseMove}
+          className="flex-1 flex gap-4 overflow-x-auto pb-4 px-1 cursor-grab active:cursor-grabbing custom-scrollbar"
+          style={{ scrollBehavior: 'auto' }} 
+        >
+          <SortableContext items={filteredColumns.map(c => c.id)} strategy={horizontalListSortingStrategy}>
+            {filteredColumns.map((col) => (
+              <SortableColumn 
                 key={col.id}
-                onDragOver={handleDragOver}
-                onDrop={(e) => handleDrop(e, col.id, 'COLUMN')}
-                className={cn(
-                    "min-w-[340px] w-[340px] flex flex-col h-full shrink-0 bg-zinc-900/20 rounded-xl border transition-all duration-200",
-                    draggingType === 'COLUMN' && draggingId === col.id ? "opacity-50 border-dashed border-primary" : "border-zinc-800/50 hover:border-zinc-700/50"
-                )}
-            >
-                {/* Column Header */}
-                <div 
-                    draggable
-                    onDragStart={(e) => handleDragStart(e, 'COLUMN', col.id)}
-                    className="p-3 border-b border-zinc-800/50 bg-zinc-900/50 rounded-t-xl backdrop-blur-sm group/header relative hover:bg-zinc-900/80 transition-colors cursor-move interactive"
-                >
-                    <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2.5 flex-1 min-w-0">
-                            <div className="text-zinc-600 hover:text-zinc-300 transition-colors">
-                                <GripVertical size={14} />
-                            </div>
-                            <div className="w-3 h-3 rounded-full shadow-[0_0_8px_currentColor] opacity-80 shrink-0" style={{ backgroundColor: col.color || '#52525b', color: col.color || '#52525b' }} />
-                            <span className="font-bold text-zinc-100 text-sm tracking-tight truncate">{col.title}</span>
-                        </div>
-                        
-                        <div className="flex items-center gap-2">
-                            <span className="bg-zinc-950 text-zinc-500 text-[10px] px-2 py-0.5 rounded-full font-mono font-bold border border-zinc-800">
-                                {items.length}
-                            </span>
-                            <button 
-                                onClick={(e) => { e.stopPropagation(); setEditingStage(col); }}
-                                className="p-1 text-zinc-600 hover:text-zinc-300 opacity-0 group-hover/header:opacity-100 transition-opacity interactive"
-                            >
-                                <Settings2 size={14} />
-                            </button>
-                        </div>
-                    </div>
-                    
-                    <div className="flex items-center gap-1 text-xs text-zinc-500 pl-8">
-                        <DollarSign size={10} />
-                        <span className="font-mono">{formatCurrency(col.totalValue)}</span>
-                    </div>
-                </div>
-                
-                {/* Column Body */}
-                <div 
-                    className={cn(
-                        "flex-1 p-2 overflow-y-auto custom-scrollbar space-y-3 relative interactive",
-                        draggingType === 'CARD' && draggingFromCol && draggingFromCol !== col.id ? "bg-primary/5" : ""
-                    )}
-                    onDragOver={handleDragOver}
-                    onDrop={(e) => handleDrop(e, col.id, 'COLUMN')} 
-                    data-column-id={col.id} 
-                >
-                {/* Placeholder para Drop */}
-                {draggingType === 'CARD' && draggingFromCol && draggingFromCol !== col.id && (
-                    <div className="absolute inset-0 pointer-events-none border-2 border-dashed border-primary/20 rounded-b-xl z-0" />
-                )}
+                col={col}
+                items={col.items}
+                members={members}
+                onEdit={setEditingStage}
+                onClickCard={(l: Lead) => { if(!isDown.current) setSelectedLead(l); }}
+              />
+            ))}
+          </SortableContext>
+        </div>
 
-                {items.map(lead => (
-                    <div 
-                        key={lead.id} 
-                        id={`card-${lead.id}`} 
-                        className={cn("kanban-card-wrapper transition-all duration-200", draggingId === lead.id ? "opacity-30 grayscale scale-95" : "z-10 relative")}
-                    >
-                        <KanbanCard 
-                            lead={lead} 
-                            owner={members.find(m => m.id === lead.owner_id)}
-                            onDragStart={(e) => handleDragStart(e, 'CARD', lead.id, col.id)}
-                            onClick={(l) => { if(!isDown.current) setSelectedLead(l); }}
-                        />
-                    </div>
-                ))}
-                
-                {items.length === 0 && (
-                    <div className="h-32 flex flex-col items-center justify-center text-zinc-600 border-2 border-dashed border-zinc-800/30 rounded-xl m-1">
-                        <p className="text-xs font-medium opacity-50">Solte aqui</p>
-                    </div>
-                )}
-                </div>
-            </div>
-          );
-        })}
-      </div>
+        <DragOverlay dropAnimation={defaultDropAnimationSideEffects({ duration: 200 })}>
+          {activeId && activeType === 'CARD' && activeData?.lead ? (
+            <KanbanCard 
+              lead={activeData.lead} 
+              owner={members.find(m => m.id === activeData.lead.owner_id)}
+              onClick={() => {}}
+              isDragging
+            />
+          ) : null}
+          {activeId && activeType === 'COLUMN' && activeData?.col ? (
+            <SortableColumn 
+              col={activeData.col}
+              items={activeData.col.items}
+              members={members}
+              onEdit={() => {}}
+              onClickCard={() => {}}
+            />
+          ) : null}
+        </DragOverlay>
+      </DndContext>
 
       <LeadDetailsModal 
         lead={selectedLead} 

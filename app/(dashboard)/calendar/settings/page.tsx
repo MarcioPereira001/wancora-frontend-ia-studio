@@ -103,10 +103,10 @@ export default function CalendarSettingsPage() {
     event_location_details: 'Google Meet',
     meeting_url: '', 
     cover_url: '',
-    theme_config: THEME_TEMPLATES[0].config as any
+    theme_config: THEME_TEMPLATES[0].config as Record<string, unknown>
   });
 
-  const [notifConfig, setNotifConfig] = useState<any>({
+  const [notifConfig, setNotifConfig] = useState<Record<string, unknown>>({
       sending_session_id: '',
       admin_phone: '',
       admin_notifications: [],
@@ -148,7 +148,7 @@ export default function CalendarSettingsPage() {
                 theme_config: {
                     ...THEME_TEMPLATES[0].config, 
                     ...data.theme_config
-                } as any
+                } as Record<string, unknown>
             });
             setCurrentAvatar(data.owner_avatar || user?.avatar_url || '');
             
@@ -261,7 +261,7 @@ export default function CalendarSettingsPage() {
       }
   };
   
-  const updateTheme = (field: string, value: any) => {
+  const updateTheme = (field: string, value: string | string[]) => {
       setFormData(prev => ({ ...prev, theme_config: { ...prev.theme_config!, [field]: value } }));
   };
   const updateTitleGradient = (index: number, color: string) => {
@@ -281,18 +281,18 @@ export default function CalendarSettingsPage() {
       const cssGradient = `linear-gradient(${dir}, ${bgGradientColors[0]}, ${bgGradientColors[1]}, ${bgGradientColors[2]})`;
       updateTheme('pageBackground', cssGradient);
   }
-  const handleTemplateSelect = (tpl: any) => {
+  const handleTemplateSelect = (tpl: { name: string, config: Record<string, unknown> }) => {
       setSelectedTemplate(tpl);
       setShowTemplateDropdown(false);
-      setFormData(prev => ({ ...prev, theme_config: tpl.config as any }));
+      setFormData(prev => ({ ...prev, theme_config: tpl.config }));
       
       // Atualiza os controles manuais para refletir o template escolhido
-      if (tpl.config.pageBackground.includes('linear-gradient')) {
+      if (typeof tpl.config.pageBackground === 'string' && tpl.config.pageBackground.includes('linear-gradient')) {
           const matches = tpl.config.pageBackground.match(/#[0-9a-fA-F]{6}/g);
           if (matches) setBgGradientColors([matches[0], matches[1], matches[2] || matches[1]]);
           const dirMatch = tpl.config.pageBackground.match(/to\s[a-z]+\s?[a-z]*/);
           if (dirMatch) setBgGradientDir(dirMatch[0]);
-      } else {
+      } else if (typeof tpl.config.pageBackground === 'string') {
           setBgGradientColors([tpl.config.pageBackground, tpl.config.pageBackground, tpl.config.pageBackground]);
       }
   };
@@ -312,23 +312,23 @@ export default function CalendarSettingsPage() {
 
   const removeRule = (target: 'admin' | 'lead', id: string) => {
       const field = target === 'admin' ? 'admin_notifications' : 'lead_notifications';
-      setNotifConfig({ ...notifConfig, [field]: notifConfig[field].filter((r: any) => r.id !== id) });
+      setNotifConfig({ ...notifConfig, [field]: (notifConfig[field] as Record<string, unknown>[]).filter((r: Record<string, unknown>) => r.id !== id) });
   };
 
-  const updateRule = (target: 'admin' | 'lead', id: string, key: string, value: any) => {
+  const updateRule = (target: 'admin' | 'lead', id: string, key: string, value: string | number | boolean) => {
       const field = target === 'admin' ? 'admin_notifications' : 'lead_notifications';
       setNotifConfig({
           ...notifConfig,
-          [field]: notifConfig[field].map((r: any) => r.id === id ? { ...r, [key]: value } : r)
+          [field]: (notifConfig[field] as Record<string, unknown>[]).map((r: Record<string, unknown>) => r.id === id ? { ...r, [key]: value } : r)
       });
   };
 
   const insertTag = (target: 'admin' | 'lead', id: string, tag: string) => {
       const field = target === 'admin' ? 'admin_notifications' : 'lead_notifications';
-      const rules = notifConfig[field];
-      const rule = rules.find((r: any) => r.id === id);
+      const rules = notifConfig[field] as Record<string, unknown>[];
+      const rule = rules.find((r: Record<string, unknown>) => r.id === id);
       if (rule) {
-          const newTemplate = rule.template + " " + tag;
+          const newTemplate = String(rule.template) + " " + tag;
           updateRule(target, id, 'template', newTemplate);
       }
   };
@@ -687,7 +687,7 @@ export default function CalendarSettingsPage() {
                         
                         {/* Rules List */}
                         <div className="space-y-4">
-                            {notifConfig.admin_notifications?.map((rule: any) => (
+                            {notifConfig.admin_notifications?.map((rule: { id: string, type: string, time_amount: number, time_unit: string, template: string, active: boolean }) => (
                                 <NotificationRuleEditor 
                                     key={rule.id} 
                                     rule={rule} 
@@ -713,7 +713,7 @@ export default function CalendarSettingsPage() {
                     <CardContent className="space-y-6">
                         <p className="text-sm text-zinc-400">Configure as mensagens que o cliente receberá ao agendar.</p>
                         <div className="space-y-4">
-                            {notifConfig.lead_notifications?.map((rule: any) => (
+                            {notifConfig.lead_notifications?.map((rule: { id: string, type: string, time_amount: number, time_unit: string, template: string, active: boolean }) => (
                                 <NotificationRuleEditor 
                                     key={rule.id} 
                                     rule={rule} 
@@ -752,7 +752,7 @@ export default function CalendarSettingsPage() {
 }
 
 // --- SUBCOMPONENTE: EDITOR DE REGRA ---
-function NotificationRuleEditor({ rule, onUpdate, onRemove, onTag }: any) {
+function NotificationRuleEditor({ rule, onUpdate, onRemove, onTag }: { rule: { id: string, type: string, time_amount: number, time_unit: string, template: string, active: boolean }, onUpdate: (key: string, val: string | number | boolean) => void, onRemove: () => void, onTag: (tag: string) => void }) {
     const [showEmoji, setShowEmoji] = useState(false);
     const [showTagMenu, setShowTagMenu] = useState(false);
     const tagMenuRef = useRef<HTMLDivElement>(null);
@@ -771,7 +771,7 @@ function NotificationRuleEditor({ rule, onUpdate, onRemove, onTag }: any) {
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
-    const handleEmojiClick = (emojiData: any) => {
+    const handleEmojiClick = (emojiData: { emoji: string }) => {
         onUpdate('template', rule.template + emojiData.emoji);
     };
 

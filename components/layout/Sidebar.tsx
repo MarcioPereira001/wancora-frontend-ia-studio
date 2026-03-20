@@ -208,7 +208,7 @@ interface NavItemProps {
   item: {
     label: string;
     href: string;
-    icon: any;
+    icon: React.ElementType;
   };
   isActive: boolean;
   isCollapsed: boolean;

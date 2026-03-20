@@ -31,7 +31,7 @@ export default function IntegrationsPage() {
 
   useEffect(() => {
       if (company?.integrations_config) {
-          const c = company.integrations_config as any;
+          const c = company.integrations_config as Record<string, any>;
           setConfig({
               openai_key: c.openai?.apiKey || '',
               elevenlabs_key: c.elevenlabs?.apiKey || '',
@@ -68,14 +68,14 @@ export default function IntegrationsPage() {
 
           if (error) throw error;
           addToast({ type: 'success', title: 'Salvo', message: 'Integrações atualizadas com sucesso.' });
-      } catch (e: any) {
-          addToast({ type: 'error', title: 'Erro', message: e.message });
+      } catch (e: unknown) {
+          addToast({ type: 'error', title: 'Erro', message: e instanceof Error ? e.message : 'Erro desconhecido' });
       } finally {
           setSaving(false);
       }
   };
 
-  const IntegrationCard = ({ icon: Icon, title, desc, children, color }: any) => (
+  const IntegrationCard = ({ icon: Icon, title, desc, children, color }: { icon: any, title: string, desc: string, children: React.ReactNode, color: { bg: string, text: string } }) => (
       <Card className="bg-zinc-900/40 border-zinc-800 overflow-hidden">
           <CardHeader className="border-b border-zinc-800/50 bg-zinc-900/20 pb-4">
               <div className="flex items-center gap-3">
@@ -94,12 +94,12 @@ export default function IntegrationsPage() {
       </Card>
   );
 
-  const KeyInput = ({ label, value, fieldKey, placeholder }: any) => (
+  const KeyInput = ({ label, value, fieldKey, placeholder }: { label: string, value: string, fieldKey: string, placeholder: string }) => (
       <div>
           <label className="text-[10px] font-bold text-zinc-500 uppercase mb-1.5 block">{label}</label>
           <div className="relative">
               <Input 
-                  type={visibleKeys[fieldKey] ? "text" : "password"} 
+                  type={visibleKeys[fieldKey as keyof typeof visibleKeys] ? "text" : "password"} 
                   value={value}
                   onChange={(e) => setConfig({ ...config, [fieldKey]: e.target.value })}
                   placeholder={placeholder}
@@ -110,7 +110,7 @@ export default function IntegrationsPage() {
                   className="absolute right-3 top-2.5 text-zinc-500 hover:text-zinc-300 transition-colors"
                   type="button"
               >
-                  {visibleKeys[fieldKey] ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  {visibleKeys[fieldKey as keyof typeof visibleKeys] ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
           </div>
       </div>

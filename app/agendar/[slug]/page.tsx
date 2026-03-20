@@ -34,14 +34,14 @@ export default function PublicSchedulePage() {
   const { addToast } = useToast();
   const slug = params.slug as string;
 
-  const [rule, setRule] = useState<any>(null);
+  const [rule, setRule] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(true);
   
   const [step, setStep] = useState(0);
   
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
-  const [slots, setSlots] = useState<any[]>([]);
+  const [slots, setSlots] = useState<{ time: string, available: boolean }[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
 
@@ -303,13 +303,13 @@ export default function PublicSchedulePage() {
                             <img src={rule.owner_avatar} className="w-20 h-20 rounded-full border-4 border-black/50 object-cover shadow-lg bg-zinc-800" alt="Avatar" />
                         ) : (
                             <div className="w-20 h-20 rounded-full bg-zinc-800 flex items-center justify-center border-4 border-black/50 font-bold text-xl text-white">
-                                {(rule.company_name || rule.name || 'C').charAt(0)}
+                                {(String(rule.company_name) || String(rule.name) || 'C').charAt(0)}
                             </div>
                         )}
                         <div className="absolute bottom-1 right-1 w-5 h-5 rounded-full border-2 border-black" style={{ backgroundColor: primaryColor }}></div>
                     </div>
                     <div className={cn(rule.cover_url ? "pt-8" : "")}>
-                        <p className="text-[10px] font-bold uppercase tracking-wider opacity-80 mb-0.5" style={{ color: textColor }}>{rule.company_name || 'Profissional'}</p>
+                        <p className="text-[10px] font-bold uppercase tracking-wider opacity-80 mb-0.5" style={{ color: textColor }}>{String(rule.company_name) || 'Profissional'}</p>
                         <h3 className="text-lg font-bold leading-tight" style={{ color: textColor }}>{rule.owner_name || 'Consultor'}</h3>
                     </div>
                 </div>
@@ -493,7 +493,7 @@ export default function PublicSchedulePage() {
                                 <label className="text-xs font-bold uppercase ml-1 opacity-60">Qual o seu nome?</label>
                                 <div className="relative">
                                     <User className="absolute left-3 top-3 w-5 h-5 opacity-50" />
-                                    <Input value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="pl-10 bg-black/20 border-white/10 h-12 text-base rounded-xl focus:ring-1 placeholder:text-white/30" style={{ '--tw-ring-color': primaryColor, color: textColor, borderColor: `${textColor}20` } as any} placeholder="Digite aqui..." autoFocus />
+                                    <Input value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="pl-10 bg-black/20 border-white/10 h-12 text-base rounded-xl focus:ring-1 placeholder:text-white/30" style={{ '--tw-ring-color': primaryColor, color: textColor, borderColor: `${textColor}20` } as React.CSSProperties} placeholder="Digite aqui..." autoFocus />
                                 </div>
                             </div>
                             <div className="space-y-1.5 relative z-20">
@@ -518,7 +518,7 @@ export default function PublicSchedulePage() {
                                     </div>
                                     <div className="relative flex-1">
                                         <Phone className="absolute left-3 top-3.5 w-5 h-5 opacity-50" />
-                                        <Input ref={phoneInputRef} value={phoneNumber} onChange={handlePhoneInput} className="pl-10 bg-black/20 border-white/10 h-12 text-base rounded-xl focus:ring-1 font-mono placeholder:text-white/30" style={{ '--tw-ring-color': primaryColor, color: textColor, borderColor: `${textColor}20` } as any} placeholder={selectedCountry.mask} />
+                                        <Input ref={phoneInputRef} value={phoneNumber} onChange={handlePhoneInput} className="pl-10 bg-black/20 border-white/10 h-12 text-base rounded-xl focus:ring-1 font-mono placeholder:text-white/30" style={{ '--tw-ring-color': primaryColor, color: textColor, borderColor: `${textColor}20` } as React.CSSProperties} placeholder={selectedCountry.mask} />
                                     </div>
                                 </div>
                             </div>
@@ -526,12 +526,12 @@ export default function PublicSchedulePage() {
                                 <label className="text-xs font-bold uppercase ml-1 opacity-60">Email (Opcional)</label>
                                 <div className="relative">
                                     <Mail className="absolute left-3 top-3 w-5 h-5 opacity-50" />
-                                    <Input value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className="pl-10 bg-black/20 border-white/10 h-12 text-base rounded-xl focus:ring-1 placeholder:text-white/30" style={{ '--tw-ring-color': primaryColor, color: textColor, borderColor: `${textColor}20` } as any} placeholder="seu@email.com" />
+                                    <Input value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className="pl-10 bg-black/20 border-white/10 h-12 text-base rounded-xl focus:ring-1 placeholder:text-white/30" style={{ '--tw-ring-color': primaryColor, color: textColor, borderColor: `${textColor}20` } as React.CSSProperties} placeholder="seu@email.com" />
                                 </div>
                             </div>
                             <div className="space-y-1.5">
                                 <label className="text-xs font-bold uppercase ml-1 opacity-60">Observações</label>
-                                <Textarea value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} className="bg-black/20 border-white/10 min-h-[100px] rounded-xl focus:ring-1 p-3 placeholder:text-white/30" style={{ '--tw-ring-color': primaryColor, color: textColor, borderColor: `${textColor}20` } as any} placeholder="Gostaria de falar sobre..." />
+                                <Textarea value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} className="bg-black/20 border-white/10 min-h-[100px] rounded-xl focus:ring-1 p-3 placeholder:text-white/30" style={{ '--tw-ring-color': primaryColor, color: textColor, borderColor: `${textColor}20` } as React.CSSProperties} placeholder="Gostaria de falar sobre..." />
                             </div>
                             <Button 
                                 onClick={handleBooking} 

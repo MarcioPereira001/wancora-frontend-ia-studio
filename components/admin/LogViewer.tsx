@@ -84,9 +84,9 @@ export function LogViewer() {
 
             setLogs([]);
             addToast({ type: 'success', title: 'Sistema Limpo', message: 'Todos os logs foram removidos do banco de dados.' });
-        } catch (e: any) {
+        } catch (e: unknown) {
             console.error(e);
-            addToast({ type: 'error', title: 'Erro ao Limpar', message: e.message || 'Verifique as permissões RLS no Supabase.' });
+            addToast({ type: 'error', title: 'Erro ao Limpar', message: e instanceof Error ? e.message : 'Verifique as permissões RLS no Supabase.' });
         } finally {
             setIsClearing(false);
         }

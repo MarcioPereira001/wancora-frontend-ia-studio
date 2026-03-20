@@ -19,7 +19,7 @@ import { format } from 'date-fns';
 
 export default function AdminUsersPage() {
     const { addToast } = useToast();
-    const [clients, setClients] = useState<any[]>([]);
+    const [clients, setClients] = useState<Record<string, string | null | undefined>[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [processingId, setProcessingId] = useState<string | null>(null);
@@ -47,8 +47,9 @@ export default function AdminUsersPage() {
             await toggleCompanyStatus(id, status);
             addToast({ type: 'success', title: 'Sucesso', message: 'Status atualizado.' });
             loadData();
-        } catch (e: any) {
-            addToast({ type: 'error', title: 'Erro', message: e.message });
+        } catch (e: unknown) {
+            const msg = e instanceof Error ? e.message : String(e);
+            addToast({ type: 'error', title: 'Erro', message: msg });
         } finally {
             setProcessingId(null);
             setOpenMenuId(null);
@@ -62,8 +63,9 @@ export default function AdminUsersPage() {
             await updateCompanyPlan(id, plan);
             addToast({ type: 'success', title: 'Plano Atualizado', message: `Novo plano: ${plan}` });
             loadData();
-        } catch (e: any) {
-            addToast({ type: 'error', title: 'Erro', message: e.message });
+        } catch (e: unknown) {
+            const msg = e instanceof Error ? e.message : String(e);
+            addToast({ type: 'error', title: 'Erro', message: msg });
         } finally {
             setProcessingId(null);
             setOpenMenuId(null);
@@ -85,8 +87,9 @@ export default function AdminUsersPage() {
             } else {
                 throw new Error("Link de acesso não gerado.");
             }
-        } catch (e: any) {
-            addToast({ type: 'error', title: 'Erro de Acesso', message: e.message });
+        } catch (e: unknown) {
+            const msg = e instanceof Error ? e.message : String(e);
+            addToast({ type: 'error', title: 'Erro de Acesso', message: msg });
             setProcessingId(null);
         }
     };
@@ -95,7 +98,7 @@ export default function AdminUsersPage() {
         (c.company_name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
         (c.user_name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
         (c.email || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-        c.company_id.includes(searchTerm)
+        (c.company_id || '').includes(searchTerm)
     );
 
     // Fecha menu ao clicar fora

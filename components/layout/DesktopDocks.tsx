@@ -10,7 +10,7 @@ import { cn } from '@/lib/utils';
 import { LogOut, Zap, ChevronRight, ChevronLeft } from 'lucide-react';
 
 interface NavItem {
-  icon: any;
+  icon: React.ElementType;
   label: string;
   href: string;
   rightSide?: boolean;

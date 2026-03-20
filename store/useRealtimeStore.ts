@@ -2,6 +2,7 @@
 import { create } from 'zustand';
 import { createClient } from '@/utils/supabase/client';
 import { Instance } from '@/types';
+import { SystemLogger } from '@/lib/logger';
 
 interface RealtimeState {
   isConnected: boolean;
@@ -28,6 +29,36 @@ interface RealtimeState {
 
 export const useRealtimeStore = create<RealtimeState>((set, get) => {
   let channel: any = null;
+  let watchdogTimer: NodeJS.Timeout | null = null;
+  let reconnectAttempts = 0;
+  const MAX_RECONNECT_ATTEMPTS = 5;
+
+  const startWatchdog = (companyId: string) => {
+      if (watchdogTimer) clearInterval(watchdogTimer);
+      
+      // Verifica a cada 10 segundos se a conexão caiu
+      watchdogTimer = setInterval(() => {
+          const state = get();
+          if (!state.isConnected && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+              SystemLogger.warn(`[Watchdog] Conexão WebSocket perdida. Tentativa de reconexão ${reconnectAttempts + 1}/${MAX_RECONNECT_ATTEMPTS}`);
+              reconnectAttempts++;
+              // Para evitar loop infinito de intervalos, não chamamos initialize() completo,
+              // mas apenas recriamos o canal.
+              get().initialize(companyId);
+          } else if (!state.isConnected && reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+              SystemLogger.error(`[Watchdog] Falha crítica: Impossível reconectar ao WebSocket após ${MAX_RECONNECT_ATTEMPTS} tentativas.`);
+              if (watchdogTimer) clearInterval(watchdogTimer);
+          }
+      }, 10000);
+  };
+
+  const stopWatchdog = () => {
+      if (watchdogTimer) {
+          clearInterval(watchdogTimer);
+          watchdogTimer = null;
+      }
+      reconnectAttempts = 0;
+  };
 
   return {
     isConnected: false,
@@ -58,7 +89,12 @@ export const useRealtimeStore = create<RealtimeState>((set, get) => {
     initialize: async (companyId: string) => {
       await get().refreshInstances(companyId);
 
-      if (channel) return; 
+      // Se já existe um canal, remove antes de recriar (evita memory leaks em reconexões)
+      if (channel) {
+          const supabase = createClient();
+          await supabase.removeChannel(channel);
+          channel = null;
+      }
 
       const supabase = createClient();
       console.log(`🔥 [Realtime] Monitorando Instâncias: ${companyId}`);
@@ -88,12 +124,22 @@ export const useRealtimeStore = create<RealtimeState>((set, get) => {
             }
         })
         .subscribe((status) => {
-          if (status === 'SUBSCRIBED') set({ isConnected: true });
-          if (status === 'CLOSED') set({ isConnected: false });
+          if (status === 'SUBSCRIBED') {
+              set({ isConnected: true });
+              reconnectAttempts = 0; // Reseta tentativas ao conectar com sucesso
+              SystemLogger.info(`[Realtime] WebSocket Conectado: ${companyId}`);
+          }
+          if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
+              set({ isConnected: false });
+              SystemLogger.warn(`[Realtime] WebSocket Desconectado/Erro: ${status}`);
+          }
         });
+        
+        startWatchdog(companyId);
     },
 
     disconnect: () => {
+      stopWatchdog();
       if (channel) {
         const supabase = createClient();
         supabase.removeChannel(channel);

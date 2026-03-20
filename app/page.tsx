@@ -128,7 +128,7 @@ const Hero = () => (
   </section>
 );
 
-const FeatureCard = ({ icon: Icon, title, description }: any) => (
+const FeatureCard = ({ icon: Icon, title, description }: { icon: React.ElementType, title: string, description: string }) => (
   <motion.div 
     whileHover={{ y: -5 }}
     className="p-6 rounded-2xl bg-zinc-900/40 border border-white/5 hover:border-primary/30 transition-all hover:shadow-[0_0_30px_-10px_rgba(34,197,94,0.15)]"
@@ -247,7 +247,7 @@ const ObjectionHandling = () => (
   </section>
 );
 
-const PricingCard = ({ title, price, features, isPro = false }: any) => (
+const PricingCard = ({ title, price, features, isPro = false }: { title: string, price: string, features: string[], isPro?: boolean }) => (
   <div className={`relative p-8 rounded-2xl border ${isPro ? 'border-primary bg-zinc-900/80 shadow-[0_0_40px_-10px_rgba(34,197,94,0.3)]' : 'border-zinc-800 bg-zinc-900/30'} flex flex-col`}>
     {isPro && (
       <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider">

@@ -154,11 +154,11 @@ export const WHATSAPP_FORMATTING_RULES = `
 
 /**
  * Constrói o Prompt de Sistema Final combinando todas as configurações do Frontend
- * @param {any} agent - Objeto do agente vindo do banco de dados (Simulação)
+ * @param {Record<string, unknown>} agent - Objeto do agente vindo do banco de dados (Simulação)
  */
-export const buildSystemPromptClient = (agent: any) => {
-    const p = agent.personality_config || {};
-    const f = agent.flow_config || {};
+export const buildSystemPromptClient = (agent: Record<string, unknown>) => {
+    const p = (agent.personality_config as Record<string, unknown>) || {};
+    const f = (agent.flow_config as Record<string, unknown>) || {};
     
     // 1. Definição Básica
     let prompt = `IDENTIDADE DO AGENTE:\nVocê é ${agent.name}.\n`;
@@ -217,7 +217,7 @@ export const buildSystemPromptClient = (agent: any) => {
     // 9. Links Úteis Dinâmicos
     if (agent.links_config && Array.isArray(agent.links_config) && agent.links_config.length > 0) {
         prompt += `\n[LINKS DA EMPRESA (FERRAMENTAS DE APOIO)]\nVocê possui os seguintes links cadastrados. Use-os APENAS no PLANO B de agendamento ou se o cliente pedir informações externas:\n`;
-        agent.links_config.forEach((link: any) => {
+        agent.links_config.forEach((link: Record<string, unknown>) => {
             prompt += `- ${link.title}: ${link.url}\n`;
         });
     }
@@ -233,11 +233,11 @@ export const buildSystemPromptClient = (agent: any) => {
     }
 
     // 12. Regras Negativas e Escape
-    if (p.negative_prompts && p.negative_prompts.length > 0) {
+    if (p.negative_prompts && Array.isArray(p.negative_prompts) && p.negative_prompts.length > 0) {
         prompt += `\n[PROIBIÇÕES ABSOLUTAS (O QUE NÃO FAZER)]\n${p.negative_prompts.map((s: string) => '- ' + s).join('\n')}\n`;
     }
     
-    if (p.escape_rules && p.escape_rules.length > 0) {
+    if (p.escape_rules && Array.isArray(p.escape_rules) && p.escape_rules.length > 0) {
         prompt += `\n[REGRAS DE ESCAPE (QUANDO ACIONAR HUMANO OU FINALIZAR)]\n${p.escape_rules.map((s: string) => '- ' + s).join('\n')}\n`;
     }
 

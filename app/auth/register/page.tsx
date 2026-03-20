@@ -126,10 +126,11 @@ function RegisterFormContent() {
       }
 
       addToast({ type: 'success', title: "Bem-vindo!", message: "Conta criada com sucesso!" });
-      router.push("/auth/login");
+      window.location.href = "/auth/login";
 
-    } catch (error: any) {
-      addToast({ type: 'error', title: "Erro", message: error.message });
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      addToast({ type: 'error', title: "Erro", message: msg });
     } finally {
       setLoading(false);
     }

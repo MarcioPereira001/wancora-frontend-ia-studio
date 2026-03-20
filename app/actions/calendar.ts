@@ -7,7 +7,7 @@ import { z } from 'zod';
 const NotificationTriggerSchema = z.object({
     id: z.string(),
     type: z.enum(['on_booking', 'before_event']),
-    time_amount: z.any().optional(), 
+    time_amount: z.number().optional(), 
     time_unit: z.enum(['minutes', 'hours', 'days']).optional(),
     template: z.string(),
     active: z.boolean()
@@ -125,7 +125,7 @@ export async function saveAvailabilityRules(formData: AvailabilityFormData) {
       coverOverlayOpacity: payload.theme_config?.coverOverlayOpacity ?? 0.5
   };
 
-  const upsertData: any = {
+  const upsertData: Record<string, unknown> = {
       id: payload.id || undefined,
       company_id: profile.company_id,
       user_id: user.id,

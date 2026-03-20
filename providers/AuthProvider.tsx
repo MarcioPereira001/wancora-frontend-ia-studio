@@ -71,7 +71,7 @@ export default function AuthProvider({ children }: AuthProviderProps) {
 
       } catch (error) {
         console.error("Auth check failed:", error);
-        if ((error as any)?.message?.includes('token')) {
+        if (error instanceof Error && error.message.includes('token')) {
             await supabase.auth.signOut();
             router.push('/auth/login');
         }

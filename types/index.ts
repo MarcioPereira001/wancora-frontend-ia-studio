@@ -30,7 +30,7 @@ export interface Company {
         stripe?: { publishableKey: string; secretKey: string };
         n8n?: { url: string };
         typebot?: { url: string };
-        [key: string]: any; // Permite expansão futura
+        [key: string]: unknown; // Permite expansão futura
     };
 }
 
@@ -39,7 +39,7 @@ export interface SystemLog {
     level: 'info' | 'warn' | 'error' | 'fatal';
     source: string;
     message: string;
-    metadata?: any;
+    metadata?: Record<string, unknown>;
     company_id?: string | null;
     user_id?: string | null;
     created_at: string;
@@ -108,8 +108,8 @@ export interface Message {
     delivered_at?: string;
     contact?: ChatContact;
     transcription?: string;
-    poll_votes?: any[];
-    reactions?: any[];
+    poll_votes?: Record<string, unknown>[];
+    reactions?: Record<string, unknown>[];
     lead_id?: string | null;
 }
 
@@ -256,7 +256,7 @@ export interface Appointment {
     status: 'confirmed' | 'pending' | 'cancelled';
     is_task: boolean;
     category?: string;
-    guests?: any[];
+    guests?: Record<string, unknown>[];
     completed_at?: string | null;
     send_notifications?: boolean;
     reminder_sent?: boolean;
@@ -265,8 +265,8 @@ export interface Appointment {
     meet_link?: string;
     event_location_details?: string;
     companies?: { name: string };
-    availability_rules?: any;
-    custom_notification_config?: any;
+    availability_rules?: Record<string, unknown>;
+    custom_notification_config?: Record<string, unknown>;
 }
 
 // --- CLOUD & DRIVE ---
