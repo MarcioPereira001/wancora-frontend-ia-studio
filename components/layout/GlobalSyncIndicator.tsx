@@ -8,8 +8,10 @@ import { CheckCircle2, Loader2, DownloadCloud, Database, Wifi, ShieldCheck } fro
 import { cn } from '@/lib/utils';
 
 export function GlobalSyncIndicator() {
-  const { forcedSyncId, clearSyncAnimation } = useRealtimeStore();
+  const { forcedSyncId, instances, clearSyncAnimation } = useRealtimeStore();
   const [isVisible, setIsVisible] = useState(false);
+  
+  const instance = instances.find(i => i.id === forcedSyncId);
   
   // Estado Visual
   const [percent, setPercent] = useState(0);
@@ -21,7 +23,6 @@ export function GlobalSyncIndicator() {
   // Refs de Controle
   const progressRef = useRef(0);
   const simulationInterval = useRef<ReturnType<typeof setInterval> | null>(null);
-  const pollingInterval = useRef<ReturnType<typeof setInterval> | null>(null);
   const safetyTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // --- 1. START / STOP ---
@@ -68,8 +69,8 @@ export function GlobalSyncIndicator() {
       });
     }, 150); // 15FPS aprox para suavidade
 
-    // B. Polling Real (Supabase) - A cada 1s
-    pollingInterval.current = setInterval(checkRealStatus, 1000);
+    // B. Polling Real (Supabase) - REMOVIDO: Agora usamos o RealtimeStore
+    // pollingInterval.current = setInterval(checkRealStatus, 1000);
 
     // C. Safety Kill Switch (45 segundos máximo)
     // Se o backend morrer, libera o usuário.
@@ -95,38 +96,30 @@ export function GlobalSyncIndicator() {
       }
   };
 
-  const checkRealStatus = async () => {
-    if (!forcedSyncId) return;
+  // --- 3. WATCHER DO REALTIME STORE ---
+  useEffect(() => {
+    if (!forcedSyncId || !instance) return;
 
-    const supabase = createClient();
-    const { data } = await supabase
-        .from('instances')
-        .select('sync_status, sync_percent, status')
-        .eq('id', forcedSyncId)
-        .single();
-
-    if (data) {
-        // Se desconectou, erro
-        if (data.status === 'disconnected') {
-            setStatusLabel("Falha na Conexão");
-            setSubLabel("Tentando reconectar...");
-            cleanup();
-            setTimeout(() => clearSyncAnimation(), 3000);
-            return;
-        }
-
-        // Se completou REAL
-        if (data.sync_status === 'completed') {
-            finishSync();
-            return;
-        }
-
-        // Se o progresso REAL for maior que o simulado, pula para o real
-        if (data.sync_percent && data.sync_percent > percent) {
-            setPercent(data.sync_percent);
-        }
+    // Se desconectou, erro
+    if (instance.status === 'disconnected') {
+        setStatusLabel("Falha na Conexão");
+        setSubLabel("Tentando reconectar...");
+        cleanup();
+        setTimeout(() => clearSyncAnimation(), 3000);
+        return;
     }
-  };
+
+    // Se completou REAL
+    if (instance.sync_status === 'completed') {
+        finishSync();
+        return;
+    }
+
+    // Se o progresso REAL for maior que o simulado, pula para o real
+    if (instance.sync_percent && instance.sync_percent > percent) {
+        setPercent(instance.sync_percent);
+    }
+  }, [instance, forcedSyncId, percent, clearSyncAnimation]);
 
   const finishSync = (forced = false) => {
       cleanup(); // Para simulação e polling
@@ -150,7 +143,6 @@ export function GlobalSyncIndicator() {
 
   const cleanup = () => {
       if (simulationInterval.current) clearInterval(simulationInterval.current);
-      if (pollingInterval.current) clearInterval(pollingInterval.current);
       if (safetyTimeout.current) clearTimeout(safetyTimeout.current);
   };
 

@@ -25,8 +25,7 @@ const PLAN_LIMITS = {
 export default function ConnectionsPage() {
   const { addToast } = useToast();
   const { company } = useCompany();
-  const { triggerSyncAnimation } = useRealtimeStore();
-  const [instances, setInstances] = useState<Instance[]>([]);
+  const { triggerSyncAnimation, instances, refreshInstances } = useRealtimeStore();
   const [loading, setLoading] = useState(true);
   const supabase = createClient();
   
@@ -44,30 +43,17 @@ export default function ConnectionsPage() {
   const [webhookEnabled, setWebhookEnabled] = useState(false);
   const [editingInstanceId, setEditingInstanceId] = useState<string | null>(null);
 
-  const fetchInstances = async () => {
-      try {
-          const data = await whatsappService.getAllInstances();
-          setInstances(data);
-      } catch (error) {
-          console.error(error);
-      } finally {
-          setLoading(false);
-      }
-  };
-
   useEffect(() => {
-    fetchInstances();
     if (!company?.id) return;
-
-    const channel = supabase
-      .channel('instances-global')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'instances', filter: `company_id=eq.${company.id}` }, 
-        () => fetchInstances()
-      )
-      .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
-  }, [company?.id, supabase]);
+    
+    const load = async () => {
+        setLoading(true);
+        await refreshInstances(company.id);
+        setLoading(false);
+    };
+    
+    load();
+  }, [company?.id, refreshInstances]);
 
   // Polling e QR Code
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -224,7 +210,7 @@ export default function ConnectionsPage() {
                 <ConnectionCard 
                     key={instance.id} 
                     instance={instance} 
-                    refresh={fetchInstances} 
+                    refresh={() => company?.id && refreshInstances(company.id)} 
                     onRestart={() => handleRestart(instance)}
                     onWebhook={() => openWebhookModal(instance)}
                 />
@@ -367,7 +353,7 @@ export default function ConnectionsPage() {
                           <h3 className="text-2xl font-bold text-white">Sincronizado!</h3>
                           <p className="text-zinc-400 mt-2">A instância está online.</p>
                       </div>
-                      <Button onClick={() => { setIsModalOpen(false); fetchInstances(); }} className="bg-zinc-800 text-white min-w-[150px]">Fechar</Button>
+                      <Button onClick={() => { setIsModalOpen(false); if(company?.id) refreshInstances(company.id); }} className="bg-zinc-800 text-white min-w-[150px]">Fechar</Button>
                   </div>
               )}
           </div>
