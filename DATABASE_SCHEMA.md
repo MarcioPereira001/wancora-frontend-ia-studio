@@ -490,6 +490,11 @@ O sistema utiliza o Supabase Storage para armazenar arquivos pesados, mantendo o
 
 ---
 
+## 7. Ferramentas de Diagnóstico
+- **Stress Test Suite:** Endpoints em `/api/v1/management/stress/*` para validação de carga em BullMQ e consistência de contexto em LLM.
+
+---
+
 ## NOTAS DE IMPLEMENTAÇÃO:
 
 ### Comunidades

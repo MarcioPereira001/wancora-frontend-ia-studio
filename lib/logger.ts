@@ -149,16 +149,22 @@ export const SystemLogger = {
 
         // 4. Console Hijack Seguro (Opcional - Ative com cuidado)
         const originalConsoleError = console.error;
-        console.error = (...args) => {
-            originalConsoleError.apply(console, args);
-            
-            // Filtro Anti-Loop: Não logar erros que parecem vir do próprio logger ou libs de monitoramento
-            const msg = args.map(a => String(a)).join(' ');
-            if (msg.includes('system_logs') || msg.includes('Extension')) return;
-            
-            // Debounce simples para console.error repetitivo
-            // (Na verdade o batching já faz isso, mas aqui evitamos poluir a fila com spam)
-            SystemLogger.error('Console Error', { args: msg.substring(0, 500) });
-        };
+        if (typeof originalConsoleError === 'function') {
+            console.error = (...args) => {
+                try {
+                    originalConsoleError.apply(console, args);
+                } catch (e) {
+                    // Se o apply falhar (raro), loga no console nativo sem apply
+                    originalConsoleError(...args);
+                }
+                
+                // Filtro Anti-Loop: Não logar erros que parecem vir do próprio logger ou libs de monitoramento
+                const msg = args.map(a => String(a)).join(' ');
+                if (msg.includes('system_logs') || msg.includes('Extension')) return;
+                
+                // Debounce simples para console.error repetitivo
+                SystemLogger.error('Console Error', { args: msg.substring(0, 500) });
+            };
+        }
     }
 };

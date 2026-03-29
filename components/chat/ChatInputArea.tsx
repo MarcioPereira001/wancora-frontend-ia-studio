@@ -2,7 +2,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Paperclip, Mic, Send, Trash2, Image as IconImage, FileText, MapPin, User, BarChart2, Ban, Smile, CheckSquare, Loader2, Sticker, ShoppingBag, LayoutTemplate, Bold, Italic, Strikethrough, Code, List, Quote } from 'lucide-react';
+import { Paperclip, Mic, Send, Trash2, Image as IconImage, FileText, MapPin, User, BarChart2, Ban, Smile, CheckSquare, Loader2, Sticker, ShoppingBag, LayoutTemplate, Bold, Italic, Strikethrough, Code, List, Quote, QrCode } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useChatStore } from '@/store/useChatStore';
 import { useAuthStore } from '@/store/useAuthStore';
@@ -48,7 +48,7 @@ export function ChatInputArea() {
   // Textarea Ref para manipulação de cursor/seleção
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const [activeModal, setActiveModal] = useState<'poll'|'contact'|'location'|'delete_confirm'|'catalog'|'card'|null>(null);
+  const [activeModal, setActiveModal] = useState<'poll'|'contact'|'location'|'delete_confirm'|'catalog'|'card'|'pix'|null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   
   // Modal States
@@ -65,6 +65,11 @@ export function ChatInputArea() {
   const [cardDesc, setCardDesc] = useState("");
   const [cardLink, setCardLink] = useState("");
   const [cardThumb, setCardThumb] = useState("");
+
+  // Pix States
+  const [pixKey, setPixKey] = useState("");
+  const [pixValue, setPixValue] = useState("");
+  const [pixDesc, setPixDesc] = useState("Pagamento via PIX");
 
   // 🛡️ MEMORY LEAK FIX: Limpeza ao desmontar ou trocar chat
   useEffect(() => {
@@ -220,6 +225,7 @@ export function ChatInputArea() {
       if (payload.type === 'contact') contentDisplay = JSON.stringify(payload.content);
       if (payload.type === 'product') contentDisplay = payload.content.title || 'Produto';
       if (payload.type === 'card') contentDisplay = JSON.stringify(payload.content);
+      if (payload.type === 'pix') contentDisplay = `💰 PIX: ${payload.caption}`;
       if (payload.type === 'sticker') contentDisplay = 'Figurinha';
       if (payload.caption) contentDisplay = payload.caption;
 
@@ -416,6 +422,25 @@ export function ChatInputArea() {
       setActiveModal(null);
   };
 
+  const handleSendPix = () => {
+      if(!pixKey.trim()) {
+          addToast({ type: 'warning', title: 'Chave Obrigatória', message: 'Informe a chave PIX.' });
+          return;
+      }
+      
+      const displayValue = pixValue ? ` no valor de R$ ${pixValue}` : "";
+      
+      dispatchMessage({
+          type: 'pix',
+          url: pixKey, // A chave vai no campo URL para o 'cta_copy'
+          caption: pixDesc,
+          text: `${pixDesc}${displayValue}\n\nChave: ${pixKey}`
+      });
+      
+      setPixKey(""); setPixValue(""); setPixDesc("Pagamento via PIX");
+      setActiveModal(null);
+  };
+
   if (isMsgSelectionMode) {
       const canEveryone = canDeleteForEveryone();
       return (
@@ -502,6 +527,9 @@ export function ChatInputArea() {
                             </button>
                             <button onClick={() => { setMediaMenuOpen(false); setActiveModal('card'); }} className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
                                 <LayoutTemplate className="w-5 h-5 text-orange-400" /> Card (Link)
+                            </button>
+                            <button onClick={() => { setMediaMenuOpen(false); setActiveModal('pix'); }} className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
+                                <QrCode className="w-5 h-5 text-blue-400" /> Cobrança PIX
                             </button>
                             <button onClick={() => { setMediaMenuOpen(false); setActiveModal('location'); }} className="flex flex-col items-center gap-1 p-2 hover:bg-zinc-800 rounded-lg cursor-pointer text-xs text-zinc-400 hover:text-white transition-colors">
                                 <MapPin className="w-5 h-5 text-red-400" /> Localização
@@ -603,6 +631,26 @@ export function ChatInputArea() {
                 <Input value={cardThumb} onChange={e => setCardThumb(e.target.value)} placeholder="https://.../imagem.jpg" className="mt-1" />
               </div>
               <Button onClick={handleSendCard} className="w-full bg-orange-500 hover:bg-orange-600 text-white">Enviar Card</Button>
+          </div>
+      </Modal>
+
+      <Modal isOpen={activeModal === 'pix'} onClose={() => setActiveModal(null)} title="Gerar Cobrança PIX">
+          <div className="space-y-4">
+              <div>
+                <label className="text-xs font-bold text-zinc-500 uppercase">Chave PIX (CPF/CNPJ/Email/Aleatória)</label>
+                <Input value={pixKey} onChange={e => setPixKey(e.target.value)} placeholder="Digite a chave..." className="mt-1" />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-zinc-500 uppercase">Valor (Opcional)</label>
+                <Input value={pixValue} onChange={e => setPixValue(e.target.value)} placeholder="Ex: 150,00" className="mt-1" />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-zinc-500 uppercase">Descrição/Título</label>
+                <Input value={pixDesc} onChange={e => setPixDesc(e.target.value)} placeholder="Ex: Pagamento do Pedido #123" className="mt-1" />
+              </div>
+              <Button onClick={handleSendPix} className="w-full bg-blue-600 hover:bg-blue-700 text-white">
+                  <QrCode className="w-4 h-4 mr-2" /> Enviar Mensagem PIX
+              </Button>
           </div>
       </Modal>
 

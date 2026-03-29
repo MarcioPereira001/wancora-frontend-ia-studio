@@ -214,7 +214,9 @@ interface NavItemProps {
   isCollapsed: boolean;
 }
 
-const NavItem: React.FC<NavItemProps> = ({ item, isActive, isCollapsed }) => (
+const NavItem: React.FC<NavItemProps> = ({ item, isActive, isCollapsed }) => {
+    const Icon = item.icon || MessageSquarePlus;
+    return (
     <Link 
       href={item.href}
       className={cn(
@@ -226,7 +228,7 @@ const NavItem: React.FC<NavItemProps> = ({ item, isActive, isCollapsed }) => (
     )}
       title={isCollapsed ? item.label : undefined}
     >
-      <item.icon className={cn(
+      <Icon className={cn(
           "shrink-0 transition-transform duration-300", 
           isCollapsed ? "w-4 h-4" : "w-4 h-4 group-hover:scale-110",
           isActive && "scale-105"
@@ -243,4 +245,5 @@ const NavItem: React.FC<NavItemProps> = ({ item, isActive, isCollapsed }) => (
           )} />
       )}
     </Link>
-);
+    );
+};

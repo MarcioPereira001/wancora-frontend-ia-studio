@@ -68,6 +68,7 @@ export function MobileNav() {
           <div className="flex justify-between items-center h-full">
               {NAV_ITEMS.main.map((item) => {
                   const isActive = pathname === item.href;
+                  const Icon = item.icon || Zap;
                   return (
                       <Link 
                           key={item.href}
@@ -78,7 +79,7 @@ export function MobileNav() {
                           )}
                       >
                           <div className={cn("p-1.5 rounded-xl transition-all", isActive && "bg-primary/10")}>
-                             <item.icon className={cn("w-5 h-5", isActive && "fill-primary/20")} />
+                             <Icon className={cn("w-5 h-5", isActive && "fill-primary/20")} />
                           </div>
                           <span className="text-[9px] font-medium tracking-wide">{item.label}</span>
                       </Link>
@@ -122,6 +123,7 @@ export function MobileNav() {
                       <p className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-3">Aplicativos</p>
                       {NAV_ITEMS.utility.filter(i => i.label !== 'Área de Trabalho').map((item) => { 
                           const isActive = pathname === item.href;
+                          const Icon = item.icon || ChevronRight;
                           return (
                               <Link 
                                   key={item.href}
@@ -136,7 +138,7 @@ export function MobileNav() {
                               >
                                   <div className="flex items-center gap-3">
                                       <div className={cn("p-2 rounded-lg", isActive ? "bg-primary/10 text-primary" : "bg-zinc-900 text-zinc-500")}>
-                                          <item.icon className="w-4 h-4" />
+                                          <Icon className="w-4 h-4" />
                                       </div>
                                       <span className="text-sm font-medium">{item.label}</span>
                                   </div>

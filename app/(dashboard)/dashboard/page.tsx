@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { Activity, Download, Calendar as CalendarIcon, User, Trophy, Loader2 } from 'lucide-react';
+import { Activity, Download, Calendar as CalendarIcon, User, Trophy, Loader2, Zap, Brain } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { createClient } from '@/utils/supabase/client';
 import { useAuthStore } from '@/store/useAuthStore';
@@ -42,6 +42,8 @@ export default function DashboardPage() {
   // STATE: Dados
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
+  const [stressLoading, setStressLoading] = useState(false);
+  const [aiTestLoading, setAiTestLoading] = useState(false);
   
   const [stats, setStats] = useState<DashboardKPI>({
     totalLeads: 0,
@@ -130,7 +132,8 @@ export default function DashboardPage() {
 
       try {
           // Importação Dinâmica para não pesar o bundle inicial
-          const ExcelJS = (await import('exceljs')).default;
+          const ExcelJSModule = await import('exceljs');
+          const ExcelJS = ExcelJSModule.default || ExcelJSModule;
           
           const workbook = new ExcelJS.Workbook();
           workbook.creator = 'Wancora CRM';
@@ -238,6 +241,63 @@ export default function DashboardPage() {
   const top3 = ranking.slice(0, 3);
   const isManager = user?.role === 'owner' || user?.role === 'admin';
 
+  // --- TESTES DE STRESS ---
+  const handleStressTest = async () => {
+    if (!user?.company_id) return;
+    setStressLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const response = await fetch('/api/v1/management/stress/campaign', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`,
+          'x-company-id': user.company_id
+        },
+        body: JSON.stringify({ companyId: user.company_id, count: 500 })
+      });
+
+      const result = await response.json();
+      if (response.ok) {
+        addToast({ type: 'success', title: 'Teste Iniciado', message: '500 mensagens enfileiradas com sucesso.' });
+      } else {
+        throw new Error(result.error || 'Erro ao iniciar teste');
+      }
+    } catch (error: any) {
+      addToast({ type: 'error', title: 'Erro no Teste', message: error.message });
+    } finally {
+      setStressLoading(false);
+    }
+  };
+
+  const handleAITest = async () => {
+    if (!user?.company_id) return;
+    setAiTestLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const response = await fetch('/api/v1/management/stress/ai', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`,
+          'x-company-id': user.company_id
+        },
+        body: JSON.stringify({ companyId: user.company_id })
+      });
+
+      const result = await response.json();
+      if (response.ok) {
+        addToast({ type: 'success', title: 'Teste de IA', message: 'Simulação de conversa iniciada nos logs.' });
+      } else {
+        throw new Error(result.error || 'Erro ao iniciar teste');
+      }
+    } catch (error: any) {
+      addToast({ type: 'error', title: 'Erro no Teste', message: error.message });
+    } finally {
+      setAiTestLoading(false);
+    }
+  };
+
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-10">
       
@@ -296,6 +356,44 @@ export default function DashboardPage() {
 
       {/* KPI SECTION */}
       <DashboardStats stats={stats} loading={loading} />
+
+      {/* SEÇÃO DE TESTES (ADMIN ONLY) */}
+      {isManager && (
+        <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-6 backdrop-blur-sm">
+          <div className="flex items-center gap-3 mb-6">
+            <Zap className="w-6 h-6 text-yellow-500" />
+            <h2 className="text-xl font-bold text-white">Laboratório de Stress & IA</h2>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="p-4 bg-zinc-950 rounded-xl border border-zinc-800 hover:border-primary/30 transition-colors">
+              <h3 className="font-bold text-white mb-2">Stress de Campanha</h3>
+              <p className="text-sm text-zinc-400 mb-4">Simula o disparo de 500 mensagens instantaneamente para validar a fila e o Redis.</p>
+              <Button 
+                onClick={handleStressTest} 
+                disabled={stressLoading}
+                className="w-full bg-primary hover:bg-primary/90 text-white gap-2"
+              >
+                {stressLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
+                Iniciar Stress (500 Leads)
+              </Button>
+            </div>
+
+            <div className="p-4 bg-zinc-950 rounded-xl border border-zinc-800 hover:border-primary/30 transition-colors">
+              <h3 className="font-bold text-white mb-2">Consistência da IA</h3>
+              <p className="text-sm text-zinc-400 mb-4">Simula uma conversa real com 5 interações para testar contexto e humanização.</p>
+              <Button 
+                onClick={handleAITest} 
+                disabled={aiTestLoading}
+                variant="outline"
+                className="w-full border-zinc-700 hover:bg-zinc-900 text-white gap-2"
+              >
+                {aiTestLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Brain className="w-4 h-4" />}
+                Testar Fluxo de IA
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
           {/* COLUNA PRINCIPAL (3/4) */}
